@@ -2,7 +2,6 @@ import Datastore from 'nedb';
 
 export default class NeDbWrapper {
     users: CustomStore
-    roles: CustomStore
 
     constructor() {
 
@@ -10,57 +9,32 @@ export default class NeDbWrapper {
         this.users = new CustomStore("system-users.json",
             "System Users", "Collection of documents describing system users - handle with care", [0],[0])
 
-        this.roles = new CustomStore("system-roles.json",
-            "System Roles", "Collection of documents describing system roles - handle with care", [0],[0])
-
         this.users.count({}).then((counter) => {
             // New DB?
             if (counter < 1) {
-                // Create default entries
-                let defaultAdminRole: I_dbUserRole = {
-                    id: 0,
-                    name: "Administrator",
-                    description: "These accounts have access to all documents even if they are not the owner ",
-                    seeAll: true,
-                }
+                // Create default admin
                 let defaultAdminUser: I_dbUser = {
                     password: "adminSecret", roleIds: [0],
                     id: 0,
                     name: "admin"
                 }
 
-                this.roles.add(defaultAdminRole).then(role => {
-                    console.info("Created default admin role");
-                });
-
                 this.users.add(defaultAdminUser).then((user) => {
-                    console.info("Created default admin account");
+                    console.info("Created default admin account:", user);
                 });
             }
         })
     }
 
-    getUsers(): Promise<any>{
+    getUsers(): Promise<I_dbUser[]>{
         return new Promise((resolve, reject) => {
             this.users.query({}).then((result) => { resolve(result); });
-        })
-    }
-
-    getRoles(): Promise<any>{
-        return new Promise((resolve, reject) => {
-            this.roles.query({}).then((result) => { resolve(result); });
         })
     }
 
     getUsersByIds(ids: number[]): Promise<I_dbUser[]>{
         return new Promise((resolve, reject) => {
             this.users.query({ id: { $in: ids } }).then((result) => { resolve(result); });
-        })
-    }
-
-    getRolesByIds(ids: number[]): Promise<I_dbUserRole[]>{
-        return new Promise((resolve, reject) => {
-            this.roles.query({ id: { $in: ids } }).then((result) => { resolve(result); });
         })
     }
 

@@ -45,24 +45,22 @@ export default class NetworkManager{
         this.expressApp.use(cors(this.corsOptions));
 
         this.expressApp.get('/users/list', (req, res) => {
-            this.dataManager.getUsers().then((users: I_dbUser[]) => {
-                const returnArray = users.map(user => {
-                    return this.dataManager.getRolesByIds(user.roleIds).then((userRoles: I_dbUserRole[]) => {
-                        return {
-                            id: user.id,
-                            username: user.name,
-                            email: user.email,
-                            roles: userRoles
-                        };
-                    });
-                });
-
-                return Promise.all(returnArray);
-            }).then((result) => {
-                res.json(result);
-            }).catch((error) => {
+            this.dataManager.getUsers()
+                .then((users: I_dbUser[]) => {
+                    const returnArray = users.map(user => {
+                            return {
+                                id: user.id,
+                                username: user.name,
+                                email: user.email,
+                            };
+                        });
+                    return Promise.all(returnArray);
+                    })
+                    .then((result) => {
+                        res.json(result);
+                    }).catch((error) => {
                 res.status(500).json({ error: error.message });
-            });
+            })
         });
 
         this.expressApp.post("/users/create", (req, res) => {

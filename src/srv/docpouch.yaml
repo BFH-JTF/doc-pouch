@@ -295,27 +295,6 @@ components:
           description: "The context of the document in a string. If you want to store binary data it needs to be Base64 encoded."
           example: "We strive for a world that ..."
 
-
-    UserRole:
-      type: object
-      description: "Data element describing a user role"
-      properties:
-        id:
-          type: integer
-          example: 3
-        name:
-          type: string
-          description: "Role names can be changed at any time and are not necessarily unique. Roles are uniquely identified based on their id."
-          example: "Strategic Planner"
-        description:
-          type: string
-          description: "Description of role, its purpose and users"
-          example: "These users create the strategic elements and have therefore access to the necessary data"
-        admin:
-          type: boolean
-          description: "Is the user an administrator with full access to all data?"
-          example: false
-
     UserDisplay:
       type: object
       description: "Data element describing the user-facing side of a user account"
@@ -330,12 +309,6 @@ components:
           example: 2
         email:
           type: string
-        roles:
-          type: array
-          description: "Array of user roles this user account is part of"
-          items:
-            $ref: "#/components/schemas/UserRole"
-          minItems: 1
 
     UserCreation:
       type: object
@@ -352,10 +325,3 @@ components:
         email:
           type: string
           example: "darth@gmail.com"
-        roles:
-          type: array
-          description: "IDs of roles the new user account is supposed to be a member of"
-          items:
-            type: number
-          example: [1, 5]
-          minItems: 1
