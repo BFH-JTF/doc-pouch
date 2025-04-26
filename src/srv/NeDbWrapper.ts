@@ -1,11 +1,12 @@
 import Datastore from 'nedb';
+import winston from "winston";
 
 export default class NeDbWrapper {
     users: CustomStore
+    logger: winston.Logger
 
-    constructor() {
-
-        // Open collections for system users and system roles
+    constructor(winstonLogger: winston.Logger) {
+        this.logger = winstonLogger;
         this.users = new CustomStore("system-users.json",
             "System Users", "Collection of documents describing system users - handle with care", [0],[0])
 
@@ -14,7 +15,7 @@ export default class NeDbWrapper {
             if (counter < 1) {
                 // Create default admin
                 let defaultAdminUser: I_dbUser = {
-                    password: "adminSecret", roleIds: [0],
+                    password: "adminSecret",
                     id: 0,
                     name: "admin"
                 }
@@ -32,9 +33,10 @@ export default class NeDbWrapper {
         })
     }
 
-    getUsersByIds(ids: number[]): Promise<I_dbUser[]>{
+    getUserByName(username: string): Promise<I_dbUser>{
         return new Promise((resolve, reject) => {
-            this.users.query({ id: { $in: ids } }).then((result) => { resolve(result); });
+            this.users.query({ name: username })
+                .then((result) => { resolve(result); });
         })
     }
 
@@ -44,10 +46,17 @@ export default class NeDbWrapper {
                 reject("Password must be at least 8 characters long");
             if (user.name.length < 1)
                 reject("User must have a name");
-            if (user.roleIds.length < 1)
-                reject("User must have at least 1 role");
-            let userIds = this.getUsers()
-            this.users.add({ user }).then((result) => { resolve(result); });
+            this.users.count({name: user.name})
+                .then((count) => {
+                if (count > 0)
+                    reject("User name already exists");
+                else{
+                    this.users.add({ user })
+                        .then((result) => {
+                            resolve(result);
+                        });
+                }
+            })
         })
     }
 }
@@ -56,15 +65,11 @@ class CustomStore {
     datastore: Datastore;
     name: string;
     description: string;
-    readingRoleIds: number[];
-    writingRoleIds: number[];
 
-    constructor(filename: string, name: string, description: string, readingRoleIds: number[], writingRoleIds: number[]) {
+    constructor(filename: string, name: string, description: string) {
         this.datastore = new Datastore({ filename: filename, autoload: true });
         this.name = name;
         this.description = description;
-        this.readingRoleIds = readingRoleIds;
-        this.writingRoleIds = writingRoleIds;
     }
 
     async count(query: object): Promise<number> {
@@ -109,14 +114,6 @@ export interface I_dbUser {
     name: string;
     email?: string;
     password: string;
-    roleIds: number[];
-}
-
-export interface I_dbUserRole {
-    id: number;
-    name: string;
-    description: string;
-    seeAll: boolean;
 }
 
 export interface I_Document {

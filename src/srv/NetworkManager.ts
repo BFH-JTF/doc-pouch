@@ -4,19 +4,22 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import cors from 'cors';
 import ws from 'ws';
-import NeDbWrapper, {I_dbUser, I_dbUserRole} from "./NeDbWrapper.js";  // TODO Add WSS connection
+import NeDbWrapper, {I_dbUser} from "./NeDbWrapper.js";
+import winston from "winston";  // TODO Add WSS connection
 
 export default class NetworkManager{
     corsOptions: any;
     port: number;
     expressApp: express.Application | null;
     private dataManager: NeDbWrapper;
+    logger: winston.Logger
 
-    constructor(dataManager: NeDbWrapper, port = 80, corsOptions = {origin: "*", credentials: true}) {
+    constructor(logger: winston.Logger, dataManager: NeDbWrapper, port = 3300, corsOptions = {origin: "*", credentials: true}) {
         this.corsOptions = corsOptions;
         this.port = port;
         this.expressApp = null;
         this.dataManager = dataManager;
+        this.logger = logger;
         this.initialize();
     }
 
@@ -36,7 +39,7 @@ export default class NetworkManager{
                 });
             });
 
-            // TODO notification on updates, keep-alive
+            //TODO notification on updates, keep-alive
         }
 
         let myDirname = dirname(fileURLToPath(import.meta.url));
@@ -64,13 +67,17 @@ export default class NetworkManager{
         });
 
         this.expressApp.post("/users/create", (req, res) => {
-            this.dataManager.createUser(req.body).then((result) => {
-
+            this.dataManager.createUser(req.body)
+                .then((result) => {
+                    this.logger.info("New user created:", user);
+                    res.status(200).json(result);
+                })
+                .catch((error) => {res.status(500).json({ error: error.message }); });
             })
-        })
 
-      /*  this.expressApp.get("/auth/:loginType/:userName/:credentials", (req:express.Request, res:express.Response) => {
-            const selectUserCredentials = db.prepare('SELECT id, loginType, credentials FROM users WHERE users.name = ?');
+        this.expressApp.get("/auth/:userName/:password", (req:express.Request, res:express.Response) => {
+            const selectUserCredentials = this.dataManager.u
+                db.prepare('SELECT id, loginType, credentials FROM users WHERE users.name = ?');
             let userInfo = <IUserInfo> selectUserCredentials.get(String(req.params.userName));
             switch (req.params.loginType){
                 case "local":
@@ -86,10 +93,10 @@ export default class NetworkManager{
                         res.sendStatus(403)
                     break;
             }
-        })*/
+        })
 
         this.expressApp.listen(this.port, () => {
-            console.log(`Server is running on http://localhost:${this.port}`);
+            this.logger.log("info", "Server is running on http://localhost:" + this.port);
         });
     }
 }
