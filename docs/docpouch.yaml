@@ -1,0 +1,547 @@
+openapi: 3.0.1
+info:
+  title: DocPouch
+  description: A light-weight, document-based database including user-management. DocPouch is meant for tests, development or internal applications, where security is not a major factor. The database is file and text based and therefore also not layed out for high performance. Instead the main focus of DocPouch is simplicity and a small footprint.
+  version: 1.0.0
+servers:
+  - url: 'https://docpouch.example.com/api/v1'
+    description: 'Main API server'
+tags:
+  - name: administration
+    description: User management endpoints
+  - name: documents
+    description: Document management endpoints
+  - name: data structures
+    description: Data structure management endpoints
+paths:
+  /users/login:
+    post:
+      summary: Authenticate a user
+      tags:
+        - administration
+      requestBody:
+        description: "User credentials for authentication"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserLogin"
+      responses:
+        200:
+          description: "User has been successfully logged in and the new JSON web token is provided"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: "JWT authentication token"
+                required:
+                  - token
+        401:
+          description: "Invalid credentials"
+        404:
+          description: "User not found"
+
+  /users/list:
+    get:
+      summary: List user information
+      description: Get all user information as admin or your user information as user
+      tags:
+        - administration
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: List of all users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserDisplay"
+        401:
+          description: "User does not have access to full user list"
+
+  /users/update/{userID}:
+    patch:
+      summary: Update user
+      description: Update any user (as admin) or your own user applying the provided attributes
+      tags:
+        - administration
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          description: "Unique user ID"
+          name: userID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: "Data object containing only the attributes to be updated"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        200:
+          description: "User has been successfully updated"
+        401:
+          description: "Not authorized to update this user"
+        404:
+          description: "User not found"
+
+  /users/create:
+    post:
+      summary: Create a new user
+      tags:
+        - administration
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: "JSON body with all information to create a new user"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreation"
+      responses:
+        200:
+          description: "User account has been successfully created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDisplay"
+        401:
+          description: "User is unauthorized to create new users"
+
+  /users/remove/{userID}:
+    delete:
+      summary: Remove a user and all its documents
+      tags:
+        - administration
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          description: "Unique user ID"
+          name: userID
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: "User successfully deleted"
+        401:
+          description: "Not authorized to delete this user"
+        404:
+          description: "User not found"
+
+  /docs/create:
+    post:
+      summary: Create a new document
+      tags:
+        - documents
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: "JSON body with all the information to create a new document"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewDocument"
+      responses:
+        200:
+          description: "Document has been successfully created. The new id of the document can be read from the response."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        401:
+          description: "User is unauthorized to create new documents"
+
+  /docs/list:
+    get:
+      summary: List documents
+      description: "List all documents owned by the user but omit their content. For administrators, all document are listed."
+      tags:
+        - documents
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Array of documents with the content attribute omitted"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Document"
+        401:
+          description: "Not authorized to list documents"
+
+  /docs/fetch/{documentID}:
+    get:
+      summary: "Get a document by document id"
+      parameters:
+        - in: path
+          description: "Unique ID of document"
+          name: documentID
+          required: true
+          schema:
+            type: string
+          example: "3ufDC0Rh5g7arSC9"
+      tags:
+        - documents
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Document identified by document id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        401:
+          description: "User does not have access to this document"
+        404:
+          description: "Document with this ID could not be found"
+
+  /docs/update/{documentID}:
+    patch:
+      summary: Update a document by applying the provided attributes
+      tags:
+        - documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          description: "Unique document ID"
+          name: documentID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: "Data object containing only the attributes to be updated"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Document"
+      responses:
+        200:
+          description: "Document has been successfully updated"
+        401:
+          description: "Not authorized to update this document"
+        404:
+          description: "Document not found"
+
+  /docs/remove/{documentID}:
+    delete:
+      summary: Remove a document
+      tags:
+        - documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          description: "Unique document ID"
+          name: documentID
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: "Document successfully deleted"
+        401:
+          description: "Not authorized to delete this document"
+        404:
+          description: "Document not found"
+
+  /structures/create:
+    post:
+      summary: Create a new data structure
+      tags:
+        - data structures
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: "JSON body with all the information to create a new data structure"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataStructure"
+      responses:
+        200:
+          description: "Structure has been successfully created. The new id of the structure can be read from the response."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataStructure"
+        401:
+          description: "User is unauthorized to create new data structures"
+
+  /structures/list:
+    get:
+      summary: Get all data structures
+      description: "Fetch all data structures"
+      tags:
+        - data structures
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Array of data structures"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DataStructure"
+        401:
+          description: "Not authorized to list data structures"
+
+  /structures/update/{structureID}:
+    patch:
+      summary: Update the selected data structure applying the provided attributes
+      tags:
+        - data structures
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          description: "Unique structure ID"
+          name: structureID
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        description: "Data object containing only the attributes to be updated"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataStructure"
+      responses:
+        200:
+          description: "Structure has been successfully updated"
+        401:
+          description: "Not authorized to update this structure"
+        404:
+          description: "Structure not found"
+
+  /structures/remove/{structureID}:
+    delete:
+      summary: Remove a data structure
+      tags:
+        - data structures
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          description: "Unique structure ID"
+          name: structureID
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: "Structure successfully deleted"
+        401:
+          description: "Not authorized to delete this structure"
+        404:
+          description: "Structure not found"
+
+components:
+  schemas:
+    Document:
+      type: object
+      description: "Data element describing a custom document"
+      properties:
+        documentID:
+          type: string
+          description: "Unique ID of document. Only used for queries and deletions"
+          example: "3ufDC0Rh5g7arSC9"
+        type:
+          type: integer
+          description: "Type of document - can be used by user for document organization"
+          example: 17
+        subType:
+          type: integer
+          description: "Sub-type of document - can be used by user for document organization"
+          example: 11
+        title:
+          type: string
+          description: "The title of the document"
+          example: "Mission Statement"
+        content:
+          type: string
+          description: "The content of the document in a string. If you want to store binary data it needs to be Base64 encoded."
+          example: "{\"msg\": \"We strive for a world that ... \"}"
+      required:
+        - documentID
+        - title
+        - type
+        - subType
+        - content
+
+    NewDocument:
+      type: object
+      description: "Data element for creating a new document"
+      properties:
+        type:
+          type: integer
+          description: "Type of document - can be used by user for document organization"
+          example: 17
+        subtype:
+          type: integer
+          description: "Sub-type of document - can be used by user for document organization"
+          example: 11
+        title:
+          type: string
+          description: "The title of the document"
+          example: "Mission Statement"
+        content:
+          type: string
+          description: "The content of the document in a string. If you want to store binary data it needs to be Base64 encoded."
+          example: "{\"msg\": \"We strive for a world that ... \"}"
+      required:
+        - title
+        - content
+        - type
+        - subtype
+
+    UserDisplay:
+      type: object
+      description: "Data element describing the user-facing side of a user account"
+      properties:
+        _id:
+          type: integer
+          description: "A unique not-changable user ID"
+          example: 2
+        name:
+          type: string
+          description: "User names can be changed at any time and are not necessarily unique. Users are uniquely identified based on their id."
+          example: "Darth Vader"
+        email:
+          type: string
+          description: "User email address"
+          example: "darth@gmail.com"
+      required:
+        - id
+        - name
+
+    UserCreation:
+      type: object
+      description: "Data element needed to trigger user creation"
+      properties:
+        name:
+          type: string
+          example: "Darth Vader"
+          description: "User names can be changed at any time and are not necessarily unique. Users are uniquely identified based on their id."
+        password:
+          type: string
+          example: "darths-secret"
+          description: "Password is used as main authentication element"
+        email:
+          type: string
+          example: "darth@gmail.com"
+          description: "User email address"
+        isAdmin:
+          type: boolean
+          example: false
+          description: "Flag indicating if the user has administrator privileges"
+      required:
+        - name
+        - password
+        - isAdmin
+
+    UserUpdate:
+      type: object
+      description: "Data element needed to trigger a user update"
+      properties:
+        name:
+          type: string
+          example: "Darth Vader"
+          description: "User names can be changed at any time and are not necessarily unique. Users are uniquely identified based on their id."
+        password:
+          type: string
+          example: "darths-secret"
+          description: "Password is used as main authentication element"
+        email:
+          type: string
+          example: "darth@gmail.com"
+          description: "User email address"
+        isAdmin:
+          type: boolean
+          example: false
+          description: "Flag indicating if the user has administrator privileges"
+
+    UserLogin:
+      type: object
+      description: "Data element needed for user authentication"
+      properties:
+        name:
+          type: string
+          example: "Darth Vader"
+          description: "User name for authentication"
+        password:
+          type: string
+          example: "darths-secret"
+          description: "Password is used as main authentication element"
+      required:
+        - name
+        - password
+
+    DataStructure:
+      type: object
+      description: "Data element describing a data structure"
+      properties:
+        _id:
+          type: integer
+          description: "Unique ID of data structure, is used as type for documents"
+          example: 18
+        title:
+          type: string
+          description: "The title of the structure"
+          example: "Data resulting from Vision-Mission-Value-Canvas"
+        fields:
+          type: array
+          description: "Array of fields defining the structure"
+          items:
+            $ref: "#/components/schemas/DataField"
+      required:
+        - structureTitle
+        - structureFields
+
+    DataField:
+      type: object
+      description: "Structure element describing one field in a data structure"
+      properties:
+        name:
+          type: string
+          description: "Field name"
+          example: "Mission value statement"
+        type:
+          type: string
+          description: "Determines the type of the data field"
+          enum: ["number", "string", "boolean", "array", "structure"]
+          example: "boolean"
+        reference:
+          type: string
+          description: "Reference to other existing data structures"
+          example: "tt5vo04DN3jm8Bqe"
+      required:
+        - name
+        - type
+  
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

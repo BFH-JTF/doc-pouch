@@ -5,23 +5,31 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build:frontend": "vite build",
+    "build:backend": "tsc -p tsconfig.backend.json",
+    "build": "npm run build:backend && npm run build:frontend",
     "run": "node ./dist/srv/main.js",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@types/nedb": "^1.8.16",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "express-ws": "^5.0.2",
+    "jsonwebtoken": "^9.0.2",
     "nedb": "^1.8.0",
     "vue": "^3.5.13",
-    "yup": "^1.6.1"
+    "vuetify": "^3.8.2",
+    "winston": "^3.17.0",
+    "yup": "^1.6.1",
+    "@mdi/font": "^7.4.47"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "@types/nedb": "^1.8.16",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/express-ws": "^3.0.5",
+    "@types/jsonwebtoken": "^9.0.9",
     "@vitejs/plugin-vue": "^5.2.2",
     "@vue/tsconfig": "^0.7.0",
     "typescript": "~5.7.2",
