@@ -9,6 +9,7 @@ import UserDisplay from "./components/UserDisplay.vue";
 import StructurePad from "./components/StructurePad.vue";
 import DocumentPad from "./components/DocumentPad.vue";
 import StructureDisplay from "./components/StructureDisplay.vue";
+import docPouchLogo from './assets/docPouch.png';
 
 enum DisplayComponent {
   documentViewer,
@@ -255,6 +256,14 @@ function handleApiError(error: unknown, context: string = "API operation") {
   <v-app>
     <v-main>
       <v-app-bar color="primary" dark>
+        <v-img
+            :src="docPouchLogo"
+            max-height="40"
+            max-width="40"
+            contain
+            class="mr-2 ml-3"
+        ></v-img>
+
         <v-app-bar-title>DocPouch Administration</v-app-bar-title>
         <v-spacer></v-spacer>
 
