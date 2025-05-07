@@ -1,15 +1,14 @@
-FROM node:20-alpine as build
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Copy package files and install dependencies
 COPY package*.json ./
+COPY tsconfig*.json ./
+COPY vite.config.ts ./
 RUN npm ci
 
-# Copy project files
-COPY src/srv .
+COPY src ./src
 
-# Build the application
 RUN npm run build
 
 # Production stage
@@ -21,11 +20,8 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/package*.json ./
 
-# Install production dependencies only
 RUN npm ci --omit=dev
 
-# Expose port
 EXPOSE 80
 
-# Start the application
 CMD ["node", "dist/srv/main.js"]
