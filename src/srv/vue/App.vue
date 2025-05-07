@@ -271,10 +271,13 @@ function handleApiError(error: unknown, context: string = "API operation") {
           <v-icon start>mdi-logout</v-icon>Logout
         </v-btn>
       </v-app-bar>
-      <v-container class="fill-height">
-        <v-row>
+      <v-alert v-if="isLoggedIn" type="info" variant="tonal" closable class="ma-4">
+        <strong>Welcome to DocPouch Administration</strong> — an open-source document management system that allows you to organize, edit, and share structured data. This panel lets you manage users, data structures, and documents.
+      </v-alert>
+
+      <v-container class="h-100 px-4">
+        <v-row class="mx-0">
           <v-col cols="4">
-            <!-- Replace the three individual rows with expansion panels -->
             <v-expansion-panels v-model="expandedPanel">
               <v-expansion-panel value="users">
                 <v-expansion-panel-title>
@@ -346,13 +349,27 @@ function handleApiError(error: unknown, context: string = "API operation") {
           </v-col>
         </v-row>
       </v-container>
-
-      <!-- Login Dialog -->
+      <v-footer app class="bg-grey-lighten-3 px-4">
+        <div class="text-center w-100">
+          <div class="text-caption text-grey">
+            DocPouch is provided under the MIT License. This software is provided "as is", without warranty of any kind.
+            <v-btn 
+              variant="text" 
+              density="compact" 
+              color="primary" 
+              href="https://opensource.org/licenses/MIT" 
+              target="_blank"
+            >
+              View License
+            </v-btn>
+          </div>
+        </div>
+      </v-footer>
       <LoginDialog
-        v-model:show="showLoginDialog"
-        :api-client="apiClient"
-        @login-success="handleLoginSuccess"
-        @update:show="handleDialogUpdate"
+          v-model:show="showLoginDialog"
+          :api-client="apiClient"
+          @login-success="handleLoginSuccess"
+          @update:show="handleDialogUpdate"
       />
     </v-main>
   </v-app>

@@ -59,6 +59,10 @@ const selectDocument = (documentID: string | undefined) => {
 
 <template>
   <div class="d-flex flex-column">
+    <v-card-text class="text-caption bg-blue-lighten-5 rounded mb-3">
+      Documents contain structured data that can follow predefined templates. Select a document to view or edit its contents.
+    </v-card-text>
+
     <div class="document-list-wrapper">
       <v-list class="document-list bg-grey-lighten-4" density="compact">
         <v-list-item
@@ -98,7 +102,7 @@ const selectDocument = (documentID: string | undefined) => {
     <v-card>
       <v-card-title class="text-h5">Confirm Deletion</v-card-title>
       <v-card-text>
-        Are you sure you want to delete this document? This action cannot be undone.
+        Deleting a document permanently removes all its content and cannot be undone. Associated data will be lost.
       </v-card-text>
       <v-card-actions>
         <v-spacer></v-spacer>

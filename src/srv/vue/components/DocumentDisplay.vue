@@ -220,11 +220,20 @@ const getValueAtPath = (obj: any, path: string[]): any => {
     </v-card-title>
 
     <v-card-text>
-      <!-- Replace the debug info with document metadata -->
-      <v-sheet 
+      <v-sheet
         class="mb-4 pa-3 rounded bg-grey-lighten-4"
         v-if="props.object"
       >
+        <div class="d-flex justify-space-between align-center mb-2">
+          <span class="text-body-2">Document Metadata</span>
+          <v-tooltip location="top">
+            <template v-slot:activator="{ props }">
+              <v-icon v-bind="props" icon="mdi-help-circle-outline" size="small"></v-icon>
+            </template>
+            Click the pencil icon to edit fields. Press Enter to save or Esc to cancel changes.
+          </v-tooltip>
+        </div>
+
         <div class="d-flex flex-column">
           <div class="d-flex align-center mb-2">
             <span class="font-weight-medium mr-2">Title:</span>
