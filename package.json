@@ -1,5 +1,5 @@
 {
-  "name": "toolchain-api",
+  "name": "docpouch",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -18,7 +18,7 @@
     "jsonwebtoken": "^9.0.2",
     "nedb": "^1.8.0",
     "vue": "^3.5.13",
-    "vuetify": "^3.8.2",
+    "vuetify": "^3.8.4",
     "winston": "^3.17.0",
     "yup": "^1.6.1",
     "@mdi/font": "^7.4.47"
@@ -26,14 +26,14 @@
   "devDependencies": {
     "@types/ws": "^8.18.1",
     "@types/nedb": "^1.8.16",
-    "@types/cors": "^2.8.17",
+    "@types/cors": "^2.8.18",
     "@types/express": "^5.0.1",
     "@types/express-ws": "^3.0.5",
     "@types/jsonwebtoken": "^9.0.9",
-    "@vitejs/plugin-vue": "^5.2.2",
+    "@vitejs/plugin-vue": "^5.2.4",
     "@vue/tsconfig": "^0.7.0",
-    "typescript": "~5.7.2",
-    "vite": "^6.3.1",
-    "vue-tsc": "^2.2.8"
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5",
+    "vue-tsc": "^2.2.10"
   }
 }
