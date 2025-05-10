@@ -2,7 +2,7 @@
 import UserPad from "./components/UserPad.vue";
 import DocumentDisplay from "./components/DocumentDisplay.vue";
 import LoginDialog from "./components/LoginDialog.vue";
-import {ref, onMounted, computed, watch} from "vue";
+import {ref, onMounted, computed} from "vue";
 import DbPouchClient from "./DbPouchClient.ts";
 import type { I_DocumentEntry, I_UserEntry, I_DataStructure, I_LoginResponse } from "./types.js";
 import UserDisplay from "./components/UserDisplay.vue";
@@ -22,11 +22,11 @@ const userArray = ref(<I_UserEntry[]>[]);
 const docArray = ref(<I_DocumentEntry[]>[]);
 const structureArray = ref(<I_DataStructure[]>[]);
 let shownComponent = ref(DisplayComponent.documentViewer);
-const apiClient = new DbPouchClient("http://localhost");
+const apiClient = new DbPouchClient(window.location.href.slice(0, window.location.href.lastIndexOf('/')));
 const isLoggedIn = computed(() => authToken.value !== null);
 const isAdmin = ref(false);
 const showLoginDialog = ref(true)
-
+console.log(window.location.href.slice(0, window.location.href.lastIndexOf('/')));
 let loadedDocument = ref<I_DocumentEntry | undefined>(undefined);
 let loadedUser = ref<I_UserEntry | undefined>(undefined);
 let loadedStructure = ref<I_DataStructure | undefined>(undefined);
