@@ -63,6 +63,10 @@ const selectStructure = (structureID: string | undefined) => {
 
 <template>
   <div class="d-flex flex-column">
+    <v-card-text class="text-caption bg-blue-lighten-5 rounded mb-3">
+      Data structures define templates for documents. Each structure contains fields with specific types that determine what kind of data can be stored. Only administrators can modify structures.
+    </v-card-text>
+
     <div class="structure-list-wrapper">
       <v-list class="structure-list bg-grey-lighten-4" density="compact">
         <v-list-item
@@ -73,6 +77,10 @@ const selectStructure = (structureID: string | undefined) => {
           @click="selectStructure(structure.id)"
           class="structure-list-item"
         ></v-list-item>
+        <v-list-item v-if="structures.length === 0" class="text-center pa-3 text-disabled">
+          <v-icon icon="mdi-information-outline" class="mb-2"></v-icon>
+          <div>No data structures defined. An administrator must create structures before documents can be added.</div>
+        </v-list-item>
       </v-list>
     </div>
 
@@ -102,7 +110,10 @@ const selectStructure = (structureID: string | undefined) => {
     <v-card>
       <v-card-title class="text-h5">Confirm Deletion</v-card-title>
       <v-card-text>
-        Are you sure you want to delete this structure? This action cannot be undone.
+        <v-alert type="warning" variant="tonal" density="compact" class="mb-3">
+          Warning: Deleting a data structure may impact documents that use this structure. This action cannot be undone.
+        </v-alert>
+        Are you sure you want to delete this structure?
       </v-card-text>
       <v-card-actions>
         <v-spacer></v-spacer>

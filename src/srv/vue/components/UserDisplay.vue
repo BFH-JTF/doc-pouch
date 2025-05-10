@@ -52,12 +52,20 @@
 
           <!-- isAdmin field -->
           <v-col cols="12">
-            <v-switch
-              label="Administrator"
-              v-model="isAdmin"
-              color="primary"
-              @update:model-value="updateIsAdmin"
-            ></v-switch>
+            <div class="d-flex align-center">
+              <v-switch
+                label="Administrator"
+                v-model="isAdmin"
+                color="primary"
+                @update:model-value="updateIsAdmin"
+              ></v-switch>
+              <v-tooltip location="top">
+                <template v-slot:activator="{ props }">
+                  <v-icon v-bind="props" icon="mdi-information-outline" size="small" class="ml-2"></v-icon>
+                </template>
+                Administrators can manage all users, documents and data structures. Regular users can only manage their own documents.
+              </v-tooltip>
+            </div>
           </v-col>
         </v-row>
       </v-container>
@@ -68,6 +76,14 @@
       <v-card>
         <v-card-title>Change Password</v-card-title>
         <v-card-text>
+          <v-alert
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+          >
+            Password must contain at least 8 characters, one uppercase letter, and one number.
+          </v-alert>
           <v-form ref="passwordForm" @submit.prevent="submitPasswordChange" v-model="validForm">
             <v-text-field
               v-model="newPassword"
