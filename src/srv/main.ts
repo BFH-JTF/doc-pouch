@@ -1,11 +1,17 @@
 import NetworkManager from "./NetworkManager.js";
 import NeDbWrapper from "./NeDbWrapper.js";
 import winston from "winston";
+import fs from "fs";
 
 const PORT = 80;
 const corsOptions = {
     origin: "*",
     credentials: true
+}
+
+const dbPath = "./log"
+if (!fs.existsSync(dbPath)) {
+    fs.mkdirSync(dbPath);
 }
 
 let winstonLogger = winston.createLogger({
@@ -20,12 +26,12 @@ let winstonLogger = winston.createLogger({
     transports: [
         new winston.transports.Console(),
         new winston.transports.File({
-            filename: 'error.log',
+            filename: './log/error.log',
             level: 'error',
         }),
         // General log file transport
         new winston.transports.File({ 
-            filename: 'general.log',
+            filename: './log/general.log',
         }),
     ],
 });
