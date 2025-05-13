@@ -1,0 +1,173 @@
+// @base-url = https://docpouch.pantek.app
+@base-url = http://localhost:3030
+
+### Admin Login
+POST {{base-url}}/users/login/
+Content-Type: application/json
+
+{
+  "name": "admin",
+  "password": "adminSecret"
+}
+> {% client.global.set("auth_token", response.body.token); %}
+
+### Create value target structure
+POST {{base-url}}/structures/create
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Corporate Value Target",
+  "fields": [
+    {
+      "name": "Norm Target Name",
+      "type": "string"
+    },
+    {
+      "name": "Norm Target Description",
+      "type": "string"
+    },
+    {
+      "name": "Norm Target Assessor",
+      "type": "string"
+    },
+    {
+      "name": "Smart Norm Target",
+      "type": "string"
+    }
+  ]
+}
+> {% client.global.set("targetStructureID", response.body._id); %}
+
+### Create value norm structure
+POST {{base-url}}/structures/create
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Corporate Value Norm",
+  "fields": [
+    {
+      "name": "title",
+      "type": "string"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    },
+    {
+      "name": "targets",
+      "type": "array",
+      "reference": "{{targetStructureID}}"
+    }
+  ]
+}
+> {% client.global.set("normStructureID", response.body._id); %}
+
+
+### Create value activity structure
+POST {{base-url}}/structures/create
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Corporate Value Activity",
+  "fields": [
+    {
+      "name": "Activity Title",
+      "type": "string"
+    },
+    {
+      "name": "Activity Description",
+      "type": "string"
+    },
+    {
+      "name": "Activity Responsible",
+      "type": "string"
+    },
+    {
+      "name": "norms",
+      "type": "array",
+      "reference": "{{normStructureID}}"
+    }
+  ]
+}
+> {% client.global.set("activityStructureID", response.body._id); %}
+
+### Create value goal structure
+POST {{base-url}}/structures/create
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Corporate Value Goal",
+  "fields": [
+    {
+      "name": "Goal Title",
+      "type": "string"
+    },
+    {
+      "name": "Goal Description",
+      "type": "string"
+    },
+    {
+      "name": "Goal Responsible",
+      "type": "string"
+    },
+    {
+      "name": "activities",
+      "type": "array",
+      "reference": "{{activityStructureID}}"
+    }
+  ]
+}
+> {% client.global.set("goalStructureID", response.body._id); %}
+
+### Create value issue structure
+POST {{base-url}}/structures/create
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Corporate Value Issue",
+  "fields": [
+    {
+      "name": "Issue Title",
+      "type": "string"
+    },
+    {
+      "name": "Issue Description",
+      "type": "string"
+    },
+    {
+      "name": "goals",
+      "type": "array",
+      "reference": "{{goalStructureID}}"
+    }
+  ]
+}
+> {% client.global.set("issueStructureID", response.body._id); %}
+
+### Create value structure
+POST {{base-url}}/structures/create
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "name": "Corporate Value",
+  "fields": [
+    {
+      "name": "Value Title",
+      "type": "string"
+    },
+    {
+      "name": "Value Description",
+      "type": "string"
+    },
+    {
+      "name": "issues",
+      "type": "array",
+      "reference": "{{issueStructureID}}"
+    }
+  ]
+}

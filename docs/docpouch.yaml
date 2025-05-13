@@ -184,17 +184,18 @@ paths:
         401:
           description: "Not authorized to list documents"
 
-  /docs/fetch/{documentID}:
-    get:
-      summary: "Get a document by document id"
-      parameters:
-        - in: path
-          description: "Unique ID of document"
-          name: documentID
-          required: true
-          schema:
-            type: string
-          example: "3ufDC0Rh5g7arSC9"
+  /docs/fetch:
+    post:
+      summary: "Get a document based on a query object."
+      description: "Users can only fetch their own documents, while administrator can fetch any document on the server. Omit keys not used in the query."
+      requestBody:
+        required: true
+        description: "An object describing the query to fetch the documents."
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentQuery"
+
       tags:
         - documents
       security:
@@ -275,7 +276,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/DataStructure"
+              $ref: "#/components/schemas/DataStructureCreation"
       responses:
         200:
           description: "Structure has been successfully created. The new id of the structure can be read from the response."
@@ -363,7 +364,7 @@ components:
       type: object
       description: "Data element describing a custom document"
       properties:
-        documentID:
+        _id:
           type: string
           description: "Unique ID of document. Only used for queries and deletions"
           example: "3ufDC0Rh5g7arSC9"
@@ -384,11 +385,32 @@ components:
           description: "The content of the document in a string. If you want to store binary data it needs to be Base64 encoded."
           example: "{\"msg\": \"We strive for a world that ... \"}"
       required:
-        - documentID
+        - _id
         - title
         - type
         - subType
         - content
+
+    DocumentQuery:
+      type: object
+      description: "Query element describing the aspects of a document query"
+      properties:
+        _id:
+          type: string
+          description: "Unique ID of document. Only used for queries and deletions"
+          example: "3ufDC0Rh5g7arSC9"
+        type:
+          type: integer
+          description: "Type of document - can be used by user for document organization"
+          example: 17
+        subType:
+          type: integer
+          description: "Sub-type of document - can be used by user for document organization"
+          example: 11
+        title:
+          type: string
+          description: "The title of the document"
+          example: "Mission Statement"
 
     NewDocument:
       type: object
@@ -516,8 +538,26 @@ components:
           items:
             $ref: "#/components/schemas/DataField"
       required:
-        - structureTitle
-        - structureFields
+        - title
+        - fields
+        - _id
+
+    DataStructureCreation:
+      type: object
+      description: "Data element describing a data structure"
+      properties:
+        title:
+          type: string
+          description: "The title of the structure"
+          example: "Data resulting from Vision-Mission-Value-Canvas"
+        fields:
+          type: array
+          description: "Array of fields defining the structure"
+          items:
+            $ref: "#/components/schemas/DataField"
+      required:
+        - title
+        - fields
 
     DataField:
       type: object

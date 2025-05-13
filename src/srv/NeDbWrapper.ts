@@ -260,7 +260,7 @@ export default class NeDbWrapper {
     getStructureByID(structureID: number): Promise<I_StructureEntry> {
         return new Promise((resolve, reject) => {
             // Structures are visible to anyone
-            this.structures.query({id: structureID}).then((result) => {
+            this.structures.query({_id: structureID}).then((result) => {
                 if (result.length > 0) {
                     resolve(result[0] as I_StructureEntry);
                 } else {
@@ -270,7 +270,7 @@ export default class NeDbWrapper {
         });
     }
 
-    createStructure(structure: I_StructureEntry, requestingUserID: string): Promise<I_StructureEntry> {
+    createStructure(structure: I_StructureCreation, requestingUserID: string): Promise<I_StructureEntry> {
         return new Promise((resolve, reject) => {
             this.isAdmin(requestingUserID).then((isAdmin) => {
                 if (!isAdmin) {

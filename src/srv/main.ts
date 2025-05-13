@@ -3,7 +3,7 @@ import NeDbWrapper from "./NeDbWrapper.js";
 import winston from "winston";
 import fs from "fs";
 
-const PORT = 80;
+const PORT = 3030;
 const corsOptions = {
     origin: "*",
     credentials: true
@@ -37,4 +37,4 @@ let winstonLogger = winston.createLogger({
 });
 
 const dataManager = new NeDbWrapper(winstonLogger);
-const networkManager = new NetworkManager(winstonLogger, dataManager, PORT, corsOptions);
+new NetworkManager(winstonLogger, dataManager, PORT, corsOptions);

@@ -27,7 +27,7 @@ Content-Type: application/json
   "isAdmin": false
 }
 
-### Create test documents
+### Create value norm structure
 POST http://localhost/users/create
 Content-Type: application/json
 

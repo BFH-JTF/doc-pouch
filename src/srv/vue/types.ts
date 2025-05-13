@@ -63,6 +63,7 @@ export interface I_DataStructure {
 
 export interface I_StructureEntry {
     _id?: string;
+    userid?: string;
     name: string;
     description: string;
     reference?: any;

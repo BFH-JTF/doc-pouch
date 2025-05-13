@@ -9,6 +9,7 @@ export default class SchemaValidator {
     documentUpdateSchema: ObjectSchema<object>;
     structureCreationSchema: ObjectSchema<object>;
     structureUpdateSchema: ObjectSchema<object>;
+    documentFetchSchema: ObjectSchema<object>;
     private logger: winston.Logger;
 
     constructor(logger: winston.Logger) {
@@ -51,10 +52,7 @@ export default class SchemaValidator {
 
         this.structureCreationSchema = object({
             name: string().required(),
-            description: string().required(),
-            type: number().required(),
-            subType: number().required(),
-            fields: array().optional(),
+            fields: array().required(),
         });
 
         this.structureUpdateSchema = object({
@@ -64,6 +62,13 @@ export default class SchemaValidator {
             subType: number().optional(),
             fields: array().optional(),
         });
+
+        this.documentFetchSchema = object({
+            _id: number().optional(),
+            title: string().optional(),
+            type: number().optional(),
+            subType: number().optional(),
+        })
 
         this.logger.debug('SchemaValidator initialized with schemas');
     }
@@ -86,6 +91,9 @@ validate(template: string, userInput: object): boolean {
                 break;
             case "documentUpdate":
                 res = this.documentUpdateSchema.validateSync(userInput, { abortEarly: false, stripUnknown: true });
+                break;
+            case "documentFetch":
+                res = this.documentFetchSchema.validateSync(userInput, { abortEarly: false, stripUnknown: true });
                 break;
             case "structureCreation":
                 res = this.structureCreationSchema.validateSync(userInput, { abortEarly: false, stripUnknown: true });

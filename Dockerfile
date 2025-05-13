@@ -22,6 +22,6 @@ COPY --from=build /app/package*.json ./
 
 RUN npm ci --omit=dev
 
-EXPOSE 80
+EXPOSE 3030
 
 CMD ["node", "dist/srv/main.js"]

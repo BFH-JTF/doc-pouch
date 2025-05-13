@@ -93,8 +93,8 @@ Documents using a document structure have to structure their content like this:
 ```
 {
   "content": {
-    structureID: [ID of used document structure],
-    structuredData: [object structured as dictated by document structure]
+    "structureID": [ID of used document structure],
+    "structuredData": [object structured as dictated by document structure]
   }
 }
 ```

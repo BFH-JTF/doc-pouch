@@ -84,7 +84,7 @@ export default class NetworkManager{
 
         this.expressApp.get('/users/list', this.authenticateJWT.bind(this), (req, res) => {
             // Use the new getUsers method with access control
-            this.dataManager.getUsers(req.body.id)
+            this.dataManager.getUsers(req.body.userid)
                 .then((users: I_UserEntry[]) => {
                     res.status(200).json(users);
                 }).catch((error) => {
@@ -95,7 +95,7 @@ export default class NetworkManager{
         this.expressApp.post("/users/create", this.authenticateJWT.bind(this), (req, res) => {
             if (this.validator.validate("userCreation", req.body))
             {
-                this.dataManager.isAdmin(req.body.id).then((isAdmin) => {
+                this.dataManager.isAdmin(req.body.userid).then((isAdmin) => {
                     if (isAdmin) {
                         this.dataManager.createUser(req.body)
                             .then((newUser) => {
@@ -141,15 +141,15 @@ export default class NetworkManager{
             if (this.validator.validate("userUpdate", req.body)) {
                 const userID = req.params.userID;
                 const checkPermission = async () => {
-                    if (req.body.id === userID && !("isAdmin" in req.body)) {
+                    if (req.body.userid === userID && !("isAdmin" in req.body)) {
                         return true; // User can update their own profile
                     }
 
                     // User is trying to update someone else's profile, need admin rights
-                    return await this.dataManager.isAdmin(req.body.id);
+                    return await this.dataManager.isAdmin(req.body.userid);
                 };
                 checkPermission().then((isAuthorized: boolean) => {
-                    if (req.body.id !== userID) {
+                    if (req.body.userid !== userID) {
                         if (!isAuthorized)
                             return res.status(401).json({error: "Not authorized to update this user"});
                     }
@@ -183,7 +183,7 @@ export default class NetworkManager{
         });
 
         this.expressApp.delete("/users/remove/:userID", this.authenticateJWT.bind(this), (req, res) => {
-            this.dataManager.isAdmin(req.body.id).then((isAdmin:boolean) => {
+            this.dataManager.isAdmin(req.body.userid).then((isAdmin:boolean) => {
                 if (!isAdmin)
                     return res.status(401).json({ error: "Not authorized to remove this user" });
                 else {
@@ -198,7 +198,7 @@ export default class NetworkManager{
 
         // Document endpoints with access control
         this.expressApp.get("/docs/list", this.authenticateJWT.bind(this), (req, res) => {
-            this.dataManager.getDocuments(req.body.id)
+            this.dataManager.getDocuments(req.body.userid)
                 .then((documents) => {
                     res.status(200).json(documents);
                 })
@@ -207,8 +207,11 @@ export default class NetworkManager{
                 });
         });
 
-        this.expressApp.get("/docs/fetch/:documentID", this.authenticateJWT.bind(this), (req, res) => {
-            this.dataManager.getDocumentByID(req.params.documentID, req.body.id)
+        this.expressApp.post("/docs/fetch/:documentID", this.authenticateJWT.bind(this), (req, res) => {
+            let queryObject = req.body;
+            this.validator.validate("documentFetch", queryObject);
+
+            this.dataManager.getDocumentByID(req.params.documentID, req.body.userid)
                 .then((document) => {
                     res.status(200).json(document);
                 })
@@ -225,7 +228,7 @@ export default class NetworkManager{
 
         this.expressApp.post("/docs/create", this.authenticateJWT.bind(this), (req, res) => {
             if (this.validator.validate("documentCreation", req.body)) {
-                this.dataManager.createDocument(req.body, req.body.id)
+                this.dataManager.createDocument(req.body, req.body.userid)
                     .then((document) => {
                         res.status(200).json(document);
                     })
@@ -239,7 +242,7 @@ export default class NetworkManager{
 
         this.expressApp.patch("/docs/update/:documentID", this.authenticateJWT.bind(this), (req, res) => {
             if (this.validator.validate("documentUpdate", req.body)) {
-                this.dataManager.updateDocument(req.params.documentID, req.body, req.body.id)
+                this.dataManager.updateDocument(req.params.documentID, req.body, req.body.userid)
                     .then((numUpdated) => {
                         if (numUpdated > 0) {
                             res.status(200).json({message: "Document updated successfully"});
@@ -260,7 +263,7 @@ export default class NetworkManager{
         });
 
         this.expressApp.delete("/docs/remove/:documentID", this.authenticateJWT.bind(this), (req, res) => {
-            this.dataManager.removeDocument(req.params.documentID, req.body.id)
+            this.dataManager.removeDocument(req.params.documentID, req.body.userid)
                 .then((numRemoved) => {
                     if (numRemoved > 0) {
                         res.status(200).json({message: "Document removed successfully"});
@@ -290,8 +293,9 @@ export default class NetworkManager{
 
         this.expressApp.post("/structures/create", this.authenticateJWT.bind(this), (req, res) => {
             if (this.validator.validate("structureCreation", req.body)) {
-                this.dataManager.createStructure(req.body, req.body.id)
+                this.dataManager.createStructure(req.body, req.body.userid)
                     .then((structure) => {
+                        delete structure.userid;
                         res.status(200).json(structure);
                     })
                     .catch((error) => {
@@ -309,7 +313,7 @@ export default class NetworkManager{
         this.expressApp.patch("/structures/update/:structureID", this.authenticateJWT.bind(this), (req, res) => {
             if (this.validator.validate("structureUpdate", req.body)) {
                 const structureID = parseInt(req.params.structureID);
-                this.dataManager.updateStructure(structureID, req.body, req.body.id)
+                this.dataManager.updateStructure(structureID, req.body, req.body.userid)
                     .then((numUpdated) => {
                         if (numUpdated > 0) {
                             res.status(200).json({message: "Structure updated successfully"});
@@ -331,7 +335,7 @@ export default class NetworkManager{
 
         this.expressApp.delete("/structures/remove/:structureID", this.authenticateJWT.bind(this), (req, res) => {
             const structureID = parseInt(req.params.structureID);
-            this.dataManager.removeStructure(structureID, req.body.id)
+            this.dataManager.removeStructure(structureID, req.body.userid)
                 .then((numRemoved) => {
                     if (numRemoved > 0) {
                         res.status(200).json({message: "Structure removed successfully"});
@@ -361,7 +365,7 @@ export default class NetworkManager{
             if (err) return res.sendStatus(403);
 
             if (!req.body) req.body = {};
-            req.body.id = payload.id;
+            req.body.userid = payload.id;
 
             next();
         });
