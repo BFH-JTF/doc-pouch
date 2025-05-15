@@ -1,0 +1,24 @@
+### Admin Login
+POST {{base-url}}/users/login/
+Content-Type: application/json
+
+{
+  "name": "admin",
+  "password": "adminSecret"
+}
+> {% client.global.set("auth_token", response.body.token); %}
+
+### Create test document
+POST {{base-url}}/docs/create
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+
+{
+  "type": 1,
+  "subtype": 1,
+  "title": "Test document",
+  "content": {
+    "customerID": 44,
+    "customerRanking": 3
+  }
+}

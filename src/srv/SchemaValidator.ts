@@ -38,7 +38,7 @@ export default class SchemaValidator {
             type: number().required(),
             subType: number().required(),
             title: string().required(),
-            description: string().required(),
+            description: string().optional(),
             content: string().required(),
         });
 

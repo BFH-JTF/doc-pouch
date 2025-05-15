@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type {I_DocumentEntry} from "../types.js";
-import type DbPouchClient from '../DbPouchClient.ts';
+import type {I_DocumentEntry} from "../../../types.ts";
+import type DbPouchClient from 'docpouch-client';
 
 const props = defineProps<{
   documentList: I_DocumentEntry[];
@@ -97,7 +97,7 @@ const selectDocument = (documentID: string | undefined) => {
     </template>
   </v-snackbar>
 
-  <!-- Add confirmation dialog -->
+  <!-- confirmation dialog -->
   <v-dialog v-model="showDeleteConfirmDialog" max-width="400">
     <v-card>
       <v-card-title class="text-h5">Confirm Deletion</v-card-title>

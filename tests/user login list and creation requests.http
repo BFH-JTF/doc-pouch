@@ -1,5 +1,5 @@
 ### List users (without auth)
-GET http://localhost/users/list
+GET {{base-url}}/users/list
 
 ### Admin Login
 POST http://localhost/users/login/
@@ -12,11 +12,11 @@ Content-Type: application/json
 > {% client.global.set("auth_token", response.body.token); %}
 
 ### List users (with auth)
-GET http://localhost/users/list
+GET {{base-url}}/users/list
 Authorization: Bearer {{auth_token}}
 
 ### Create test user
-POST http://localhost/users/create
+POST {{base-url}}/users/create
 Authorization: Bearer {{auth_token}}
 Content-Type: application/json
 
@@ -25,12 +25,4 @@ Content-Type: application/json
   "password": "darths-secret",
   "email": "darth@gmail.com",
   "isAdmin": false
-}
-
-### Create value norm structure
-POST http://localhost/users/create
-Content-Type: application/json
-
-{
-
 }

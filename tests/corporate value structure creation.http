@@ -1,6 +1,3 @@
-// @base-url = https://docpouch.pantek.app
-@base-url = http://localhost:3030
-
 ### Admin Login
 POST {{base-url}}/users/login/
 Content-Type: application/json

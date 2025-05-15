@@ -114,7 +114,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue';
-import type { I_UserEntry } from '../types.js';
+import type { I_UserEntry } from '../../../types.ts';
 
 const props = defineProps<{
   user: I_UserEntry | undefined;

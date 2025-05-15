@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import type { I_DocumentEntry } from "../types.js";
+import type { I_DocumentEntry } from "../../../types.ts";
 
 const props = defineProps<{
   object: I_DocumentEntry | undefined;

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { I_UserDisplay, I_UserEntry } from "../types.js";
+import type { I_UserDisplay, I_UserEntry } from "../../../types.ts";
 import UserCreationDialog from './UserCreationDialog.vue';
-import type DbPouchClient from '../DbPouchClient.ts';
+import type DbPouchClient from 'docpouch-client';
 
 const props = defineProps<{
   userlist: I_UserEntry[] | undefined;

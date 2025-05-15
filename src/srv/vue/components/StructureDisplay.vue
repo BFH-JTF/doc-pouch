@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import type { I_DataStructure } from "../types.js";
+import type { I_DataStructure } from "../../../types.ts";
 
 const props = defineProps<{
   structure: I_DataStructure | undefined;

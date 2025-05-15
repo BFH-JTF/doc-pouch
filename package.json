@@ -12,7 +12,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mdi/font": "^7.4.47",
     "cors": "^2.8.5",
+    "docpouch-client": "^0.8.0",
     "express": "^5.1.0",
     "express-ws": "^5.0.2",
     "jsonwebtoken": "^9.0.2",
@@ -20,16 +22,15 @@
     "vue": "^3.5.13",
     "vuetify": "^3.8.4",
     "winston": "^3.17.0",
-    "yup": "^1.6.1",
-    "@mdi/font": "^7.4.47"
+    "yup": "^1.6.1"
   },
   "devDependencies": {
-    "@types/ws": "^8.18.1",
-    "@types/nedb": "^1.8.16",
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.1",
     "@types/express-ws": "^3.0.5",
     "@types/jsonwebtoken": "^9.0.9",
+    "@types/nedb": "^1.8.16",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^5.2.4",
     "@vue/tsconfig": "^0.7.0",
     "typescript": "~5.8.3",

@@ -35,7 +35,7 @@ export interface I_LoginResponse {
     isAdmin: boolean;
 }
 
-// Document related types
+// Document-related types
 export interface I_DocumentEntry extends I_DocumentCreationOwned{
     _id: string;
 }
@@ -48,11 +48,19 @@ export interface I_DocumentCreation {
     content: any;
 }
 
+export interface I_DocumentQuery {
+    _id?: string;
+    owner?: string;
+    title?: string;
+    type?: number;
+    subType?: number;
+}
+
 export interface I_DocumentCreationOwned extends I_DocumentCreation {
     owner: string;
 }
 
-// Structure related types
+// Structure-related types
 export interface I_DataStructure {
     _id?: string | undefined;
     name: string;
@@ -75,4 +83,16 @@ export interface I_StructureCreation {
     description?: string;
     reference?: any;
     fields: any[];
+}
+
+// Websocket-related types
+export interface I_WsServerMessage {
+    type: "ping" | "update" | "error";
+    error?: string;
+    update?: I_DocumentEntry;
+}
+
+export interface I_WsClientMessage {
+    token: string;
+    action: "subscribe" | "unsubscribe" | "pong";
 }

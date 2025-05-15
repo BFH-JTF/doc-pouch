@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { I_DataStructure } from "../types.js";
-import type DbPouchClient from '../DbPouchClient.ts';
+import type { I_DataStructure } from "../../../types.ts";
+import type DbPouchClient from 'docpouch-client';
 
 const props = defineProps<{
   structurelist: I_DataStructure[] | undefined;

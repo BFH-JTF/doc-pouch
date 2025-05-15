@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import DbPouchClient from "../DbPouchClient.ts";
-import type { I_LoginResponse } from "../types.js";
+import DbPouchClient from "docpouch-client";
+import type { I_LoginResponse } from "../../../types.ts";
 
 const props = defineProps<{
   show: boolean;

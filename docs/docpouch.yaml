@@ -2,7 +2,7 @@ openapi: 3.0.1
 info:
   title: DocPouch
   description: A light-weight, document-based database including user-management. DocPouch is meant for tests, development or internal applications, where security is not a major factor. The database is file and text based and therefore also not layed out for high performance. Instead the main focus of DocPouch is simplicity and a small footprint.
-  version: 1.0.0
+  version: 1.0.1
 servers:
   - url: 'https://docpouch.example.com/api/v1'
     description: 'Main API server'
@@ -188,21 +188,22 @@ paths:
     post:
       summary: "Get a document based on a query object."
       description: "Users can only fetch their own documents, while administrator can fetch any document on the server. Omit keys not used in the query."
+      tags:
+        - documents
+      security:
+        - bearerAuth: [ ]
       requestBody:
         required: true
         description: "An object describing the query to fetch the documents."
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/DocumentQuery"
-
-      tags:
-        - documents
-      security:
-        - bearerAuth: []
+              type: array
+              items:
+                $ref: "#/components/schemas/DocumentQuery"
       responses:
         200:
-          description: "Document identified by document id"
+          description: "Documents matching the query criteria"
           content:
             application/json:
               schema:
@@ -411,6 +412,10 @@ components:
           type: string
           description: "The title of the document"
           example: "Mission Statement"
+        description:
+          type: string
+          description: "The description of the document"
+          example: "A statement describing the corporate mission or how to achieve the corporate vision"
 
     NewDocument:
       type: object
@@ -434,9 +439,9 @@ components:
           example: "{\"msg\": \"We strive for a world that ... \"}"
       required:
         - title
-        - content
         - type
         - subtype
+        - content
 
     UserDisplay:
       type: object
@@ -455,7 +460,7 @@ components:
           description: "User email address"
           example: "darth@gmail.com"
       required:
-        - id
+        - _id
         - name
 
     UserCreation:

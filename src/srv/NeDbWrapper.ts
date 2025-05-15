@@ -7,8 +7,8 @@ import type {
     I_DocumentEntry,
     I_StructureEntry,
     I_UserCreation,
-    I_DocumentCreation, I_StructureCreation, I_DocumentCreationOwned
-} from "./vue/types.js";
+    I_DocumentCreation, I_StructureCreation, I_DocumentCreationOwned, I_DocumentQuery
+} from "../types.ts";
 
 export default class NeDbWrapper {
     users: CustomStore
@@ -370,23 +370,21 @@ export default class NeDbWrapper {
         });
     }
 
-    getDocumentByID(documentID: string, requestingUserID: string): Promise<I_DocumentEntry> {
+    fetchDocuments(queryObject: I_DocumentQuery, requestingUserID: string): Promise<I_DocumentEntry[]> {
         return new Promise((resolve, reject) => {
-            this.documents.query({_id: documentID}).then((result) => {
+            this.isAdmin(requestingUserID).then((isAdmin) => {
+                if (!isAdmin){
+                    queryObject.owner = requestingUserID;
+                }
+            })
+
+            this.documents.query(queryObject).then((result) => {
                 if (result.length === 0) {
                     reject("Document not found");
                     return;
                 }
-
-                const document = result[0] as I_DocumentEntry;
-
-                this.isAdmin(requestingUserID).then((isAdmin) => {
-                    if (isAdmin || document.owner === requestingUserID) {
-                        resolve(document);
-                    } else {
-                        reject("Not authorized to access this document");
-                    }
-                });
+                const documents = result as I_DocumentEntry[];
+                resolve(documents);
             });
         });
     }
