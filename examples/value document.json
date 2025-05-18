@@ -1,0 +1,55 @@
+{
+  "_id": "3ufDC0Rh5g7arSC9",
+  "type": 1,
+  "subType": 1,
+  "title": "Corporate Values 2025",
+  "content": {
+    "structureID": "xM1lIVy1JPPZP06A",
+    "structuredData": {
+      "Issue Title": "Family Values",
+      "Issue Description": "This value aims at upholding classic family values within the corporations sphere of influence.",
+      "issues": [
+        {
+          "Issue Title": "Protection of the unborn and young life",
+          "Issue Description": "Unborn and very young babies need their parents more than anytime later in their lives. This should be reflected in the corporation's attitude towards young parents.",
+          "goals": [{
+            "Goal Title": "Establish 24 weeks of parental leave",
+            "Goal Description": "6 months of parental leave for both parents, but only if they both take it at the same time.",
+            "Goal Responsible": "Robert Irvine",
+            "activities": [{
+              "Activity Title": "Birth Planning Process",
+              "Activity Description": "Establish a process for planing child births in each department, thereby ensuring that the absence of both parents has as little impact on productivity as possible",
+              "Activity Responsible": "Charles Pickings",
+              "norms": [{
+                "title": "Teamabdeckung",
+                "description": "Anteil der Teams, die bereits einen derartigen Prozess leben",
+                "targets": [{
+                  "Norm Target Name": "Gesamtabdeckung",
+                  "Norm Target Description": "Gesamtabdeckung über das gesamte Unternehmen betrachtet",
+                  "Norm Target Assessor": "Serious Assessment Ltd.",
+                  "Smart Norm Target": "50% bis Ende 2026"
+                },
+                {
+                  "Norm Target Name": "Abdeckung in Chur",
+                  "Norm Target Description": "Prozessabdeckung am Standort Chur",
+                  "Norm Target Assessor": "Serious Assessment Ltd.",
+                  "Smart Norm Target": "35% bis Ende 2026"
+                },
+                  {
+                    "Norm Target Name": "Abdeckung in Lausanne",
+                    "Norm Target Description": "Prozessabdeckung am Standort Lausanne",
+                    "Norm Target Assessor": "Serious Assessment Ltd.",
+                    "Smart Norm Target": "55% bis Ende 2026"
+                  }]
+              }]
+            }]
+          }]
+        },
+        {
+
+        }
+      ]
+    }
+  }
+}
+
