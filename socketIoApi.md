@@ -622,7 +622,7 @@ All data is sent using the `I_WsMessage` interface, which may contain one of the
 - The Socket.io server runs on the same port as the REST API
 - CORS is enabled with `origin: "*"` for development purposes
 - Inactive clients are automatically disconnected after 120 seconds without response to heartbeat
-- JWT tokens expire after 4 hours by default
+- JWT tokens expire after 24 hours by default
 - **DocPouch Client Library** handles all Socket.io complexity automatically
 - Real-time synchronization is managed by calling `apiClient.setRealTimeSync(true/false)`
 - Document sharing permissions (department/group sharing) are automatically respected for event distribution
