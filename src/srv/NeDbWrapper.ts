@@ -38,29 +38,29 @@ export default class NeDbWrapper {
         if (options.inMemoryOnly) {
             this.users = new CustomStore("./db/docpouch-users.db",
                 "System Users", "Collection of documents describing system users - handle with care")
-            this.users.datastore.persistence.setAutocompactionInterval(1000 * 60 * 5);
+            this.users.datastore.setAutocompactionInterval(1000 * 60 * 5);
             this.structures = new CustomStore("./db/docpouch-structures.db",
                 "Data Structures", "Collection of documents describing data structures")
-            this.structures.datastore.persistence.setAutocompactionInterval(1000 * 60 * 30);
+            this.structures.datastore.setAutocompactionInterval(1000 * 60 * 30);
             this.documents = new CustomStore("./db/docpouch-documents.db",
                 "User Documents", "Collection of user documents")
-            this.documents.datastore.persistence.setAutocompactionInterval(1000 * 60 * 60);
+            this.documents.datastore.setAutocompactionInterval(1000 * 60 * 60);
             this.types = new CustomStore("./db/docpouch-types.db",
                 "Document Types", "Collection of document types")
         } else {
             this.users = new CustomStore(undefined,
                 "System Users", "Collection of documents describing system users - handle with care")
-            this.users.datastore.persistence.setAutocompactionInterval(1000 * 60 * 5);
+            this.users.datastore.setAutocompactionInterval(1000 * 60 * 5);
             this.structures = new CustomStore(undefined,
                 "Data Structures", "Collection of documents describing data structures")
-            this.structures.datastore.persistence.setAutocompactionInterval(1000 * 60 * 30);
+            this.structures.datastore.setAutocompactionInterval(1000 * 60 * 30);
             this.documents = new CustomStore(undefined,
                 "User Documents", "Collection of user documents")
-            this.documents.datastore.persistence.setAutocompactionInterval(1000 * 60 * 60);
+            this.documents.datastore.setAutocompactionInterval(1000 * 60 * 60);
             this.types = new CustomStore(undefined,
                 "Document Types", "Collection of document types")
         }
-        this.types.datastore.persistence.setAutocompactionInterval(1000 * 60 * 60);
+        this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         this.users.count({}).then((counter) => {
             // No users in database yet?
             if (counter < 1) {
@@ -572,6 +572,7 @@ export default class NeDbWrapper {
                 // Check update permissions based on user's relationship to the document
                 if (isAdmin || document.owner === requestingUserID) {
                     // Admin or owner can update all fields except owner
+                    delete updateData.owner;
                     this.documents.update(documentID, updateData).then((numUpdated) => {
                         resolve(numUpdated);
                     }).catch(reject);

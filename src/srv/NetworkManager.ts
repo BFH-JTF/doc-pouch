@@ -112,7 +112,7 @@ export default class NetworkManager {
 
             try {
                 const validatedObject = this.validator.getValidatedObject("userLogin", req.body);
-                this.logger.debug(`Validation result: ${validatedObject}`);
+                this.logger.debug(`Validation result: ${JSON.stringify(validatedObject)}`);
 
                 if (validatedObject) {
                     this.logger.debug("Validation passed, calling validateUser");
