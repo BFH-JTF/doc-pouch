@@ -26,7 +26,7 @@
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "docpouch-client": "^0.8.13",
+    "docpouch-client": "^0.8.14",
     "jsonwebtoken": "^9.0.2",
     "multer": "2.0.2",
     "nedb": "^1.8.0",

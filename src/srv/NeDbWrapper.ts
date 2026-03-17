@@ -314,7 +314,7 @@ export default class NeDbWrapper {
             this.users.query({_id: userID}).then((userDoc) => {
                 if (userDoc.length > 0) {
                     const user = userDoc[0];
-                    if (("isAdmin" in user && user.isAdmin) || !("isAdmin" in updateData)) {
+                    if (user && ("isAdmin" in user && user.isAdmin) || !("isAdmin" in updateData)) {
                         if ("name" in updateData && updateData.name) {
                             const newUserName = updateData.name;
 
@@ -334,7 +334,7 @@ export default class NeDbWrapper {
                             })
                         }
 
-                        if ("_id" in user && user._id) {
+                        if (user && "_id" in user && user._id) {
                             this.users.update(user._id, updateData).then((result) => {
                                 resolve(result);
                             }).catch(reject);
@@ -419,7 +419,7 @@ export default class NeDbWrapper {
                     this.structures.query({_id: structureID}).then((structureDoc) => {
                         if (structureDoc.length > 0) {
                             const structure = structureDoc[0];
-                            if ("_id" in structure && typeof structure._id === "string") {
+                            if (structure && "_id" in structure && typeof structure._id === "string") {
                                 this.structures.update(structure._id, newStructure).then((result) => {
                                     resolve(result);
                                 }).catch(error => {

@@ -436,6 +436,56 @@ paths:
         404:
           description: "Document type not found"
 
+  /database/export:
+    get:
+      summary: Export the database
+      description: Export all database files as a ZIP archive. Only available to administrators.
+      tags:
+        - administration
+      security:
+        - adminAuth: [ ]
+      responses:
+        200:
+          description: "ZIP archive containing database files"
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        401:
+          description: "Not authorized to export database"
+        403:
+          description: "Only admins can export the database"
+
+  /database/import:
+    post:
+      summary: Import the database
+      description: "Import database files from a ZIP archive. Only available to administrators. Warning: This will replace all existing data."
+      tags:
+        - administration
+      security:
+        - adminAuth: [ ]
+      requestBody:
+        required: true
+        content:
+          'multipart/form-data':
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "ZIP file containing .db files"
+      responses:
+        200:
+          description: "Database imported successfully"
+        400:
+          description: "Invalid file format"
+        401:
+          description: "Not authorized to import database"
+        403:
+          description: "Only admins can import the database"
+
 components:
   schemas:
     Document:

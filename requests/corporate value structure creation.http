@@ -17,19 +17,23 @@ Content-Type: application/json
   "name": "Corporate Value Target",
   "fields": [
     {
-      "name": "Norm Target Name",
+      "name": "ID",
       "type": "string"
     },
     {
-      "name": "Norm Target Description",
+      "name": "Name",
       "type": "string"
     },
     {
-      "name": "Norm Target Assessor",
+      "name": "Description",
       "type": "string"
     },
     {
-      "name": "Smart Norm Target",
+      "name": "Assessor",
+      "type": "string"
+    },
+    {
+      "name": "Target",
       "type": "string"
     }
   ]
@@ -44,6 +48,10 @@ Content-Type: application/json
 {
   "name": "Corporate Value Norm",
   "fields": [
+    {
+      "name": "ID",
+      "type": "string"
+    },
     {
       "name": "Title",
       "type": "string"
@@ -71,15 +79,19 @@ Content-Type: application/json
   "name": "Corporate Value Activity",
   "fields": [
     {
-      "name": "Activity Title",
+      "name": "ID",
       "type": "string"
     },
     {
-      "name": "Activity Description",
+      "name": "Title",
       "type": "string"
     },
     {
-      "name": "Activity Responsible",
+      "name": "Description",
+      "type": "string"
+    },
+    {
+      "name": "Responsible Person",
       "type": "string"
     },
     {
@@ -100,15 +112,19 @@ Content-Type: application/json
   "name": "Corporate Value Goal",
   "fields": [
     {
-      "name": "Goal Title",
+      "name": "ID",
       "type": "string"
     },
     {
-      "name": "Goal Description",
+      "name": "Title",
       "type": "string"
     },
     {
-      "name": "Goal Responsible",
+      "name": "Description",
+      "type": "string"
+    },
+    {
+      "name": "Responsible Person",
       "type": "string"
     },
     {
@@ -129,11 +145,15 @@ Content-Type: application/json
   "name": "Corporate Value Issue",
   "fields": [
     {
-      "name": "Issue Title",
+      "name": "ID",
       "type": "string"
     },
     {
-      "name": "Issue Description",
+      "name": "Title",
+      "type": "string"
+    },
+    {
+      "name": "Description",
       "type": "string"
     },
     {
@@ -154,11 +174,15 @@ Content-Type: application/json
   "name": "Corporate Value",
   "fields": [
     {
-      "name": "Value Title",
+      "name": "ID",
       "type": "string"
     },
     {
-      "name": "Value Description",
+      "name": "Title",
+      "type": "string"
+    },
+    {
+      "name": "Description",
       "type": "string"
     },
     {

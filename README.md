@@ -44,10 +44,11 @@ They contain a separate DataElement for each field of the data structure in thei
     ]
 }
 ```
-## Arrays of items
+
+#### Arrays of items
 Arrays of items are specified using the type "array" and indicating the type of the array elements in "items".
 
-## Referencing other document structures
+#### Referencing other document structures
 Document structures can refer to other document structures to build more complex data interrelations.
 To reference a document structure inside another structure, the "items" property in the DataElement is used.
 
@@ -98,7 +99,7 @@ A fitting document structure for houses could look like this:
 }
 ```
 
-## Application in documents
+#### Application in documents
 Documents using a document structure have to structure their content like this:
 ```
 {
