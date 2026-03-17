@@ -1,4 +1,4 @@
-import Datastore from 'nedb';
+import Nedb from "@seald-io/nedb";
 import winston, {error} from "winston";
 import fs from "fs";
 import bcrypt from "bcrypt"
@@ -10,10 +10,16 @@ import type {
     I_DocumentCreation, I_StructureCreation, I_DocumentCreationOwned, I_DocumentQuery, I_DocumentType, I_DocumentUpdate
 } from "docpouch-client";
 
+// Type declaration to help TypeScript understand Nedb constructor
+declare const NedbConstructor: new (options?: any) => any;
+type NedbInstance = InstanceType<typeof NedbConstructor>;
+
 export interface INeDbOptions {
     inMemoryOnly?: boolean;
     filenamePrefix?: string; // optional, kept for compatibility
 }
+
+type NedbSchema = I_DocumentCreationOwned | I_UserCreation | I_StructureCreation | I_DocumentType;
 
 export default class NeDbWrapper {
     users: CustomStore
@@ -679,15 +685,15 @@ export default class NeDbWrapper {
 }
 
 class CustomStore {
-    datastore: Datastore;
+    datastore: NedbInstance;
     name: string;
     description: string;
 
     constructor(filename: string | undefined, name: string, description: string) {
         if (!filename)
-            this.datastore = new Datastore({inMemoryOnly: true, autoload: true});
+            this.datastore = new (Nedb as any)({inMemoryOnly: true, autoload: true});
         else
-            this.datastore = new Datastore({filename: filename, autoload: true});
+            this.datastore = new (Nedb as any)({filename: filename, autoload: true});
         this.name = name;
         this.description = description;
     }
