@@ -18,8 +18,8 @@ const emit = defineEmits<{
 
 // Filter states
 const titleFilter = ref('');
-const typeFilter = ref('');
-const subtypeFilter = ref('');
+const typeFilter = ref<number | null>(null);
+const subtypeFilter = ref<number | null>(null);
 const ownerFilter = ref('');
 const filterMode = ref<'raw' | 'named'>('raw'); // 'raw' = type/subtype, 'named' = document type name
 const namedTypeFilter = ref('');
@@ -115,12 +115,12 @@ const documents = computed(() => {
 
   if (filterMode.value === 'raw') {
     // Filter by raw type and subtype numbers
-    if (typeFilter.value) {
-      filteredDocs = filteredDocs.filter(doc => doc.type === parseInt(typeFilter.value));
+    if (typeFilter.value !== null) {
+      filteredDocs = filteredDocs.filter(doc => doc.type === typeFilter.value);
     }
 
-    if (subtypeFilter.value) {
-      filteredDocs = filteredDocs.filter(doc => doc.subType === parseInt(subtypeFilter.value));
+    if (subtypeFilter.value !== null) {
+      filteredDocs = filteredDocs.filter(doc => doc.subType === subtypeFilter.value);
     }
   } else if (filterMode.value === 'named') {
     // Filter by named document type
@@ -177,15 +177,15 @@ const handleDocumentCreated = () => {
 // Clear all filters
 const clearFilters = () => {
   titleFilter.value = '';
-  typeFilter.value = '';
-  subtypeFilter.value = '';
+  typeFilter.value = null;
+  subtypeFilter.value = null;
   namedTypeFilter.value = '';
   ownerFilter.value = '';
 };
 
 // Check if any filters are active
 const hasActiveFilters = computed(() => {
-  const rawTypeActive = filterMode.value === 'raw' && (titleFilter.value || typeFilter.value || subtypeFilter.value || ownerFilter.value);
+  const rawTypeActive = filterMode.value === 'raw' && (titleFilter.value || typeFilter.value !== null || subtypeFilter.value !== null || ownerFilter.value);
   const namedTypeActive = filterMode.value === 'named' && (titleFilter.value || namedTypeFilter.value || ownerFilter.value);
   return rawTypeActive || namedTypeActive;
 });
@@ -194,8 +194,8 @@ const hasActiveFilters = computed(() => {
 const switchFilterMode = (newMode: 'raw' | 'named') => {
   if (filterMode.value !== newMode) {
     filterMode.value = newMode;
-    typeFilter.value = '';
-    subtypeFilter.value = '';
+    typeFilter.value = null;
+    subtypeFilter.value = null;
     namedTypeFilter.value = '';
   }
 };

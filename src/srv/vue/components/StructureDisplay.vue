@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import type {I_DataStructure, I_StructureField, I_StructureTreeItem} from "../../../types.ts";
+import type {I_DataStructure, I_StructureField} from "docpouch-client";
 
 const props = defineProps<{
   displayStructure: I_DataStructure | undefined;
@@ -11,6 +11,15 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:structure': [updatedStructure: I_DataStructure];
 }>();
+
+// Tree item interface for Vuetify tree view
+interface I_StructureTreeItem {
+  name: string;
+  id: string;
+  children?: I_StructureTreeItem[];
+  icon?: string;
+  color?: string;
+}
 
 // Map data types to their corresponding icons and colors
 interface IconEntry {

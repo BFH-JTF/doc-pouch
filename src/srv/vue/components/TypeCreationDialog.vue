@@ -99,7 +99,7 @@
 
 <script setup lang="ts">
 import {ref, computed, watch, onMounted} from 'vue';
-import type {I_DocumentType, I_StructureEntry} from '../../../types.ts';
+import type {I_DocumentType, I_StructureEntry} from 'docpouch-client';
 
 const props = defineProps<{
   typeList: I_DocumentType[];

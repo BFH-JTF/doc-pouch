@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {ref, computed} from 'vue';
-import type {I_DocumentType, I_StructureEntry} from "../../../types.ts";
+import type {I_DocumentType, I_StructureEntry} from "docpouch-client";
 import TypeCreationDialog from './TypeCreationDialog.vue';
 import type DbPouchClient from 'docpouch-client';
 

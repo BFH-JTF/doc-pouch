@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { I_UserDisplay, I_UserEntry } from "../../../types.ts";
+import type {I_UserDisplay, I_UserEntry} from "docpouch-client";
 import UserCreationDialog from './UserCreationDialog.vue';
 import MassCreateDialog from './MassCreateDialog.vue';
 import type DbPouchClient from 'docpouch-client';

@@ -172,7 +172,7 @@
 <script lang="ts" setup>
 import {ref, reactive, watch, computed} from 'vue';
 import type DbPouchClient from 'docpouch-client';
-import type {I_UserCreation, I_UserDisplay} from '../../../types.ts';
+import type {I_UserCreation, I_UserDisplay} from 'docpouch-client';
 
 // Props and emits
 const props = defineProps<{
