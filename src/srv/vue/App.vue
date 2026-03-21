@@ -560,6 +560,7 @@ async function handleExportDatabase() {
                       :userlist="userArray"
                       :documentList="docArray"
                       :api-client="apiClient"
+                      :document-types="typeArray"
                       @document-list-changed="fetchData"
                       @document-removed="handleDocumentRemoved"
                   />

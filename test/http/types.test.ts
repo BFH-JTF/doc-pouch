@@ -9,7 +9,7 @@ import {
     closeTestServer,
     API_BASE_URL, authenticatedRequest
 } from '../setup/testSetup.js';
-import {type I_DocumentCreation, I_DocumentType} from 'docpouch-client';
+import type {I_DocumentCreation, I_DocumentType} from 'docpouch-client';
 
 describe('Document Type API Tests', () => {
     let server: Server;
@@ -18,7 +18,7 @@ describe('Document Type API Tests', () => {
     let adminToken: string;
     let userToken: string;
     let testTypeId: string;
-    let testStructureId: string;
+    let testStructureId: undefined;
 
     // Set up the test server before all tests
     beforeAll(async () => {
@@ -43,7 +43,6 @@ describe('Document Type API Tests', () => {
             description: 'A test document type for testing',
             type: 1,
             subType: 1,
-            defaultStructureID: testStructureId
         };
 
         const typeResponse = await authenticatedRequest(server, adminToken)
@@ -66,7 +65,6 @@ describe('Document Type API Tests', () => {
                 description: 'Another test document type',
                 type: 2,
                 subType: 2,
-                defaultStructureID: testStructureId
             };
 
             let writeResponse = await authenticatedRequest(server, adminToken)
@@ -113,7 +111,6 @@ describe('Document Type API Tests', () => {
                 description: 'A new document type for testing',
                 type: 3,
                 subType: 3,
-                defaultStructureID: testStructureId
             };
 
             const response = await authenticatedRequest(server, adminToken)
@@ -126,7 +123,6 @@ describe('Document Type API Tests', () => {
             expect(response.body.description).toBe(newType.description);
             expect(response.body.type).toBe(newType.type);
             expect(response.body.subType).toBe(newType.subType);
-            expect(response.body.defaultStructureID).toBe(newType.defaultStructureID);
 
             // Verify the type was added
             const listResponse = await authenticatedRequest(server, adminToken).get('/types/list');
@@ -141,7 +137,6 @@ describe('Document Type API Tests', () => {
                 description: 'An updated document type',
                 type: 1,
                 subType: 1,
-                defaultStructureID: testStructureId
             };
 
             const response = await authenticatedRequest(server, adminToken)
@@ -194,7 +189,6 @@ describe('Document Type API Tests', () => {
                 description: 'This should not be created',
                 type: 5,
                 subType: 5,
-                defaultStructureID: testStructureId
             };
 
             const response = await request(server)
