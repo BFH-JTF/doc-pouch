@@ -115,10 +115,13 @@ function handleNetworkEvent(event: I_EventString, data: any) {
       break;
 
     case "newDocument":
-    case "changedDocument": //TODO If the changed document is being displayed, the display needs to be updated.
+    case "changedDocument":
     case "removedDocument":
       apiClient.listDocuments().then(documents => {
         docArray.value = documents;
+        if (loadedDocument.value) {
+          loadedDocument.value = documents.find(doc => doc._id === loadedDocument.value?._id);
+        }
       })
       break;
 
