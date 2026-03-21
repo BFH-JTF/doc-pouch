@@ -39,8 +39,16 @@ paths:
                   token:
                     type: string
                     description: "JWT authentication token"
+                  isAdmin:
+                    type: boolean
+                    description: "Whether the user has administrator privileges"
+                  userName:
+                    type: string
+                    description: "The user's display name"
                 required:
                   - token
+                  - isAdmin
+                  - userName
         401:
           description: "Invalid credentials"
         404:
