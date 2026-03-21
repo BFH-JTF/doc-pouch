@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from 'vue';
-import type { I_DocumentEntry, I_UserEntry } from "../../../types.ts";
+import type {I_DocumentEntry, I_UserEntry} from "docpouch-client";
 import type DbPouchClient from 'docpouch-client';
 
 const props = defineProps<{
   documentList: I_DocumentEntry[];
   userlist: I_UserEntry[]; // Added userlist prop to map owner IDs to usernames
   apiClient: DbPouchClient;
+  documentTypes?: any[]; // List of defined document types with type and subType
 }>();
 
 const emit = defineEmits<{
@@ -17,9 +18,11 @@ const emit = defineEmits<{
 
 // Filter states
 const titleFilter = ref('');
-const typeFilter = ref('');
-const subtypeFilter = ref('');
+const typeFilter = ref<number | null>(null);
+const subtypeFilter = ref<number | null>(null);
 const ownerFilter = ref('');
+const filterMode = ref<'raw' | 'named'>('raw'); // 'raw' = type/subtype, 'named' = document type name
+const namedTypeFilter = ref('');
 
 const showDeleteConfirmDialog = ref(false);
 const documentToDelete = ref<string | null>(null);
@@ -84,6 +87,19 @@ const availableOwners = computed(() => {
   return [...new Set(ownerUsernames)].sort();
 });
 
+// Check if document types are defined with their own type and subType
+const hasDefinedDocumentTypes = computed(() => {
+  return props.documentTypes && props.documentTypes.length > 0;
+});
+
+// Get unique named document types (type+subType combinations from props.documentTypes)
+const availableNamedTypes = computed(() => {
+  if (!props.documentTypes || props.documentTypes.length === 0) return [];
+
+  // Return all defined document types, sorted by name
+  return props.documentTypes.slice().sort((a, b) => a.name.localeCompare(b.name));
+});
+
 // Enhanced document list with filtering
 const documents = computed(() => {
   if (!props.documentList) return [];
@@ -97,12 +113,25 @@ const documents = computed(() => {
     );
   }
 
-  if (typeFilter.value) {
-    filteredDocs = filteredDocs.filter(doc => doc.type === parseInt(typeFilter.value));
-  }
+  if (filterMode.value === 'raw') {
+    // Filter by raw type and subtype numbers
+    if (typeFilter.value !== null) {
+      filteredDocs = filteredDocs.filter(doc => doc.type === typeFilter.value);
+    }
 
-  if (subtypeFilter.value) {
-    filteredDocs = filteredDocs.filter(doc => doc.subType === parseInt(subtypeFilter.value));
+    if (subtypeFilter.value !== null) {
+      filteredDocs = filteredDocs.filter(doc => doc.subType === subtypeFilter.value);
+    }
+  } else if (filterMode.value === 'named') {
+    // Filter by named document type
+    if (namedTypeFilter.value) {
+      const selectedType = props.documentTypes?.find(dt => dt.name === namedTypeFilter.value);
+      if (selectedType) {
+        filteredDocs = filteredDocs.filter(doc =>
+            doc.type === selectedType.type && doc.subType === selectedType.subType
+        );
+      }
+    }
   }
 
   if (ownerFilter.value) {
@@ -148,15 +177,28 @@ const handleDocumentCreated = () => {
 // Clear all filters
 const clearFilters = () => {
   titleFilter.value = '';
-  typeFilter.value = '';
-  subtypeFilter.value = '';
+  typeFilter.value = null;
+  subtypeFilter.value = null;
+  namedTypeFilter.value = '';
   ownerFilter.value = '';
 };
 
 // Check if any filters are active
 const hasActiveFilters = computed(() => {
-  return titleFilter.value || typeFilter.value || subtypeFilter.value || ownerFilter.value;
+  const rawTypeActive = filterMode.value === 'raw' && (titleFilter.value || typeFilter.value !== null || subtypeFilter.value !== null || ownerFilter.value);
+  const namedTypeActive = filterMode.value === 'named' && (titleFilter.value || namedTypeFilter.value || ownerFilter.value);
+  return rawTypeActive || namedTypeActive;
 });
+
+// Switch filter mode and clear type/subtype filters
+const switchFilterMode = (newMode: 'raw' | 'named') => {
+  if (filterMode.value !== newMode) {
+    filterMode.value = newMode;
+    typeFilter.value = null;
+    subtypeFilter.value = null;
+    namedTypeFilter.value = '';
+  }
+};
 </script>
 
 <template>
@@ -167,6 +209,23 @@ const hasActiveFilters = computed(() => {
         <v-icon icon="mdi-filter" class="mr-2"></v-icon>
         Filters
         <v-spacer></v-spacer>
+        <!-- Filter Mode Toggle (only show if document types are defined) -->
+        <v-btn-toggle
+            v-if="hasDefinedDocumentTypes"
+            v-model="filterMode"
+            class="mr-2"
+            density="compact"
+            @update:model-value="switchFilterMode"
+        >
+          <v-btn size="small" title="Filter by type number and subtype number" value="raw">
+            <v-icon class="mr-1" icon="mdi-numeric"></v-icon>
+            Raw Type
+          </v-btn>
+          <v-btn size="small" title="Filter by defined document type name" value="named">
+            <v-icon class="mr-1" icon="mdi-tag-text"></v-icon>
+            Named Type
+          </v-btn>
+        </v-btn-toggle>
         <v-btn
           v-if="hasActiveFilters"
           size="small"
@@ -180,53 +239,94 @@ const hasActiveFilters = computed(() => {
       </v-card-title>
       <v-card-text class="pa-3 pt-0">
         <v-row no-gutters>
-          <v-col cols="12" md="3" class="pr-md-2">
-            <v-text-field
-              v-model="titleFilter"
-              label="Filter by title"
-              prepend-inner-icon="mdi-file-document-outline"
-              variant="outlined"
-              density="compact"
-              clearable
-              hide-details
-            ></v-text-field>
-          </v-col>
-          <v-col cols="12" md="3" class="px-md-1 mt-2 mt-md-0">
-            <v-select
-              v-model="typeFilter"
-              :items="availableTypes"
-              label="Filter by type"
-              prepend-inner-icon="mdi-format-list-bulleted-type"
-              variant="outlined"
-              density="compact"
-              clearable
-              hide-details
-            ></v-select>
-          </v-col>
-          <v-col cols="12" md="3" class="px-md-1 mt-2 mt-md-0">
-            <v-select
-              v-model="subtypeFilter"
-              :items="availableSubtypes"
-              label="Filter by subtype"
-              prepend-inner-icon="mdi-format-list-text"
-              variant="outlined"
-              density="compact"
-              clearable
-              hide-details
-            ></v-select>
-          </v-col>
-          <v-col cols="12" md="3" class="pl-md-2 mt-2 mt-md-0">
-            <v-select
-              v-model="ownerFilter"
-              :items="availableOwners"
-              label="Filter by owner"
-              prepend-inner-icon="mdi-account"
-              variant="outlined"
-              density="compact"
-              clearable
-              hide-details
-            ></v-select>
-          </v-col>
+          <!-- Raw Type/Subtype Filters - 4 columns evenly distributed -->
+          <template v-if="filterMode === 'raw'">
+            <v-col class="pr-md-1" cols="12" md="3">
+              <v-text-field
+                  v-model="titleFilter"
+                  clearable
+                  density="compact"
+                  hide-details
+                  label="Filter by title"
+                  prepend-inner-icon="mdi-file-document-outline"
+                  variant="outlined"
+              ></v-text-field>
+            </v-col>
+            <v-col class="px-md-1 mt-2 mt-md-0" cols="12" md="3">
+              <v-select
+                  v-model="typeFilter"
+                  :items="availableTypes"
+                  clearable
+                  density="compact"
+                  hide-details
+                  label="Filter by type"
+                  prepend-inner-icon="mdi-format-list-bulleted-type"
+                  variant="outlined"
+              ></v-select>
+            </v-col>
+            <v-col class="px-md-1 mt-2 mt-md-0" cols="12" md="3">
+              <v-select
+                  v-model="subtypeFilter"
+                  :items="availableSubtypes"
+                  clearable
+                  density="compact"
+                  hide-details
+                  label="Filter by subtype"
+                  prepend-inner-icon="mdi-format-list-text"
+                  variant="outlined"
+              ></v-select>
+            </v-col>
+            <v-col class="pl-md-1 mt-2 mt-md-0" cols="12" md="3">
+              <v-select
+                  v-model="ownerFilter"
+                  :items="availableOwners"
+                  clearable
+                  density="compact"
+                  hide-details
+                  label="Filter by owner"
+                  prepend-inner-icon="mdi-account"
+                  variant="outlined"
+              ></v-select>
+            </v-col>
+          </template>
+          <!-- Named Type Filter - 3 columns evenly distributed -->
+          <template v-else-if="filterMode === 'named'">
+            <v-col class="pr-md-1" cols="12" md="4">
+              <v-text-field
+                  v-model="titleFilter"
+                  clearable
+                  density="compact"
+                  hide-details
+                  label="Filter by title"
+                  prepend-inner-icon="mdi-file-document-outline"
+                  variant="outlined"
+              ></v-text-field>
+            </v-col>
+            <v-col class="px-md-1 mt-2 mt-md-0" cols="12" md="4">
+              <v-select
+                  v-model="namedTypeFilter"
+                  :items="availableNamedTypes.map(t => t.name)"
+                  clearable
+                  density="compact"
+                  hide-details
+                  label="Filter by document type"
+                  prepend-inner-icon="mdi-tag-text"
+                  variant="outlined"
+              ></v-select>
+            </v-col>
+            <v-col class="pl-md-1 mt-2 mt-md-0" cols="12" md="4">
+              <v-select
+                  v-model="ownerFilter"
+                  :items="availableOwners"
+                  clearable
+                  density="compact"
+                  hide-details
+                  label="Filter by owner"
+                  prepend-inner-icon="mdi-account"
+                  variant="outlined"
+              ></v-select>
+            </v-col>
+          </template>
         </v-row>
       </v-card-text>
     </v-card>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import type {I_DocumentEntry, I_DocumentUpdate} from "../../../types.ts";
+import type {I_DocumentEntry, I_DocumentUpdate} from "docpouch-client";
 
 const props = defineProps<{
   object: I_DocumentEntry | undefined;
