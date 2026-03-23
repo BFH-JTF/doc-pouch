@@ -1,3 +1,11 @@
+## [1.0.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.0.3...v1.0.4) (2026-03-23)
+
+
+### Bug Fixes
+
+* database was created in-memory when it should have been persistent ([abe8f82](https://github.com/BFH-JTF/doc-pouch/commit/abe8f826dbf01fd379eaeda10b4705025e41eadc))
+* Merge remote-tracking branch 'origin/main' ([2f7eeed](https://github.com/BFH-JTF/doc-pouch/commit/2f7eeed04a20688c04edbe599e0f902b4a4c55e5))
+
 ## [1.0.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.0.2...v1.0.3) (2026-03-23)
 
 
