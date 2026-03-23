@@ -18,7 +18,7 @@ WORKDIR /app
 
 # Copy built files from build stage
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/package*.json ./
+COPY package*.json ./
 
 RUN npm ci --omit=dev
 RUN mkdir -p "/app/dist/db"
