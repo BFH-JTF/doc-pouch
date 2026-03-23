@@ -114,7 +114,7 @@ Documents using a document structure have to structure their content like this:
 
 ## API
 
-DocPouch provides a RESTful API with the following main endpoints:
+DocPouch provides a RESTful API with an [OpenAPI documentation]() and the following main endpoints:
 
 ### User Management
 - `POST /users/login` - Authenticate a user and receive a JWT token
