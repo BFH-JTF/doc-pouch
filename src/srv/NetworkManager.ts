@@ -423,9 +423,52 @@ export default class NetworkManager {
 
         // Database export endpoint
         this.expressApp.get("/database/export", this.authenticateJWT, (req, res) => {
-            this.dataManager.isAdmin(req.userid).then((isAdmin) => {
+            this.dataManager.isAdmin(req.userid).then(async (isAdmin) => {
                 if (!isAdmin) {
                     return res.status(403).json({error: "Only admins can export the database"});
+                }
+
+                if (this.dataManager.isInMemoryOnly()) {
+                    const zipFilename = "docpouch-database.zip";
+                    const output = fs.createWriteStream(zipFilename);
+                    const archive = archiver('zip', {
+                        zlib: {level: 9}
+                    });
+
+                    output.on('close', () => {
+                        this.logger.info(`In-memory database exported: ${archive.pointer()} total bytes`);
+                        res.download(zipFilename, (err) => {
+                            if (err) {
+                                this.logger.error("Error sending zip file:", err);
+                            }
+                            fs.unlink(zipFilename, (err) => {
+                                if (err) {
+                                    this.logger.error("Error deleting temporary zip file:", err);
+                                }
+                            });
+                        });
+                    });
+
+                    archive.on('error', (err) => {
+                        this.logger.error("Error creating zip archive:", err);
+                        res.status(500).json({error: "Error creating zip archive"});
+                    });
+
+                    archive.pipe(output);
+
+                    try {
+                        const exportData = await this.dataManager.exportAllData();
+                        archive.append(JSON.stringify(exportData.users, null, 2), {name: 'docpouch-users.json'});
+                        archive.append(JSON.stringify(exportData.documents, null, 2), {name: 'docpouch-documents.json'});
+                        archive.append(JSON.stringify(exportData.structures, null, 2), {name: 'docpouch-structures.json'});
+                        archive.append(JSON.stringify(exportData.types, null, 2), {name: 'docpouch-types.json'});
+                        archive.finalize();
+                    } catch (error) {
+                        this.logger.error("Error exporting in-memory database:", error);
+                        output.close();
+                        return res.status(500).json({error: "Error exporting in-memory database"});
+                    }
+                    return;
                 }
 
                 const dbPath = "./db";

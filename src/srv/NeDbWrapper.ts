@@ -28,9 +28,11 @@ export default class NeDbWrapper {
     types: CustomStore
     logger: winston.Logger
     saltRounds: number = 10;
+    private readonly inMemoryOnly: boolean;
 
     constructor(winstonLogger: winston.Logger, options: INeDbOptions = {}) {
         this.logger = winstonLogger;
+        this.inMemoryOnly = options.inMemoryOnly ?? false;
         const dbPath = "./db"
         if (!fs.existsSync(dbPath)) {
             fs.mkdirSync(dbPath);
@@ -47,6 +49,7 @@ export default class NeDbWrapper {
             this.documents.datastore.setAutocompactionInterval(1000 * 60 * 60);
             this.types = new CustomStore(undefined,
                 "Document Types", "Collection of document types")
+            this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         } else {
             this.users = new CustomStore("./db/docpouch-users.db",
                 "System Users", "Collection of documents describing system users - handle with care")
@@ -59,6 +62,7 @@ export default class NeDbWrapper {
             this.documents.datastore.setAutocompactionInterval(1000 * 60 * 60);
             this.types = new CustomStore("./db/docpouch-types.db",
                 "Document Types", "Collection of document types")
+            this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         }
         this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         this.users.count({}).then((counter) => {
@@ -132,6 +136,26 @@ export default class NeDbWrapper {
                 })
             }
         })
+    }
+
+    isInMemoryOnly(): boolean {
+        return this.inMemoryOnly;
+    }
+
+    async exportAllData(): Promise<{ users: any[]; documents: any[]; structures: any[]; types: any[] }> {
+        const [users, documents, structures, types] = await Promise.all([
+            this.users.query({}),
+            this.documents.query({}),
+            this.structures.query({}),
+            this.types.query({})
+        ]);
+
+        return {
+            users,
+            documents,
+            structures,
+            types
+        };
     }
 
     private getAdminUser(): Promise<I_UserEntry> {
