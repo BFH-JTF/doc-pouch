@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.0.2...v1.0.3) (2026-03-23)
+
+
+### Bug Fixes
+
+* prevented cache issues during docker image build, added link to openAPI documentation to README.md ([49bc826](https://github.com/BFH-JTF/doc-pouch/commit/49bc826045e87bb66ef3e4fd70b7e673cb42a02d))
+
 ## [1.0.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.0.1...v1.0.2) (2026-03-23)
 
 
