@@ -36,18 +36,6 @@ export default class NeDbWrapper {
             fs.mkdirSync(dbPath);
         }
         if (options.inMemoryOnly) {
-            this.users = new CustomStore("./db/docpouch-users.db",
-                "System Users", "Collection of documents describing system users - handle with care")
-            this.users.datastore.setAutocompactionInterval(1000 * 60 * 5);
-            this.structures = new CustomStore("./db/docpouch-structures.db",
-                "Data Structures", "Collection of documents describing data structures")
-            this.structures.datastore.setAutocompactionInterval(1000 * 60 * 30);
-            this.documents = new CustomStore("./db/docpouch-documents.db",
-                "User Documents", "Collection of user documents")
-            this.documents.datastore.setAutocompactionInterval(1000 * 60 * 60);
-            this.types = new CustomStore("./db/docpouch-types.db",
-                "Document Types", "Collection of document types")
-        } else {
             this.users = new CustomStore(undefined,
                 "System Users", "Collection of documents describing system users - handle with care")
             this.users.datastore.setAutocompactionInterval(1000 * 60 * 5);
@@ -58,6 +46,18 @@ export default class NeDbWrapper {
                 "User Documents", "Collection of user documents")
             this.documents.datastore.setAutocompactionInterval(1000 * 60 * 60);
             this.types = new CustomStore(undefined,
+                "Document Types", "Collection of document types")
+        } else {
+            this.users = new CustomStore("./db/docpouch-users.db",
+                "System Users", "Collection of documents describing system users - handle with care")
+            this.users.datastore.setAutocompactionInterval(1000 * 60 * 5);
+            this.structures = new CustomStore("./db/docpouch-structures.db",
+                "Data Structures", "Collection of documents describing data structures")
+            this.structures.datastore.setAutocompactionInterval(1000 * 60 * 30);
+            this.documents = new CustomStore("./db/docpouch-documents.db",
+                "User Documents", "Collection of user documents")
+            this.documents.datastore.setAutocompactionInterval(1000 * 60 * 60);
+            this.types = new CustomStore("./db/docpouch-types.db",
                 "Document Types", "Collection of document types")
         }
         this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
