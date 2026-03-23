@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.0.1...v1.0.2) (2026-03-23)
+
+
+### Bug Fixes
+
+* correct package.json copy step in Dockerfile ([2672d34](https://github.com/BFH-JTF/doc-pouch/commit/2672d34bb80a17bad9a6b40d589fdd8b542b4897))
+
 ## [1.0.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.0.0...v1.0.1) (2026-03-21)
 
 
