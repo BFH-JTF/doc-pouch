@@ -1,3 +1,11 @@
+# [1.1.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.0.4...v1.1.0) (2026-03-24)
+
+
+### Features
+
+* add database export support for in-memory mode ([b8c6df3](https://github.com/BFH-JTF/doc-pouch/commit/b8c6df32c0b30fd173c2b82ac779d7395d56f3ef))
+* add Docker support and enhance NeDbWrapper initialization ([069cabd](https://github.com/BFH-JTF/doc-pouch/commit/069cabd4d934242434948e6f69a2ad629f36bddd))
+
 ## [1.0.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.0.3...v1.0.4) (2026-03-23)
 
 
