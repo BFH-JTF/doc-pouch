@@ -1,0 +1,13 @@
+services:
+  docPouch:
+    image: ghcr.io/bfh-jtf/doc-pouch:latest
+    ports:
+      - "3030:3030"
+    volumes:
+      - "./db:/app/db"
+      - "./log:/app/log"
+    environment:
+      - PORT=3030
+      - MEMORY_ONLY=false
+      - PREFIX=test_
+    restart: unless-stopped

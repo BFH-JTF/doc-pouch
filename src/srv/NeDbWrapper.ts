@@ -16,7 +16,8 @@ type NedbInstance = InstanceType<typeof NedbConstructor>;
 
 export interface INeDbOptions {
     inMemoryOnly?: boolean;
-    filenamePrefix?: string; // optional, kept for compatibility
+    filenamePrefix?: string;
+    dbPath?: string;
 }
 
 type NedbSchema = I_DocumentCreationOwned | I_UserCreation | I_StructureCreation | I_DocumentType;
@@ -29,15 +30,19 @@ export default class NeDbWrapper {
     logger: winston.Logger
     saltRounds: number = 10;
     private readonly inMemoryOnly: boolean;
+    private readonly filenamePrefix: string | undefined;
+    private readonly dbPath: string | undefined;
 
     constructor(winstonLogger: winston.Logger, options: INeDbOptions = {}) {
         this.logger = winstonLogger;
         this.inMemoryOnly = options.inMemoryOnly ?? false;
-        const dbPath = "./db"
-        if (!fs.existsSync(dbPath)) {
-            fs.mkdirSync(dbPath);
+        this.filenamePrefix = options.filenamePrefix ?? undefined;
+        this.dbPath = options.dbPath ?? "./db";
+        if (!fs.existsSync(this.dbPath)) {
+            fs.mkdirSync(this.dbPath);
         }
         if (options.inMemoryOnly) {
+            this.logger.info("Using in-memory database");
             this.users = new CustomStore(undefined,
                 "System Users", "Collection of documents describing system users - handle with care")
             this.users.datastore.setAutocompactionInterval(1000 * 60 * 5);
@@ -51,16 +56,20 @@ export default class NeDbWrapper {
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         } else {
-            this.users = new CustomStore("./db/docpouch-users.db",
+            this.logger.info("Using database files in " + this.dbPath);
+            if (this.filenamePrefix === undefined)
+                this.filenamePrefix = "docpouch-"
+            this.logger.info(`Using database files in ${this.dbPath}/${this.filenamePrefix}users.db, ${this.dbPath}/${this.filenamePrefix}structures.db, ${this.dbPath}/${this.filenamePrefix}documents.db, ${this.dbPath}/${this.filenamePrefix}types.db`)
+            this.users = new CustomStore(`${this.dbPath}/${this.filenamePrefix}users.db`,
                 "System Users", "Collection of documents describing system users - handle with care")
             this.users.datastore.setAutocompactionInterval(1000 * 60 * 5);
-            this.structures = new CustomStore("./db/docpouch-structures.db",
+            this.structures = new CustomStore(`${this.dbPath}/${this.filenamePrefix}structures.db`,
                 "Data Structures", "Collection of documents describing data structures")
             this.structures.datastore.setAutocompactionInterval(1000 * 60 * 30);
-            this.documents = new CustomStore("./db/docpouch-documents.db",
+            this.documents = new CustomStore(`${this.dbPath}/${this.filenamePrefix}documents.db`,
                 "User Documents", "Collection of user documents")
             this.documents.datastore.setAutocompactionInterval(1000 * 60 * 60);
-            this.types = new CustomStore("./db/docpouch-types.db",
+            this.types = new CustomStore(`${this.dbPath}/${this.filenamePrefix}types.db`,
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         }

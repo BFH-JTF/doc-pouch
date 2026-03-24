@@ -1,5 +1,5 @@
 import NetworkManager from "./NetworkManager.js";
-import NeDbWrapper from "./NeDbWrapper.js";
+import NeDbWrapper, {type INeDbOptions} from "./NeDbWrapper.js";
 import winston from "winston";
 import fs from "fs";
 
@@ -8,9 +8,14 @@ const corsOptions = {
     credentials: true
 }
 
-// use environment variables to configure port
+// use environment variables to configure settings
 const PORT = parseInt(process.env.PORT || '3030');
-
+const PREFIX = process.env.PREFIX || undefined;
+let MEMORY_ONLY: boolean;
+if (process.env.MEMORY_ONLY)
+    MEMORY_ONLY = process.env.MEMORY_ONLY.toLowerCase() === "true";
+else
+    MEMORY_ONLY = false
 
 const dbPath = "./log"
 if (!fs.existsSync(dbPath)) {
@@ -39,5 +44,10 @@ let winstonLogger = winston.createLogger({
     ],
 });
 
-const dataManager = new NeDbWrapper(winstonLogger);
+let dbOptions: INeDbOptions = {
+    inMemoryOnly: MEMORY_ONLY,
+    filenamePrefix: PREFIX
+}
+
+const dataManager = new NeDbWrapper(winstonLogger, dbOptions);
 new NetworkManager(winstonLogger, dataManager, PORT, corsOptions);
