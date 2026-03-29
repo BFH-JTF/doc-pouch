@@ -395,7 +395,11 @@ async function handleExportDatabase() {
       }
     });
 
-    if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      setToken(null);
+      showLoginDialog.value = true;
+      throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+    } else if (!response.ok) {
       throw new Error(`Export failed: ${response.status} ${response.statusText}`);
     }
 
