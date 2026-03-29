@@ -46,6 +46,7 @@ export default class SchemaValidator {
             description: string().optional(),
             shareWithGroup: boolean().required(),
             shareWithDepartment: boolean().required(),
+            public: boolean().required(),
             content: mixed()
                 .test(
                     'is-array-or-object',
@@ -65,6 +66,7 @@ export default class SchemaValidator {
             description: string().optional(),
             shareWithGroup: boolean().optional(),
             shareWithDepartment: boolean().optional(),
+            public: boolean().optional(),
             content: mixed()
                 .test(
                     'is-array-or-object',
@@ -96,6 +98,7 @@ export default class SchemaValidator {
             subType: number().optional(),
             shareWithGroup: boolean().optional(),
             shareWithDepartment: boolean().optional(),
+            public: boolean().optional(),
         })
 
         this.typeCreationSchema = object({

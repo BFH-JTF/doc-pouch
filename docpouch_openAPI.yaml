@@ -180,7 +180,7 @@ paths:
   /docs/list:
     get:
       summary: List documents
-      description: "List all documents owned by the user or shared with the user's group or department, but omit their content. For administrators, all documents are listed."
+      description: "List all documents readable by the user. This includes documents owned by the user, shared with the user's group or department, or marked as public. For administrators, all documents are listed."
       tags:
         - documents
       security:
@@ -201,7 +201,7 @@ paths:
   /docs/fetch:
     post:
       summary: "Get a document based on a query object."
-      description: "Users can fetch their own documents and documents shared with their group or department. Administrators can fetch any document on the server. Omit keys not used in the query."
+      description: "Fetch documents matching the query criteria that the user has access to. This includes own documents, documents shared with group/department, or public documents. Administrators can fetch any document."
       tags:
         - documents
       security:
@@ -528,12 +528,17 @@ components:
           type: boolean
           description: "If true, the document is shared with all users in the owner's department"
           example: false
+        public:
+          type: boolean
+          description: "If true, the document can be read by everybody"
+          example: false
       required:
         - _id
         - title
         - type
         - subType
         - content
+        - public
 
     DocumentQuery:
       type: object
@@ -567,7 +572,11 @@ components:
           type: boolean
           description: "If true, the document is shared with all users in the owner's department"
           example: false
-
+        public:
+          type: boolean
+          description: "If true, the document can be read by everybody"
+          example: false
+    
     NewDocument:
       type: object
       description: "Data element for creating a new document"
@@ -596,6 +605,10 @@ components:
           type: boolean
           description: "If true, the document is shared with all users in the owner's department"
           example: false
+        public:
+          type: boolean
+          description: "If true, the document can be read by everybody"
+          example: false
       required:
         - title
         - type
@@ -603,6 +616,7 @@ components:
         - content
         - shareWithDepartment
         - shareWithGroup
+        - public
 
     UserDisplay:
       type: object

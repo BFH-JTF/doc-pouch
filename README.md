@@ -23,6 +23,15 @@ A user entry describes a system user including the name, password, role, and ema
 Documents store the main data. They can be all sort of data objects as long as they can be express in JSON. They can
 follow their own structure or follow an existing document structure.
 
+Documents have access control settings:
+
+- **Private**: Only the owner and administrators can access the document.
+- **Shared with Group**: All users in the owner's group can read the document.
+- **Shared with Department**: All users in the owner's department can read the document.
+- **Public**: All authenticated users can read the document.
+
+Owners can change these settings in the document editor.
+
 ### Document Structures
 Document structures describe how documents following this structure are structured and what information they hold.
 They contain a separate DataElement for each field of the data structure in their "fields" property.
@@ -124,11 +133,13 @@ DocPouch provides a RESTful API with an [OpenAPI documentation]() and the follow
 - `DELETE /users/remove/{userID}` - Remove a user and all their documents (admin only)
 
 ### Document Management
-- `GET /docs/list` - List all documents (owned by the user or all for admins)
-- `GET /docs/fetch/{documentID}` - Get a specific document by ID
+
+- `GET /docs/list` - List all documents readable by the user (including public ones)
+- `POST /docs/fetch` - Get documents based on a query object (including public ones)
 - `POST /docs/create` - Create a new document
 - `PATCH /docs/update/{documentID}` - Update an existing document
 - `DELETE /docs/remove/{documentID}` - Remove a document
+- `GET /docs/fetch/{documentID}` - Get a specific document by ID (deprecated, use /docs/fetch)
 
 ### Document Type Management
 
@@ -144,7 +155,7 @@ DocPouch provides a RESTful API with an [OpenAPI documentation]() and the follow
 - `DELETE /structures/remove/{structureID}` - Remove a data structure (admin only)
 
 All API endpoints (except login) require authentication using JWT tokens. You can find an OpenAPI specification
-in the `docPouch.yml` file.
+in the `docpouch_openAPI.yaml` file.
 
 > **Note**: API endpoints use standard HTTP response codes: `201` (Created), `204` (No Content), `403` (Forbidden), etc.
 

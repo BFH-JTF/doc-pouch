@@ -1,5 +1,5 @@
 import Nedb from "@seald-io/nedb";
-import winston, {error} from "winston";
+import winston from "winston";
 import fs from "fs";
 import bcrypt from "bcrypt"
 import type {
@@ -19,8 +19,6 @@ export interface INeDbOptions {
     filenamePrefix?: string;
     dbPath?: string;
 }
-
-type NedbSchema = I_DocumentCreationOwned | I_UserCreation | I_StructureCreation | I_DocumentType;
 
 export default class NeDbWrapper {
     users: CustomStore
@@ -100,6 +98,7 @@ export default class NeDbWrapper {
                                         description: "This is just a demo, delete when you don't need it anymore",
                                         subType: 0,
                                         type: 1,
+                                        public: false,
                                         content: [{
                                             label: "This is a demo document not following any document structure",
                                             importance: 0
@@ -194,13 +193,14 @@ export default class NeDbWrapper {
                         });
                     }
                 });
+            } else {
+                reject("Requesting user ID is undefined");
             }
         })
     }
 
     getUsersByGroupName(groupName: string, departmentName: string): Promise<I_UserEntry[]> {
         return new Promise((resolve, reject) => {
-            let users: I_UserEntry[] = [];
             this.users.query({group: groupName, department: departmentName})
                 .then((result) => {
                     if (result.length > 0)
@@ -213,7 +213,6 @@ export default class NeDbWrapper {
 
     getUsersByDepartmentName(departmentName: string): Promise<I_UserEntry[]> {
         return new Promise((resolve, reject) => {
-            let users: I_UserEntry[] = [];
             this.users.query({department: departmentName})
                 .then((result) => {
                     if (result.length > 0)
@@ -226,7 +225,6 @@ export default class NeDbWrapper {
 
     listDocAccess(userID: string): Promise<I_DocumentEntry[]> {
         return new Promise(async (resolve, reject) => {
-            let returnArray: I_DocumentEntry[] = [];
             try {
                 const isAdmin = await this.isAdmin(userID);
 
@@ -242,19 +240,26 @@ export default class NeDbWrapper {
                 const allDocs = await this.documents.query({}) as I_DocumentEntry[];
 
                 // Step 2: Get all owners of these documents
-                const ownerIDs = allDocs.map(doc => doc.owner);
+                const ownerIDs = [...new Set(allDocs.map(doc => doc.owner))];
                 const owners = await Promise.all(
                     ownerIDs.map(ownerID => this.getUserByID(ownerID))
                 );
 
                 // Step 3: Create a map from owner ID to their department and group
                 const ownerInfoMap = owners.reduce((acc, owner) => {
-                    acc[owner._id] = {department: owner.department, group: owner.group};
+                    if (owner) {
+                        acc[owner._id] = {department: owner.department, group: owner.group};
+                    }
                     return acc;
                 }, {} as Record<string, { department: string; group: string }>);
 
                 // Step 4: Filter documents based on user's access
                 const filteredDocs = allDocs.filter(doc => {
+                    // Case 0: Document is public
+                    if (doc.public) return true;
+
+                    if (!user) return false;
+
                     const ownerInfo = ownerInfoMap[doc.owner];
 
                     // Case 1: User is the owner
@@ -267,7 +272,6 @@ export default class NeDbWrapper {
                     // Case 3: Shared with group and user is in the same group
                     if (doc.shareWithGroup && ownerInfo?.group === user.group)
                         return true;
-
                     return false;
                 });
 
@@ -320,11 +324,10 @@ export default class NeDbWrapper {
                         } else {
                             resolve(401);
                         }
-                    }).catch((error) => {
+                    }).catch(() => {
                         resolve(401);
                     });
                 } else {
-                    // This was missing - handle case where user is not found
                     resolve(404);
                 }
             }).catch((error) => {
@@ -336,7 +339,7 @@ export default class NeDbWrapper {
 
     removeUser(userID: string) {
         return new Promise((resolve, reject) => {
-            this.documents.remove({owner: userID}).then((numRemoved: number) => {
+            this.documents.remove({owner: userID}).then(() => {
                 this.users.remove({_id: userID}).then((numRemoved: number) => {
                     if (numRemoved > 0) {
                         this.logger.info("Removed user:" + JSON.stringify(userID));
@@ -461,7 +464,7 @@ export default class NeDbWrapper {
                             if (structure && "_id" in structure && typeof structure._id === "string") {
                                 this.structures.update(structure._id, newStructure).then((result) => {
                                     resolve(result);
-                                }).catch(error => {
+                                }).catch(() => {
                                     reject(400);
                                 });
                             } else {
@@ -470,7 +473,7 @@ export default class NeDbWrapper {
                         } else {
                             reject(404);
                         }
-                    }).catch(error => {
+                    }).catch(() => {
                         reject(400)
                     });
                 }
@@ -570,7 +573,8 @@ export default class NeDbWrapper {
                 title: document.title,
                 type: document.type,
                 shareWithGroup: document.shareWithGroup,
-                shareWithDepartment: document.shareWithDepartment
+                shareWithDepartment: document.shareWithDepartment,
+                public: document.public
             }
 
             this.documents.add(newDocument).then((savedDocument) => {
@@ -642,7 +646,7 @@ export default class NeDbWrapper {
                         return;
                     }
                     let document = result[0] as I_DocumentEntry;
-                    const isAdmin = this.isAdmin(requestingUserID).then((isAdmin) => {
+                    this.isAdmin(requestingUserID).then((isAdmin) => {
                         if (isAdmin || document.owner === requestingUserID) {
                             this.documents.remove({_id: documentID}).then((numRemoved) => {
                                 if (numRemoved > 0) {
@@ -676,7 +680,7 @@ export default class NeDbWrapper {
         return new Promise((resolve, reject) => {
             this.isAdmin(requestingUserID).then(isAdmin => {
                 if (isAdmin) {
-                    this.types.query({type: newTypeData.type, subType: newTypeData.subType}).then(docs => {
+                    this.types.query({type: newTypeData.type, subType: newTypeData.subType}).then(() => {
                         if (newTypeData._id === undefined) {
                             // new entry
                             this.types.add(newTypeData).then((newDocument) => {
@@ -684,8 +688,8 @@ export default class NeDbWrapper {
                                 resolve(newDocument as I_DocumentType);
                             }).catch(reject);
                         } else {
-                            // No duplicate found or it's the same document, proceed to update
-                            this.types.update(newTypeData._id, newTypeData).then((numUpdated) => {
+                            // No duplicate found, or it's the same document, proceed to update
+                            this.types.update(newTypeData._id, newTypeData).then(() => {
                                 this.logger.info("Updated document type: " + newTypeData._id);
                                 resolve(newTypeData);
                             }).catch(reject);
