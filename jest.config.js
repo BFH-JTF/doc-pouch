@@ -11,14 +11,7 @@ export default {
             'ts-jest',
             {
                 useESM: true,
-                tsconfig: {
-                    module: 'ES2022',
-                    moduleResolution: 'NodeNext',
-                    target: 'ES2022',
-                    esModuleInterop: true,
-                    isolatedModules: true,
-                    types: ['node', 'jest'],
-                },
+                tsconfig: './tsconfig.test.json',
             },
         ],
         '^.+\\.(js|jsx)$': 'babel-jest',

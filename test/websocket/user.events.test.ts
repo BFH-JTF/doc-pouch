@@ -10,7 +10,7 @@ import {
     API_BASE_URL, waitForEvent, authenticatedRequest
 } from '../setup/testSetup.js';
 import request from 'supertest';
-import {I_UserCreation, type I_UserUpdate} from 'docpouch-client';
+import type {I_UserCreation, I_UserUpdate} from 'docpouch-client';
 
 describe('User WebSocket Events Tests', () => {
     let server: Server;
@@ -124,10 +124,10 @@ describe('User WebSocket Events Tests', () => {
             // Verify the event data
             expect(adminData).toHaveProperty('newUser');
             expect(adminData.newUser).toHaveProperty('_id');
-            expect(adminData.newUser.name).toBe(newUser.name);
-            expect(adminData.newUser.email).toBe(newUser.email);
-            expect(adminData.newUser.department).toBe(newUser.department);
-            expect(adminData.newUser.group).toBe(newUser.group);
+            expect(adminData.newUser?.name).toBe(newUser.name);
+            expect(adminData.newUser?.email).toBe(newUser.email);
+            expect(adminData.newUser?.department).toBe(newUser.department);
+            expect(adminData.newUser?.group).toBe(newUser.group);
 
             // Regular user should not receive the event
             expect(userReceivedEvent).toBe(false);
@@ -168,11 +168,11 @@ describe('User WebSocket Events Tests', () => {
 
             // Verify the event data
             expect(adminData).toHaveProperty('changedUser');
-            expect(adminData.changedUser._id).toBe(regularUser._id);
-            expect(adminData.changedUser.name).toBe(updateData.name);
-            expect(adminData.changedUser.email).toBe(updateData.email);
-            expect(adminData.changedUser.department).toBe(updateData.department);
-            expect(adminData.changedUser.group).toBe(updateData.group);
+            expect(adminData.changedUser?._id).toBe(regularUser._id);
+            expect(adminData.changedUser?.name).toBe(updateData.name);
+            expect(adminData.changedUser?.email).toBe(updateData.email);
+            expect(adminData.changedUser?.department).toBe(updateData.department);
+            expect(adminData.changedUser?.group).toBe(updateData.group);
 
             // Regular user should not receive the event
             expect(userReceivedEvent).toBe(false);
@@ -209,9 +209,9 @@ describe('User WebSocket Events Tests', () => {
 
             // Verify the event data
             expect(adminData).toHaveProperty('changedUser');
-            expect(adminData.changedUser._id).toBe(regularUser._id);
-            expect(adminData.changedUser.name).toBe(updateData.name);
-            expect(adminData.changedUser.email).toBe(updateData.email);
+            expect(adminData.changedUser?._id).toBe(regularUser._id);
+            expect(adminData.changedUser?.name).toBe(updateData.name);
+            expect(adminData.changedUser?.email).toBe(updateData.email);
 
             // Regular user should not receive the event
             expect(userReceivedEvent).toBe(false);
@@ -338,10 +338,10 @@ describe('User WebSocket Events Tests', () => {
 
             // Verify both admins received the event
             expect(adminData).toHaveProperty('newUser');
-            expect(adminData.newUser.name).toBe(anotherUser.name);
+            expect(adminData.newUser?.name).toBe(anotherUser.name);
 
             expect(newAdminData).toHaveProperty('newUser');
-            expect(newAdminData.newUser.name).toBe(anotherUser.name);
+            expect(newAdminData.newUser?.name).toBe(anotherUser.name);
         });
     });
 });

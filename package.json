@@ -10,7 +10,7 @@
     "build": "npm run build:backend && npm run build:frontend",
     "run": "node ./dist/srv/main.js",
     "preview": "vite preview",
-    "test": "jest  --runInBand",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --detectOpenHandles",
     "test:http": "jest test/http --runInBand",
     "test:websocket": "jest test/websocket --runInBand",
     "test:watch": "jest --watch --runInBand"

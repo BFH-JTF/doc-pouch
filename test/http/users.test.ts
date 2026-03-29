@@ -9,7 +9,7 @@ import {
     closeTestServer,
     API_BASE_URL, authenticatedRequest
 } from '../setup/testSetup.js';
-import {I_UserCreation, type I_UserEntry, I_UserUpdate} from 'docpouch-client';
+import type {I_UserCreation, I_UserEntry, I_UserUpdate} from 'docpouch-client';
 
 describe('User Management API Tests', () => {
     let server: Server;
