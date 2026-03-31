@@ -238,6 +238,8 @@ async function fetchData() {
     handleApiError(error, "fetching types");
     typeArray.value = [];
   }
+
+  await migrateDatabase();
 }
 
 function handleLoginSuccess(loginInformation: I_LoginResponse | null) {
@@ -429,6 +431,22 @@ async function handleExportDatabase() {
     console.error('Error exporting database:', error);
     snackBarMessage.value = `Error exporting database: ${error.message}`;
     snackBarVisible.value = true;
+  }
+}
+
+async function migrateDatabase() {
+  // pre-1.1.0
+  console.log("Checking for database migration... (pre-1.1.0");
+  for (const doc of docArray.value) {
+    if (doc.public === undefined) {
+      console.log(`Migrating document ${doc._id}: adding public: false`);
+      doc.public = false;
+      try {
+        await apiClient.updateDocument(doc._id, doc);
+      } catch (error) {
+        console.error(`Error migrating document ${doc._id}:`, error);
+      }
+    }
   }
 }
 </script>
