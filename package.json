@@ -11,9 +11,9 @@
     "run": "node ./dist/srv/main.js",
     "preview": "vite preview",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --detectOpenHandles",
-    "test:http": "jest test/http --runInBand",
-    "test:websocket": "jest test/websocket --runInBand",
-    "test:watch": "jest --watch --runInBand"
+    "test:http": "NODE_OPTIONS='--experimental-vm-modules' jest test/http --runInBand",
+    "test:websocket": "NODE_OPTIONS='--experimental-vm-modules' jest test/websocket --runInBand",
+    "test:watch": "NODE_OPTIONS='--experimental-vm-modules' jest --watch --runInBand"
   },
   "repository": {
     "type": "git",

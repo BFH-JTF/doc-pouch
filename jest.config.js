@@ -36,4 +36,6 @@ export default {
     restoreMocks: true,
     testTimeout: 10000,
     setupFilesAfterEnv: ['<rootDir>/test/setup/jestSetup.cts'],
+    globalSetup: '<rootDir>/test/setup/globalSetup.ts',
+    globalTeardown: '<rootDir>/test/setup/globalTeardown.ts',
 };
