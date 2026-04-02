@@ -20,6 +20,16 @@ export interface INeDbOptions {
     dbPath?: string;
 }
 
+export type DatabaseCollection = "users" | "documents" | "structures" | "types";
+export type ImportMode = "replace" | "add" | "skip";
+
+export interface IDatabaseExportData {
+    users: any[];
+    documents: any[];
+    structures: any[];
+    types: any[];
+}
+
 export default class NeDbWrapper {
     users: CustomStore
     structures: CustomStore
@@ -150,7 +160,7 @@ export default class NeDbWrapper {
         return this.inMemoryOnly;
     }
 
-    async exportAllData(): Promise<{ users: any[]; documents: any[]; structures: any[]; types: any[] }> {
+    async exportAllData(): Promise<IDatabaseExportData> {
         const [users, documents, structures, types] = await Promise.all([
             this.users.query({}),
             this.documents.query({}),
@@ -164,6 +174,72 @@ export default class NeDbWrapper {
             structures,
             types
         };
+    }
+
+    async exportCollection(collection: DatabaseCollection): Promise<any[]> {
+        return this.getCollectionStore(collection).query({}) as Promise<any[]>;
+    }
+
+    async importCollections(data: Partial<IDatabaseExportData>, mode: ImportMode = "replace"): Promise<void> {
+        const collections: DatabaseCollection[] = ["users", "documents", "structures", "types"];
+
+        for (const collection of collections) {
+            const collectionData = data[collection];
+            if (collectionData === undefined) {
+                continue;
+            }
+
+            if (!Array.isArray(collectionData)) {
+                throw new Error(`Invalid payload for '${collection}'. Expected a JSON array.`);
+            }
+
+            const store = this.getCollectionStore(collection);
+
+            for (const doc of collectionData) {
+                if (mode === "add") {
+                    const docToAdd = {...doc};
+                    delete docToAdd._id;
+                    await store.add(docToAdd);
+                } else if (mode === "skip") {
+                    if (doc._id) {
+                        const existing = await store.query({_id: doc._id});
+                        if (existing.length === 0) {
+                            await store.add(doc);
+                        }
+                    } else {
+                        await store.add(doc);
+                    }
+                } else if (mode === "replace") {
+                    if (doc._id) {
+                        await new Promise((resolve, reject) => {
+                            const cleanDoc = {...doc};
+                            delete cleanDoc._id;
+                            store.datastore.update({_id: doc._id}, cleanDoc, {upsert: true}, (err: any) => {
+                                if (err) reject(err);
+                                else resolve(undefined);
+                            });
+                        });
+                    } else {
+                        await store.add(doc);
+                    }
+                }
+            }
+        }
+    }
+
+    private getCollectionStore(collection: DatabaseCollection): CustomStore {
+        switch (collection) {
+            case "users":
+                return this.users;
+            case "documents":
+                return this.documents;
+            case "structures":
+                return this.structures;
+            case "types":
+                return this.types;
+            default:
+                throw new Error(`Unsupported collection '${collection}'`);
+        }
     }
 
     private getAdminUser(): Promise<I_UserEntry> {
@@ -755,6 +831,18 @@ class CustomStore {
                     reject(err);
                 } else {
                     resolve(newDocument as I_DocumentEntry | I_UserEntry | I_StructureEntry);
+                }
+            });
+        });
+    }
+
+    async insertMany(inputData: any[]): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.datastore.insert(inputData, (err: Error | null) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
                 }
             });
         });

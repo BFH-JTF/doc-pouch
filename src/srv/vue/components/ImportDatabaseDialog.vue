@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import {ref} from 'vue';
+import {computed, ref, watch} from 'vue';
 
 const props = defineProps<{
   show: boolean;
@@ -10,38 +10,68 @@ const emit = defineEmits<{
   'logout': [];
 }>();
 
-const fileInput = ref<HTMLInputElement | null>(null);
 const selectedFile = ref<File | null>(null);
 const isUploading = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
+const importScope = ref<'all' | 'users' | 'documents' | 'structures' | 'types'>('all');
+const importMode = ref<'replace' | 'add' | 'skip'>('replace');
+
+const importScopeOptions = [
+  {title: 'All Data', value: 'all'},
+  {title: 'Documents', value: 'documents'},
+  {title: 'Users', value: 'users'},
+  {title: 'Types', value: 'types'},
+  {title: 'Structures', value: 'structures'}
+];
+
+const importModeOptions = [
+  {title: 'Replace existing documents (same _id)', value: 'replace'},
+  {title: 'Add as new documents (new _id)', value: 'add'},
+  {title: 'Skip existing documents (same _id)', value: 'skip'}
+];
+
+const acceptedFileTypes = computed(() => importScope.value === 'all' ? '.zip,.json' : '.json');
+const fileLabel = computed(() => importScope.value === 'all' ? 'Select JSON or ZIP file' : `Select ${importScope.value} JSON file`);
+
+function isValidFileForScope(file: File): boolean {
+  const lowerCaseName = file.name.toLowerCase();
+  const isJson = lowerCaseName.endsWith('.json') || file.type === 'application/json';
+  const isZip = lowerCaseName.endsWith('.zip') || file.type === 'application/zip';
+
+  if (importScope.value === 'all') {
+    return isJson || isZip;
+  }
+
+  return isJson;
+}
 
 function handleCancel() {
-  // Reset state
   selectedFile.value = null;
   errorMessage.value = '';
   successMessage.value = '';
   isUploading.value = false;
-
-  // Close dialog
   emit("close", false);
 }
 
-function handleFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  if (input.files && input.files.length > 0) {
-    const file = input.files[0];
+function handleFileChange(file: File | File[] | null) {
+  const normalizedFile = Array.isArray(file) ? file[0] : file;
 
-    // Check if it's a zip file
-    if (file.type !== 'application/zip' && !file.name.endsWith('.zip')) {
-      errorMessage.value = 'Please select a valid ZIP file.';
-      selectedFile.value = null;
-      return;
-    }
-
-    selectedFile.value = file;
-    errorMessage.value = '';
+  if (!normalizedFile) {
+    selectedFile.value = null;
+    return;
   }
+
+  if (!isValidFileForScope(normalizedFile)) {
+    errorMessage.value = importScope.value === 'all'
+        ? 'Please select a valid JSON or ZIP file.'
+        : `Please select a valid JSON file for ${importScope.value}.`;
+    selectedFile.value = null;
+    return;
+  }
+
+  selectedFile.value = normalizedFile;
+  errorMessage.value = '';
 }
 
 async function handleImport() {
@@ -54,31 +84,19 @@ async function handleImport() {
     isUploading.value = true;
     errorMessage.value = '';
 
-    // Get the base URL
-    const baseUrl = window.location.href.slice(0, Math.min(
-        window.location.href.lastIndexOf('/'),
-        window.location.href.indexOf(':', window.location.href.indexOf('://') + 3) !== -1
-            ? window.location.href.indexOf(':', window.location.href.indexOf('://') + 3)
-            : window.location.href.length
-    ));
-
-    // Create a URL for the import endpoint
     const importUrl = '/database/import';
-
-    // Create form data
     const formData = new FormData();
     formData.append('file', selectedFile.value);
+    formData.append('scope', importScope.value);
+    formData.append('mode', importMode.value);
 
-    // Get the authorization token from localStorage
     const token = localStorage.getItem('authToken');
-
     if (!token) {
       errorMessage.value = 'You must be logged in to import the database.';
       isUploading.value = false;
       return;
     }
 
-    // Send the request
     const response = await fetch(importUrl, {
       method: 'POST',
       headers: {
@@ -92,15 +110,14 @@ async function handleImport() {
       throw new Error(errorData.error || 'Import failed');
     }
 
-    // Show success message
-    successMessage.value = 'Database imported successfully. You will be logged out.';
+    successMessage.value = importScope.value === 'all'
+        ? 'Database imported successfully. You will be logged out.'
+        : `${importScope.value} imported successfully. You will be logged out.`;
 
-    // Wait a moment before logging out
     setTimeout(() => {
       emit('logout');
       handleCancel();
     }, 2000);
-
   } catch (error: any) {
     console.error('Error importing database:', error);
     errorMessage.value = `Error importing database: ${error.message}`;
@@ -108,6 +125,11 @@ async function handleImport() {
     isUploading.value = false;
   }
 }
+
+watch(importScope, () => {
+  selectedFile.value = null;
+  errorMessage.value = '';
+});
 </script>
 
 <template>
@@ -117,24 +139,36 @@ async function handleImport() {
         Import Database
       </v-card-title>
       <v-card-text class="pt-4">
-        <v-alert class="mb-4" type="warning" variant="tonal">
-          <strong>Warning:</strong> Importing a database will overwrite all current data. This action cannot be undone.
-          Make sure you have a backup of your current data if needed.
-        </v-alert>
-
         <div v-if="!successMessage">
+          <v-select
+              v-model="importScope"
+              :disabled="isUploading"
+              :items="importScopeOptions"
+              class="mb-2"
+              label="Import scope"
+          ></v-select>
+
+          <v-select
+              v-model="importMode"
+              :disabled="isUploading"
+              :items="importModeOptions"
+              class="mb-2"
+              label="Conflict resolution"
+          ></v-select>
+
           <v-file-input
               v-model="selectedFile"
               :disabled="isUploading"
               :error-messages="errorMessage"
-              accept=".zip"
-              label="Select ZIP file"
+              :accept="acceptedFileTypes"
+              :label="fileLabel"
               prepend-icon="mdi-database-import"
-              @change="handleFileChange"
+              @update:model-value="handleFileChange"
           ></v-file-input>
 
           <p class="text-caption mt-2">
-            The ZIP file should contain only database files (*.db) exported from DocPouch.
+            Scope <code>all</code>: upload a full ZIP backup or a JSON object with collections.
+            For single scopes, upload a JSON array (or object containing the selected collection).
           </p>
         </div>
 

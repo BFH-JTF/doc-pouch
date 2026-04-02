@@ -447,19 +447,41 @@ paths:
   /database/export:
     get:
       summary: Export the database
-      description: Export all database files as a ZIP archive. Only available to administrators.
+      description: "Export full data as ZIP/JSON or export a single collection as JSON. Only available to administrators."
       tags:
         - administration
       security:
         - adminAuth: [ ]
+      parameters:
+        - in: query
+          name: scope
+          required: false
+          description: "Which data scope to export"
+          schema:
+            type: string
+            enum: [ all, users, documents, structures, types ]
+            default: all
+        - in: query
+          name: format
+          required: false
+          description: "Export format. ZIP is only supported for scope=all."
+          schema:
+            type: string
+            enum: [ zip, json ]
+            default: zip
       responses:
         200:
-          description: "ZIP archive containing database files"
+          description: "Export payload as ZIP archive or JSON file"
           content:
             application/zip:
               schema:
                 type: string
                 format: binary
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                  - type: object
         401:
           description: "Not authorized to export database"
         403:
@@ -468,7 +490,7 @@ paths:
   /database/import:
     post:
       summary: Import the database
-      description: "Import database files from a ZIP archive. Only available to administrators. Warning: This will replace all existing data."
+      description: "Import data from JSON (full or scoped) or ZIP (full only). Only available to administrators."
       tags:
         - administration
       security:
@@ -483,7 +505,17 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: "ZIP file containing .db files"
+                  description: "JSON file (scoped or full) or ZIP file (full import)"
+                scope:
+                  type: string
+                  enum: [ all, users, documents, structures, types ]
+                  default: all
+                  description: "Import target scope. ZIP supports only scope=all."
+                mode:
+                  type: string
+                  enum: [ replace, add, skip ]
+                  default: replace
+                  description: "Import mode: replace (overwrite same _id), add (new _id for same _id), skip (ignore same _id)"
       responses:
         200:
           description: "Database imported successfully"

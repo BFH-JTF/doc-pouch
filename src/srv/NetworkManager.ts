@@ -4,7 +4,7 @@ import path, {dirname} from 'path';
 import {fileURLToPath} from 'url';
 import cors from 'cors';
 import type {I_DocumentType, I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
-import NeDbWrapper from "./NeDbWrapper.js";
+import NeDbWrapper, {type DatabaseCollection, type ImportMode} from "./NeDbWrapper.js";
 import winston from "winston";
 import jwt from "jsonwebtoken"
 import SchemaValidator from "./SchemaValidator.js";
@@ -16,6 +16,57 @@ import multer from "multer";
 import archiver from "archiver";
 import AdmZip from "adm-zip";
 import {JWTOptions} from "./webTokenStuff.js";
+
+const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures", "types"];
+type DatabaseScope = DatabaseCollection | "all";
+type ExportFormat = "json" | "zip";
+
+function isDatabaseCollection(value: string): value is DatabaseCollection {
+    return DATABASE_COLLECTIONS.includes(value as DatabaseCollection);
+}
+
+function parseDatabaseScope(rawScope: unknown): DatabaseScope {
+    if (typeof rawScope !== "string" || rawScope.trim().length < 1) {
+        return "all";
+    }
+
+    const normalized = rawScope.trim().toLowerCase();
+    if (normalized === "all") {
+        return "all";
+    }
+
+    if (isDatabaseCollection(normalized)) {
+        return normalized;
+    }
+
+    throw new Error("Invalid scope. Allowed values: all, users, documents, structures, types.");
+}
+
+function parseExportFormat(rawFormat: unknown): ExportFormat {
+    if (typeof rawFormat !== "string" || rawFormat.trim().length < 1) {
+        return "zip";
+    }
+
+    const normalized = rawFormat.trim().toLowerCase();
+    if (normalized === "zip" || normalized === "json") {
+        return normalized;
+    }
+
+    throw new Error("Invalid format. Allowed values: zip, json.");
+}
+
+function parseImportMode(rawMode: unknown): ImportMode {
+    if (typeof rawMode !== "string" || rawMode.trim().length < 1) {
+        return "replace";
+    }
+
+    const normalized = rawMode.trim().toLowerCase();
+    if (normalized === "replace" || normalized === "add" || normalized === "skip") {
+        return normalized as ImportMode;
+    }
+
+    throw new Error("Invalid import mode. Allowed values: replace, add, skip.");
+}
 
 export default class NetworkManager {
     corsOptions: any;
@@ -428,22 +479,50 @@ export default class NetworkManager {
                     return res.status(403).json({error: "Only admins can export the database"});
                 }
 
-                if (this.dataManager.isInMemoryOnly()) {
-                    const zipFilename = "docpouch-database.zip";
+                let scope: DatabaseScope;
+                let format: ExportFormat;
+
+                try {
+                    scope = parseDatabaseScope(req.query.scope);
+                    format = parseExportFormat(req.query.format);
+                } catch (error) {
+                    return res.status(400).json({error: (error as Error).message});
+                }
+
+                try {
+                    if (format === "json") {
+                        if (scope === "all") {
+                            const exportData = await this.dataManager.exportAllData();
+                            res.setHeader("Content-Type", "application/json");
+                            res.setHeader("Content-Disposition", 'attachment; filename="docpouch-database.json"');
+                            return res.status(200).send(JSON.stringify(exportData, null, 2));
+                        }
+
+                        const scopedData = await this.dataManager.exportCollection(scope);
+                        res.setHeader("Content-Type", "application/json");
+                        res.setHeader("Content-Disposition", `attachment; filename="docpouch-${scope}.json"`);
+                        return res.status(200).send(JSON.stringify(scopedData, null, 2));
+                    }
+
+                    if (scope !== "all") {
+                        return res.status(400).json({error: "ZIP export supports only scope=all. Use format=json for scoped export."});
+                    }
+
+                    const zipFilename = `docpouch-database-${Date.now()}.zip`;
                     const output = fs.createWriteStream(zipFilename);
                     const archive = archiver('zip', {
                         zlib: {level: 9}
                     });
 
                     output.on('close', () => {
-                        this.logger.info(`In-memory database exported: ${archive.pointer()} total bytes`);
-                        res.download(zipFilename, (err) => {
+                        this.logger.info(`Database exported: ${archive.pointer()} total bytes`);
+                        res.download(zipFilename, "docpouch-database.zip", (err) => {
                             if (err) {
                                 this.logger.error("Error sending zip file:", err);
                             }
-                            fs.unlink(zipFilename, (err) => {
-                                if (err) {
-                                    this.logger.error("Error deleting temporary zip file:", err);
+                            fs.unlink(zipFilename, (unlinkError) => {
+                                if (unlinkError) {
+                                    this.logger.error("Error deleting temporary zip file:", unlinkError);
                                 }
                             });
                         });
@@ -455,85 +534,17 @@ export default class NetworkManager {
                     });
 
                     archive.pipe(output);
-
-                    try {
-                        const exportData = await this.dataManager.exportAllData();
-                        archive.append(JSON.stringify(exportData.users, null, 2), {name: 'docpouch-users.json'});
-                        archive.append(JSON.stringify(exportData.documents, null, 2), {name: 'docpouch-documents.json'});
-                        archive.append(JSON.stringify(exportData.structures, null, 2), {name: 'docpouch-structures.json'});
-                        archive.append(JSON.stringify(exportData.types, null, 2), {name: 'docpouch-types.json'});
-                        archive.finalize();
-                    } catch (error) {
-                        this.logger.error("Error exporting in-memory database:", error);
-                        output.close();
-                        return res.status(500).json({error: "Error exporting in-memory database"});
-                    }
-                    return;
-                }
-
-                const dbPath = "./db";
-                const zipFilename = "docpouch-database.zip";
-                const output = fs.createWriteStream(zipFilename);
-                const archive = archiver('zip', {
-                    zlib: {level: 9} // Maximum compression
-                });
-
-                // Listen for all archive data to be written
-                output.on('close', () => {
-                    this.logger.info(`Database exported: ${archive.pointer()} total bytes`);
-
-                    // Send the zip file
-                    res.download(zipFilename, (err) => {
-                        if (err) {
-                            this.logger.error("Error sending zip file:", err);
-                        }
-
-                        // Delete the temporary zip file
-                        fs.unlink(zipFilename, (err) => {
-                            if (err) {
-                                this.logger.error("Error deleting temporary zip file:", err);
-                            }
-                        });
-                    });
-                });
-
-                // Handle errors
-                archive.on('error', (err) => {
-                    this.logger.error("Error creating zip archive:", err);
-                    res.status(500).json({error: "Error creating zip archive"});
-                });
-
-                // Pipe archive data to the file
-                archive.pipe(output);
-
-                // Check if db directory exists
-                if (!fs.existsSync(dbPath)) {
-                    return res.status(404).json({error: "Database directory not found"});
-                }
-
-                // Read all files in the db directory
-                fs.readdir(dbPath, (err, files) => {
-                    if (err) {
-                        this.logger.error("Error reading database directory:", err);
-                        return res.status(500).json({error: "Error reading database directory"});
-                    }
-
-                    // Filter for .db files
-                    const dbFiles = files.filter(file => file.endsWith('.db'));
-
-                    if (dbFiles.length === 0) {
-                        return res.status(404).json({error: "No database files found"});
-                    }
-
-                    // Add each .db file to the archive
-                    dbFiles.forEach(file => {
-                        const filePath = path.join(dbPath, file);
-                        archive.file(filePath, {name: file});
-                    });
-
-                    // Finalize the archive
+                    const exportData = await this.dataManager.exportAllData();
+                    archive.append(JSON.stringify(exportData.users, null, 2), {name: 'docpouch-users.json'});
+                    archive.append(JSON.stringify(exportData.documents, null, 2), {name: 'docpouch-documents.json'});
+                    archive.append(JSON.stringify(exportData.structures, null, 2), {name: 'docpouch-structures.json'});
+                    archive.append(JSON.stringify(exportData.types, null, 2), {name: 'docpouch-types.json'});
                     archive.finalize();
-                });
+                    return;
+                } catch (error) {
+                    this.logger.error("Error exporting database:", error);
+                    return res.status(500).json({error: "Error exporting database"});
+                }
             }).catch((error) => {
                 this.logger.error("Error checking admin status:", error);
                 res.status(500).json({error: "Error checking admin status"});
@@ -554,52 +565,99 @@ export default class NetworkManager {
                 const uploadedFile = req.file;
 
                 try {
-                    // Check if it's a zip file
-                    if (!uploadedFile.originalname.endsWith('.zip')) {
-                        // Delete the uploaded file
+                    const scope = parseDatabaseScope(req.body.scope);
+                    const mode = parseImportMode(req.body.mode);
+                    const originalName = uploadedFile.originalname.toLowerCase();
+
+                    if (originalName.endsWith('.json')) {
+                        const rawContent = fs.readFileSync(uploadedFile.path, "utf8");
+                        const parsed = JSON.parse(rawContent);
+
+                        if (scope === "all") {
+                            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+                                fs.unlinkSync(uploadedFile.path);
+                                return res.status(400).json({error: "Invalid JSON payload. Expected an object with one or more collections."});
+                            }
+
+                            await this.dataManager.importCollections(parsed as {
+                                users?: any[];
+                                documents?: any[];
+                                structures?: any[];
+                                types?: any[];
+                            }, mode);
+
+                            fs.unlinkSync(uploadedFile.path);
+                            this.logger.info(`Database JSON import successful for scope=all, mode=${mode}`);
+                            return res.status(200).json({message: "Database imported successfully"});
+                        }
+
+                        const scopedData = Array.isArray(parsed)
+                            ? parsed
+                            : (typeof parsed === "object" && parsed !== null && Array.isArray((parsed as Record<string, unknown>)[scope])
+                                ? (parsed as Record<string, any[]>)[scope]
+                                : null);
+
+                        if (!scopedData) {
+                            fs.unlinkSync(uploadedFile.path);
+                            return res.status(400).json({error: `Invalid JSON payload for scope '${scope}'. Expected an array or an object containing '${scope}'.`});
+                        }
+
+                        await this.dataManager.importCollections({[scope]: scopedData}, mode);
                         fs.unlinkSync(uploadedFile.path);
-                        return res.status(400).json({error: "Uploaded file is not a ZIP file"});
+                        this.logger.info(`Database JSON import successful for scope=${scope}, mode=${mode}`);
+                        return res.status(200).json({message: `${scope} imported successfully`});
                     }
 
-                    // Create AdmZip instance
+                    if (!originalName.endsWith('.zip')) {
+                        fs.unlinkSync(uploadedFile.path);
+                        return res.status(400).json({error: "Uploaded file must be a JSON or ZIP file"});
+                    }
+
+                    if (scope !== "all") {
+                        fs.unlinkSync(uploadedFile.path);
+                        return res.status(400).json({error: "ZIP import supports only scope=all. Use JSON files for scoped import."});
+                    }
+
                     const zip = new AdmZip(uploadedFile.path);
                     const zipEntries = zip.getEntries();
 
-                    // Check if all files in the zip are .db files
-                    const invalidFiles = zipEntries.filter(entry => !entry.name.endsWith('.db'));
+                    const collectionsData: any = {};
+                    const collections: DatabaseCollection[] = ["users", "documents", "structures", "types"];
 
-                    if (invalidFiles.length > 0) {
-                        // Delete the uploaded file
+                    for (const entry of zipEntries) {
+                        const entryName = entry.name.toLowerCase();
+                        for (const collection of collections) {
+                            if (entryName.includes(collection)) {
+                                const content = entry.getData().toString('utf8');
+                                if (entryName.endsWith('.json')) {
+                                    collectionsData[collection] = JSON.parse(content);
+                                } else if (entryName.endsWith('.db')) {
+                                    collectionsData[collection] = content.split('\n')
+                                        .filter(line => line.trim().length > 0)
+                                        .map(line => JSON.parse(line));
+                                }
+                            }
+                        }
+                    }
+
+                    if (Object.keys(collectionsData).length === 0) {
                         fs.unlinkSync(uploadedFile.path);
-                        return res.status(400).json({
-                            error: "ZIP file contains non-database files",
-                            invalidFiles: invalidFiles.map(entry => entry.name)
-                        });
+                        return res.status(400).json({error: "ZIP file does not contain any valid database files (.json or .db)"});
                     }
 
-                    const dbPath = "./db";
-
-                    // Check if db directory exists, create it if not
-                    if (!fs.existsSync(dbPath)) {
-                        fs.mkdirSync(dbPath);
-                    }
-
-                    // Remove all existing files in the db directory
-                    const existingFiles = fs.readdirSync(dbPath);
-                    existingFiles.forEach(file => {
-                        const filePath = path.join(dbPath, file);
-                        fs.unlinkSync(filePath);
-                    });
-
-                    // Extract all files to the db directory
-                    zip.extractAllTo(dbPath, true);
-
-                    // Delete the uploaded file
+                    await this.dataManager.importCollections(collectionsData, mode);
                     fs.unlinkSync(uploadedFile.path);
 
-                    this.logger.info("Database imported successfully");
-                    res.status(200).json({message: "Database imported successfully"});
+                    this.logger.info(`Database ZIP import successful, mode=${mode}`);
+                    return res.status(200).json({message: "Database imported successfully"});
                 } catch (error) {
+                    if ((error as Error).message?.startsWith("Invalid scope")) {
+                        if (fs.existsSync(uploadedFile.path)) {
+                            fs.unlinkSync(uploadedFile.path);
+                        }
+                        return res.status(400).json({error: (error as Error).message});
+                    }
+
                     this.logger.error("Error importing database:", error);
 
                     // Delete the uploaded file if it exists

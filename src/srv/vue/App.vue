@@ -371,10 +371,25 @@ function successfullySaved() {
   snackBarVisible.value = true;
 }
 
-async function handleExportDatabase() {
+type ExportScope = 'all' | 'users' | 'documents' | 'structures' | 'types';
+type ExportFormat = 'zip' | 'json';
+
+function getFilenameFromContentDisposition(headerValue: string | null, fallback: string): string {
+  if (!headerValue) {
+    return fallback;
+  }
+
+  const match = headerValue.match(/filename="?([^"]+)"?/i);
+  return match && match[1] ? match[1] : fallback;
+}
+
+async function handleExportDatabase(scope: ExportScope = 'all', format: ExportFormat = 'zip') {
   try {
-    // Use a relative URL without port
-    const exportUrl = '/database/export';
+    const params = new URLSearchParams({
+      scope,
+      format
+    });
+    const exportUrl = `/database/export?${params.toString()}`;
     
     const token = authToken.value;
     if (!token) {
@@ -383,13 +398,9 @@ async function handleExportDatabase() {
       return;
     }
 
-    // Show progress indicator
-    snackBarMessage.value = 'Exporting database, please wait...';
+    snackBarMessage.value = `Exporting ${scope} (${format.toUpperCase()}), please wait...`;
     snackBarVisible.value = true;
 
-    console.log("Fetching from URL:", exportUrl);
-
-    // Fetch with better error handling
     const response = await fetch(exportUrl, {
       method: 'GET',
       headers: {
@@ -405,27 +416,25 @@ async function handleExportDatabase() {
       throw new Error(`Export failed: ${response.status} ${response.statusText}`);
     }
 
-    // Get the blob from the response
     const blob = await response.blob();
-    console.log('Blob size:', blob.size, 'bytes');
-    
-    // Create a URL for the blob
     const url = window.URL.createObjectURL(blob);
+    const fallbackFilename = scope === 'all'
+        ? (format === 'zip' ? 'docpouch-database.zip' : 'docpouch-database.json')
+        : `docpouch-${scope}.json`;
+    const filename = getFilenameFromContentDisposition(response.headers.get('content-disposition'), fallbackFilename);
 
-    // Create a link and trigger download
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'docpouch-database.zip';
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
 
-    // Clean up
     setTimeout(() => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     }, 100);
-    
-    snackBarMessage.value = 'Database export successful!';
+
+    snackBarMessage.value = `Export successful: ${filename}`;
     snackBarVisible.value = true;
   } catch (error: any) {
     console.error('Error exporting database:', error);
@@ -490,11 +499,39 @@ async function migrateDatabase() {
           </template>
 
           <v-list>
-            <v-list-item @click="handleExportDatabase">
+            <v-list-item @click="handleExportDatabase('all', 'zip')">
               <v-list-item-icon>
                 <v-icon>mdi-database-export</v-icon>
               </v-list-item-icon>
-              <v-list-item-title>Export Database</v-list-item-title>
+              <v-list-item-title>Export Database (ZIP)</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item @click="handleExportDatabase('documents', 'json')">
+              <v-list-item-icon>
+                <v-icon>mdi-file-document-outline</v-icon>
+              </v-list-item-icon>
+              <v-list-item-title>Export Documents (JSON)</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item @click="handleExportDatabase('users', 'json')">
+              <v-list-item-icon>
+                <v-icon>mdi-account-outline</v-icon>
+              </v-list-item-icon>
+              <v-list-item-title>Export Users (JSON)</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item @click="handleExportDatabase('types', 'json')">
+              <v-list-item-icon>
+                <v-icon>mdi-format-list-bulleted-type</v-icon>
+              </v-list-item-icon>
+              <v-list-item-title>Export Types (JSON)</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item @click="handleExportDatabase('structures', 'json')">
+              <v-list-item-icon>
+                <v-icon>mdi-table</v-icon>
+              </v-list-item-icon>
+              <v-list-item-title>Export Structures (JSON)</v-list-item-title>
             </v-list-item>
 
             <v-list-item @click="showImportDialog = true">
