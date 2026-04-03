@@ -16,6 +16,7 @@ import multer from "multer";
 import archiver from "archiver";
 import AdmZip from "adm-zip";
 import {JWTOptions} from "./webTokenStuff.js";
+import {getCachedUpdateResult} from "./util/UpdateChecker.js";
 
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures", "types"];
 type DatabaseScope = DatabaseCollection | "all";
@@ -469,6 +470,15 @@ export default class NetworkManager {
                     .catch((error) => {
                         res.status(error).json({error: error});
                     });
+            }
+        });
+
+        this.expressApp.get("/version/check", (req, res) => {
+            const updateResult = getCachedUpdateResult();
+            if (updateResult) {
+                res.status(200).json(updateResult);
+            } else {
+                res.status(503).json({error: "Update check not available yet"});
             }
         });
 

@@ -2,6 +2,7 @@ import NetworkManager from "./NetworkManager.js";
 import NeDbWrapper, {type INeDbOptions} from "./NeDbWrapper.js";
 import winston from "winston";
 import fs from "fs";
+import {checkForUpdates} from "./util/UpdateChecker.js";
 
 const corsOptions = {
     origin: "*",
@@ -48,6 +49,8 @@ let dbOptions: INeDbOptions = {
     inMemoryOnly: MEMORY_ONLY,
     filenamePrefix: PREFIX
 }
+
+checkForUpdates(winstonLogger);
 
 const dataManager = new NeDbWrapper(winstonLogger, dbOptions);
 new NetworkManager(winstonLogger, dataManager, PORT, corsOptions);

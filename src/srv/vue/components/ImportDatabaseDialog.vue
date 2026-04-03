@@ -18,11 +18,11 @@ const importScope = ref<'all' | 'users' | 'documents' | 'structures' | 'types'>(
 const importMode = ref<'replace' | 'add' | 'skip'>('replace');
 
 const importScopeOptions = [
-  {title: 'All Data', value: 'all'},
-  {title: 'Documents', value: 'documents'},
-  {title: 'Users', value: 'users'},
-  {title: 'Types', value: 'types'},
-  {title: 'Structures', value: 'structures'}
+  {title: 'All Data (zip)', value: 'all'},
+  {title: 'Documents (json)', value: 'documents'},
+  {title: 'Users (json)', value: 'users'},
+  {title: 'Types (json)', value: 'types'},
+  {title: 'Structures (json)', value: 'structures'}
 ];
 
 const importModeOptions = [

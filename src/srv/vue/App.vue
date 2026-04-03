@@ -11,6 +11,7 @@ import DocumentPad from "./components/DocumentPad.vue";
 import StructureDisplay from "./components/StructureDisplay.vue";
 import docPouchLogo from './assets/docPouch.png';
 import AboutDialog from "./components/AboutDialog.vue";
+import UpdateAvailableDialog from "./components/UpdateAvailableDialog.vue";
 import type {
   I_EventString,
   I_DocumentEntry,
@@ -49,6 +50,7 @@ let loadedUser = ref<I_UserEntry | undefined>(undefined);
 let loadedStructure = ref<I_DataStructure | undefined>(undefined);
 const snackBarMessage = ref('');
 const snackBarVisible = ref(false);
+const showUpdateDialog = ref(false);
 let isAdmin = computed(() => {
   if (authToken.value === null) {
     return false;
@@ -257,6 +259,20 @@ function handleLoginSuccess(loginInformation: I_LoginResponse | null) {
   }
 }
 
+async function checkForUpdates() {
+  try {
+    const response = await fetch('/version/check');
+    if (response.ok) {
+      const data = await response.json();
+      if (data.hasUpdate) {
+        showUpdateDialog.value = true;
+      }
+    }
+  } catch (error) {
+    console.error('Failed to check for updates:', error);
+  }
+}
+
 onMounted(async () => {
   const storedToken = localStorage.getItem('authToken');
 
@@ -265,6 +281,7 @@ onMounted(async () => {
     setToken(storedToken);
 
     await fetchData();
+    await checkForUpdates();
   }
 });
 
@@ -683,6 +700,7 @@ async function migrateDatabase() {
                    @update:show="handleDialogUpdate"/>
       <AboutDialog :show="showAboutDialog" @close="showAboutDialog = false"/>
       <ImportDatabaseDialog :show="showImportDialog" @close="showImportDialog = false" @logout="handleLogout"/>
+      <UpdateAvailableDialog :show="showUpdateDialog" @close="showUpdateDialog = false"/>
     </v-main>
   </v-app>
 </template>
