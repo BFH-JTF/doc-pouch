@@ -2,7 +2,6 @@ import type {NextFunction, Request, Response} from 'express';
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
-import helmet from 'helmet';
 import crypto from 'crypto';
 import type {I_DocumentType, I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode} from "./NeDbWrapper.js";
@@ -17,7 +16,7 @@ import multer from "multer";
 import archiver from "archiver";
 import AdmZip from "adm-zip";
 import {JWTOptions} from "./webTokenStuff.js";
-import {getCachedUpdateResult} from "./util/UpdateChecker.js";
+import {getCachedUpdateResult} from "./updateChecker.ts";
 
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures", "types"];
 type DatabaseScope = DatabaseCollection | "all";

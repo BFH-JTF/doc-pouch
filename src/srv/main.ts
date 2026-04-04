@@ -2,7 +2,7 @@ import NetworkManager from "./NetworkManager.js";
 import NeDbWrapper, {type INeDbOptions} from "./NeDbWrapper.js";
 import winston from "winston";
 import fs from "fs";
-import {checkForUpdates} from "./util/UpdateChecker.js";
+import {checkForUpdates} from "./updateChecker.ts";
 
 const corsOptions = {
     origin: "*",
