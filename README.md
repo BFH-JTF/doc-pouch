@@ -11,8 +11,9 @@ DocPouch is primarily intended for:
 - **Testing environments**: Perfect for testing applications without setting up complex database systems
 - **Secure internal environments**: Suitable for internal applications where security is not a major concern
 
-> **Note**: DocPouch is not designed for high-performance production environments or applications requiring advanced
-> security features. The database is file and text-based, prioritizing simplicity and a small footprint over performance.
+> **Note**: DocPouch is not designed for high-performance production environments or applications requiring security
+> features. The database is file and text-based, prioritizing simplicity and a small footprint over performance.
+> Auth tokens are stored in localStorage for simplicity. This can be abused by Cross-Site Scripting.
 
 DocPouch handles users, documents, document types, and document structures.
 ### Users

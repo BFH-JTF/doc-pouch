@@ -2,6 +2,8 @@ import type {NextFunction, Request, Response} from 'express';
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
+import helmet from 'helmet';
+import crypto from 'crypto';
 import type {I_DocumentType, I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode} from "./NeDbWrapper.js";
 import winston from "winston";
@@ -68,6 +70,27 @@ function parseImportMode(rawMode: unknown): ImportMode {
     throw new Error("Invalid import mode. Allowed values: replace, add, skip.");
 }
 
+export function cspMiddleware(req: Request, res: Response, next: NextFunction) {
+    const nonce = crypto.randomBytes(16).toString('base64');
+    res.locals.nonce = nonce;
+
+    const csp = [
+        "default-src 'none'",
+        `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+        `style-src 'self' 'nonce-${nonce}'`,
+        "img-src 'self' https:",
+        "connect-src 'self'",
+        "font-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "upgrade-insecure-requests",
+    ].join('; ');
+
+    res.setHeader('Content-Security-Policy', csp);
+    next();
+}
+
 export default class NetworkManager {
     corsOptions: any;
     port: number;
@@ -120,6 +143,7 @@ export default class NetworkManager {
         this.expressApp.use(express.static(vuePath));
         this.expressApp.use(express.json());
         this.expressApp.use(cors(this.corsOptions));
+        this.expressApp.use(cspMiddleware);
         this.expressApp.disable('etag'); // Disable ETag header to prevent caching of responses
 
         // Configure multer for file uploads
