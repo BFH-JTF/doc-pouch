@@ -1,7 +1,6 @@
 import type {NextFunction, Request, Response} from 'express';
 import express from 'express';
-import path, {dirname} from 'path';
-import {fileURLToPath} from 'url';
+import path from 'path';
 import cors from 'cors';
 import type {I_DocumentType, I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode} from "./NeDbWrapper.js";

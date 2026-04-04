@@ -110,14 +110,21 @@ async function handleImport() {
       throw new Error(errorData.error || 'Import failed');
     }
 
-    successMessage.value = importScope.value === 'all'
-        ? 'Database imported successfully. You will be logged out.'
-        : `${importScope.value} imported successfully. You will be logged out.`;
+    const scopeLabel = importScope.value === 'all' ? 'Database' : importScope.value;
+    const shouldLogout = importScope.value === 'users' || importScope.value === 'all';
 
-    setTimeout(() => {
-      emit('logout');
-      handleCancel();
-    }, 2000);
+    if (shouldLogout) {
+      successMessage.value = `${scopeLabel} imported successfully. You will be logged out.`;
+      setTimeout(() => {
+        emit('logout');
+        handleCancel();
+      }, 2000);
+    } else {
+      successMessage.value = `${scopeLabel} imported successfully.`;
+      setTimeout(() => {
+        handleCancel();
+      }, 2000);
+    }
   } catch (error: any) {
     console.error('Error importing database:', error);
     errorMessage.value = `Error importing database: ${error.message}`;
