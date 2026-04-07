@@ -1,3 +1,28 @@
+# [1.2.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.1.0...v1.2.0) (2026-04-07)
+
+
+### Bug Fixes
+
+* handle unauthorized export errors and update .gitignore ([fec880b](https://github.com/BFH-JTF/doc-pouch/commit/fec880b211b458be4e13fb3829b5cb01403ecb0f))
+* improve test reliability and resolve TypeScript, Jest, and Node warnings ([35507d0](https://github.com/BFH-JTF/doc-pouch/commit/35507d0d543140c0d254b7fd016ce269aadea8af))
+* update README with document types section and Docker usage guide ([be1db69](https://github.com/BFH-JTF/doc-pouch/commit/be1db69f4e21ffb3dce928c9baaede4eb3c96ff1))
+* Update updateChecker utility to use JavaScript files instead of TypeScript. ([69b6daa](https://github.com/BFH-JTF/doc-pouch/commit/69b6daac16ac28807afe377a983892d4c4bd1d70))
+
+
+### Features
+
+* add database consistency check and admin alerts for faulty documents ([52c0af0](https://github.com/BFH-JTF/doc-pouch/commit/52c0af0502bf472cad29805f2f6742a28b266c21))
+* add database migration logic for pre-1.1.0 updates ([7e45cbd](https://github.com/BFH-JTF/doc-pouch/commit/7e45cbdadfeea82bd476a6afd917777259791c01))
+* add document access control and API update for public document fetching ([9d66d5f](https://github.com/BFH-JTF/doc-pouch/commit/9d66d5f5fc2cdd6bb3d46f598f0733841c219b24))
+* add global setup and teardown for Jest tests ([1c65445](https://github.com/BFH-JTF/doc-pouch/commit/1c654456c5d9a97333a9c080abcef5829536101b))
+* add update checker and improve version management ([49814a3](https://github.com/BFH-JTF/doc-pouch/commit/49814a3596c02386b68227e2fb2161c66aa5bea0))
+* add UpdateAvailableDialog component for version update alerts ([f833321](https://github.com/BFH-JTF/doc-pouch/commit/f8333210a7bd8e0b097482b8d49570648bd907de))
+* add updateChecker utility to check for version updates ([a9229c6](https://github.com/BFH-JTF/doc-pouch/commit/a9229c6cb5aebe2c6d8bfdb9172c5c10838e980b))
+* enhance import/export functionality and update dependencies ([8927cb5](https://github.com/BFH-JTF/doc-pouch/commit/8927cb5272f2bf3f8a2a3420917f1a26eb3ddc12))
+* enhance security with CSP middleware and Helmet integration ([b492084](https://github.com/BFH-JTF/doc-pouch/commit/b492084ee16863c34f7ee06331d33308c3b324ff))
+* enhance server lifecycle management and database consistency checks ([67fe462](https://github.com/BFH-JTF/doc-pouch/commit/67fe4625106c6874adcf4dbbad381fac62c03366))
+* update Vue and Vuetify dependencies, improve import logic ([9465554](https://github.com/BFH-JTF/doc-pouch/commit/9465554df013b8521f9cdc91603323c43264b7fc))
+
 # [1.1.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.0.4...v1.1.0) (2026-03-24)
 
 
