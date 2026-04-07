@@ -16,7 +16,7 @@ import multer from "multer";
 import archiver from "archiver";
 import AdmZip from "adm-zip";
 import {JWTOptions} from "./webTokenStuff.js";
-import {getCachedUpdateResult} from "./updateChecker.ts";
+import {getCachedUpdateResult} from "./updateChecker.js";
 
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures", "types"];
 type DatabaseScope = DatabaseCollection | "all";
