@@ -81,7 +81,6 @@ export default class NeDbWrapper {
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         }
-        this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         this.users.count({}).then((counter) => {
             // No users in database yet?
             if (counter < 1) {
@@ -154,6 +153,13 @@ export default class NeDbWrapper {
                 })
             }
         })
+    }
+
+    public stop() {
+        this.users.datastore.stopAutocompaction();
+        this.structures.datastore.stopAutocompaction();
+        this.documents.datastore.stopAutocompaction();
+        this.types.datastore.stopAutocompaction();
     }
 
     isInMemoryOnly(): boolean {

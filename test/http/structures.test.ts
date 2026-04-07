@@ -59,7 +59,7 @@ describe('Data Structure API Tests', () => {
 
     // Close the test server after all tests
     afterAll(async () => {
-        await closeTestServer(server);
+        await closeTestServer(networkManager);
     });
 
     describe('POST /structures/create', () => {

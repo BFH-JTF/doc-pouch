@@ -84,7 +84,7 @@ describe('User WebSocket Events Tests', () => {
 
     // Close the test server after all tests
     afterAll(async () => {
-        await closeTestServer(server);
+        await closeTestServer(networkManager);
     });
 
     describe('newUser event', () => {

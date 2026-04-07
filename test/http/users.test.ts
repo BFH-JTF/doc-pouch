@@ -39,7 +39,7 @@ describe('User Management API Tests', () => {
     });
 
     afterAll(async () => {
-        await closeTestServer(server);
+        await closeTestServer(networkManager);
     });
 
     describe('/users/list', () => {

@@ -10,10 +10,10 @@
     "build": "npm run build:backend && npm run build:frontend",
     "run": "node ./dist/srv/main.js",
     "preview": "vite preview",
-    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --detectOpenHandles",
-    "test:http": "NODE_OPTIONS='--experimental-vm-modules' jest test/http --runInBand",
-    "test:websocket": "NODE_OPTIONS='--experimental-vm-modules' jest test/websocket --runInBand",
-    "test:watch": "NODE_OPTIONS='--experimental-vm-modules' jest --watch --runInBand"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --detectOpenHandles",
+    "test:http": "node --experimental-vm-modules node_modules/jest/bin/jest.js test/http --runInBand",
+    "test:websocket": "node --experimental-vm-modules node_modules/jest/bin/jest.js test/websocket --runInBand",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch --runInBand"
   },
   "repository": {
     "type": "git",

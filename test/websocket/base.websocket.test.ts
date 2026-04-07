@@ -78,7 +78,7 @@ describe('Base WebSocket Test', () => {
 
     // Close the test server after all tests
     afterAll(async () => {
-        await closeTestServer(server);
+        await closeTestServer(networkManager);
     });
 
     // Helper function to create a promise that resolves when a specific event is received

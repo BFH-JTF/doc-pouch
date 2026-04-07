@@ -135,6 +135,14 @@ export default class NetworkManager {
         this.initializeExpress();
     }
 
+    public stop(): Promise<void> {
+        return new Promise((resolve) => {
+            this.socketServer.close();
+            this.dataManager.stop();
+            this.webServer.close(() => resolve());
+        });
+    }
+
     private initializeExpress(): void {
         const vuePath = path.resolve(process.cwd(), 'dist/srv/vue');
         this.logger.info(`Serving static files from: ${vuePath}`);
@@ -202,17 +210,6 @@ export default class NetworkManager {
                                     let token = jwt.sign({id: user._id}, JWTOptions.secret, JWTOptions.settings as jwt.SignOptions);
                                     this.logger.debug("Sending successful response");
                                     res.json({token: token, isAdmin: user.isAdmin || false, userName: user.name});
-
-                                    if (user.isAdmin) {
-                                        this.dataManager.checkDatabaseConsistency().then((faultyDocs) => {
-                                            if (faultyDocs.length > 0) {
-                                                this.logger.warn(`Found ${faultyDocs.length} faulty documents during consistency check`);
-                                                this.socketServer.sendEventToAdmins(undefined, "databaseInconsistency" as any, {faultyDocuments: faultyDocs} as any);
-                                            }
-                                        }).catch(err => {
-                                            this.logger.error("Error during database consistency check:", err);
-                                        });
-                                    }
                                 } else {
                                     res.status(401).json({error: "Invalid user or password"});
                                 }

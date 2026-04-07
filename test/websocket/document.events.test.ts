@@ -41,6 +41,11 @@ describe('Document WebSocket Events Tests', () => {
         adminUser = users.adminUser;
         regularUser = users.regularUser;
 
+        // Create required document types
+        for (let i = 1; i <= 6; i++) {
+            await dataManager.types.add({type: i, subType: i, name: `Type ${i}-${i}`});
+        }
+
         // Connect sockets with authentication
         adminSocket = io(API_BASE_URL, {
             auth: {token: adminToken},
@@ -83,7 +88,7 @@ describe('Document WebSocket Events Tests', () => {
 
     // Close the test server after all tests
     afterAll(async () => {
-        await closeTestServer(server);
+        await closeTestServer(networkManager);
     });
 
 
@@ -98,6 +103,7 @@ describe('Document WebSocket Events Tests', () => {
                 title: 'WebSocket Test Document',
                 type: 1,
                 subType: 1,
+                public: false,
                 content: {text: 'This is a test document for WebSocket events'},
                 shareWithGroup: false,
                 shareWithDepartment: false
@@ -171,6 +177,7 @@ describe('Document WebSocket Events Tests', () => {
                 title: 'Group Shared Document',
                 type: 2,
                 subType: 2,
+                public: false,
                 content: {text: 'This document is shared with the group'},
                 shareWithGroup: true,
                 shareWithDepartment: false
@@ -209,6 +216,7 @@ describe('Document WebSocket Events Tests', () => {
                 title: 'Document to Update',
                 type: 3,
                 subType: 3,
+                public: false,
                 content: {text: 'This document will be updated'},
                 shareWithGroup: false,
                 shareWithDepartment: false
@@ -283,6 +291,7 @@ describe('Document WebSocket Events Tests', () => {
                 title: 'Private Document to Update',
                 type: 4,
                 subType: 4,
+                public: false,
                 content: {text: 'This private document will be updated'},
                 shareWithGroup: false,
                 shareWithDepartment: false
@@ -348,6 +357,7 @@ describe('Document WebSocket Events Tests', () => {
                 title: 'Document to Delete',
                 type: 5,
                 subType: 5,
+                public: false,
                 content: {text: 'This document will be deleted'},
                 shareWithGroup: false,
                 shareWithDepartment: false
@@ -412,6 +422,7 @@ describe('Document WebSocket Events Tests', () => {
                 title: 'Private Document to Delete',
                 type: 6,
                 subType: 6,
+                public: false,
                 content: {text: 'This private document will be deleted'},
                 shareWithGroup: false,
                 shareWithDepartment: false

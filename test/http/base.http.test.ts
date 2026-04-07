@@ -1,6 +1,7 @@
 import request from 'supertest';
 import {Server} from 'http';
 import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import NetworkManager from '../../src/srv/NetworkManager.js';
 import {
     setupTestServer,
     createTestUsers,
@@ -11,6 +12,7 @@ import {
 
 describe('Base HTTP Test', () => {
     let server: Server;
+    let networkManager: NetworkManager;
     let dataManager: NeDbWrapper;
     let adminToken: string;
     let userToken: string;
@@ -20,6 +22,7 @@ describe('Base HTTP Test', () => {
         const setup = await setupTestServer();
         dataManager = setup.dataManager;
         server = setup.server;
+        networkManager = setup.networkManager;
     });
 
     beforeEach(async () => {
@@ -30,7 +33,7 @@ describe('Base HTTP Test', () => {
     });
 
     afterAll(async () => {
-        await closeTestServer(server);
+        await closeTestServer(networkManager);
     });
 
     test('Server is running', async () => {
