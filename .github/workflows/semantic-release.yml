@@ -1,34 +1,27 @@
-name: Semantic Release
+# This file configures semantic-release - a customizable release automation tool - using GitHub actions.
+
+name: Release
 
 on:
   push:
-    branches: [ main ]
-
-permissions:
-  contents: write
-  packages: write
+    branches:
+      - main
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install dependencies
-        run: npm ci
-
-      - name: Install semantic-release plugins
-        run: npm install --save-dev semantic-release @semantic-release/changelog @semantic-release/git
+        run: npm install
 
       - name: Run semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
