@@ -9,6 +9,7 @@ export default class IoSocketServer {
     private wsClientList: I_Client[]
     private networkManager: NetworkManager;
     private JWTOptions: {secret: string, algorithm: string};
+    private heartbeatInterval: NodeJS.Timeout;
 
     constructor(networkManager: NetworkManager, JWTOptions: {secret: string, algorithm: string}) {
         this.wsClientList = [];
@@ -35,6 +36,18 @@ export default class IoSocketServer {
                 this.networkManager.dataManager.getUserByID(client.userid)
                     .then((userInfo) => {
                         this.networkManager.logger.info(`Client connected: ${userInfo.name} (${userInfo.email}) - ${socket.id}`);
+
+                        // Run consistency check if the user is an admin
+                        if (userInfo.isAdmin) {
+                            this.networkManager.dataManager.checkDatabaseConsistency().then((faultyDocs) => {
+                                if (faultyDocs.length > 0) {
+                                    this.networkManager.logger.warn(`Found ${faultyDocs.length} faulty documents during consistency check for admin ${userInfo.name}`);
+                                    this.sendEventToClient(undefined, client, "databaseInconsistency" as any, {faultyDocuments: faultyDocs} as any);
+                                }
+                            }).catch(err => {
+                                this.networkManager.logger.error("Error during database consistency check:", err);
+                            });
+                        }
 
                         socket.on('disconnect', () => {
                             this.networkManager.logger.info(`Client disconnected: ${userInfo.name} (${userInfo.email}) - ${socket.id}`);
@@ -64,7 +77,7 @@ export default class IoSocketServer {
         });
 
         // Heartbeat check interval
-        setInterval(() => {
+        this.heartbeatInterval = setInterval(() => {
             let now = Date.now();
             for (let i = this.wsClientList.length - 1; i >= 0; i--) {
                 const client = this.wsClientList[i];
@@ -90,6 +103,13 @@ export default class IoSocketServer {
                 }
             }
         }, 60000);
+    }
+
+    public close() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+        }
+        this.ioSocket.close();
     }
 
     sendEventToUser(sourceID: string | undefined, userID: string, event: I_EventString, data?: I_WsMessage) {

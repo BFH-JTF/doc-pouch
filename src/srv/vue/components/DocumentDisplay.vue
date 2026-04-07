@@ -454,13 +454,13 @@ const getValueAtPath = (obj: any, path: string[]): any => {
 
 
             <!-- Share with Department toggle -->
-            <div class="d-flex align-center">
+            <div class="mr-4 d-flex align-center">
               <v-tooltip location="top">
                 <template v-slot:activator="{ props: tooltipProps }">
                   <div class="d-flex align-center" v-bind="tooltipProps">
                     <span class="mr-2">Share with Department:</span>
                     <v-switch
-                        v-model="props.object.shareWithDepartment"
+                        :model-value="props.object.shareWithDepartment"
                         class="mt-0 pt-0"
                         color="primary"
                         density="compact"
@@ -470,6 +470,26 @@ const getValueAtPath = (obj: any, path: string[]): any => {
                   </div>
                 </template>
                 <span>Share this document with all users in your department</span>
+              </v-tooltip>
+            </div>
+
+            <!-- Public toggle -->
+            <div class="d-flex align-center">
+              <v-tooltip location="top">
+                <template v-slot:activator="{ props: tooltipProps }">
+                  <div class="d-flex align-center" v-bind="tooltipProps">
+                    <span class="mr-2">Public:</span>
+                    <v-switch
+                        :model-value="props.object.public"
+                        class="mt-0 pt-0"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                        @update:model-value="(val) => updateShareSetting('public', val)"
+                    ></v-switch>
+                  </div>
+                </template>
+                <span>Make this document readable by all authenticated users</span>
               </v-tooltip>
             </div>
           </div>

@@ -11,14 +11,7 @@ export default {
             'ts-jest',
             {
                 useESM: true,
-                tsconfig: {
-                    module: 'ES2022',
-                    moduleResolution: 'NodeNext',
-                    target: 'ES2022',
-                    esModuleInterop: true,
-                    isolatedModules: true,
-                    types: ['node', 'jest'],
-                },
+                tsconfig: './tsconfig.test.json',
             },
         ],
         '^.+\\.(js|jsx)$': 'babel-jest',
@@ -43,4 +36,6 @@ export default {
     restoreMocks: true,
     testTimeout: 10000,
     setupFilesAfterEnv: ['<rootDir>/test/setup/jestSetup.cts'],
+    globalSetup: '<rootDir>/test/setup/globalSetup.ts',
+    globalTeardown: '<rootDir>/test/setup/globalTeardown.ts',
 };

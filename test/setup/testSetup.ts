@@ -124,9 +124,13 @@ export const waitForEvent = (socket: Socket, eventName: string, timeout = 5000) 
 /**
  * Closes the test server
  */
-export function closeTestServer(server: Server) {
+export function closeTestServer(target: NetworkManager | Server) {
     return new Promise<void>((resolve) => {
-        server.close(() => resolve());
+        if (target instanceof NetworkManager) {
+            target.stop().then(() => resolve());
+        } else {
+            target.close(() => resolve());
+        }
     });
 }
 

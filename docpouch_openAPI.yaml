@@ -180,7 +180,7 @@ paths:
   /docs/list:
     get:
       summary: List documents
-      description: "List all documents owned by the user or shared with the user's group or department, but omit their content. For administrators, all documents are listed."
+      description: "List all documents readable by the user. This includes documents owned by the user, shared with the user's group or department, or marked as public. For administrators, all documents are listed."
       tags:
         - documents
       security:
@@ -201,7 +201,7 @@ paths:
   /docs/fetch:
     post:
       summary: "Get a document based on a query object."
-      description: "Users can fetch their own documents and documents shared with their group or department. Administrators can fetch any document on the server. Omit keys not used in the query."
+      description: "Fetch documents matching the query criteria that the user has access to. This includes own documents, documents shared with group/department, or public documents. Administrators can fetch any document."
       tags:
         - documents
       security:
@@ -447,19 +447,41 @@ paths:
   /database/export:
     get:
       summary: Export the database
-      description: Export all database files as a ZIP archive. Only available to administrators.
+      description: "Export full data as ZIP/JSON or export a single collection as JSON. Only available to administrators."
       tags:
         - administration
       security:
         - adminAuth: [ ]
+      parameters:
+        - in: query
+          name: scope
+          required: false
+          description: "Which data scope to export"
+          schema:
+            type: string
+            enum: [ all, users, documents, structures, types ]
+            default: all
+        - in: query
+          name: format
+          required: false
+          description: "Export format. ZIP is only supported for scope=all."
+          schema:
+            type: string
+            enum: [ zip, json ]
+            default: zip
       responses:
         200:
-          description: "ZIP archive containing database files"
+          description: "Export payload as ZIP archive or JSON file"
           content:
             application/zip:
               schema:
                 type: string
                 format: binary
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                  - type: object
         401:
           description: "Not authorized to export database"
         403:
@@ -468,7 +490,7 @@ paths:
   /database/import:
     post:
       summary: Import the database
-      description: "Import database files from a ZIP archive. Only available to administrators. Warning: This will replace all existing data."
+      description: "Import data from JSON (full or scoped) or ZIP (full only). Only available to administrators."
       tags:
         - administration
       security:
@@ -483,7 +505,17 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: "ZIP file containing .db files"
+                  description: "JSON file (scoped or full) or ZIP file (full import)"
+                scope:
+                  type: string
+                  enum: [ all, users, documents, structures, types ]
+                  default: all
+                  description: "Import target scope. ZIP supports only scope=all."
+                mode:
+                  type: string
+                  enum: [ replace, add, skip ]
+                  default: replace
+                  description: "Import mode: replace (overwrite same _id), add (new _id for same _id), skip (ignore same _id)"
       responses:
         200:
           description: "Database imported successfully"
@@ -528,12 +560,17 @@ components:
           type: boolean
           description: "If true, the document is shared with all users in the owner's department"
           example: false
+        public:
+          type: boolean
+          description: "If true, the document can be read by everybody"
+          example: false
       required:
         - _id
         - title
         - type
         - subType
         - content
+        - public
 
     DocumentQuery:
       type: object
@@ -567,7 +604,11 @@ components:
           type: boolean
           description: "If true, the document is shared with all users in the owner's department"
           example: false
-
+        public:
+          type: boolean
+          description: "If true, the document can be read by everybody"
+          example: false
+    
     NewDocument:
       type: object
       description: "Data element for creating a new document"
@@ -596,6 +637,10 @@ components:
           type: boolean
           description: "If true, the document is shared with all users in the owner's department"
           example: false
+        public:
+          type: boolean
+          description: "If true, the document can be read by everybody"
+          example: false
       required:
         - title
         - type
@@ -603,6 +648,7 @@ components:
         - content
         - shareWithDepartment
         - shareWithGroup
+        - public
 
     UserDisplay:
       type: object

@@ -19,6 +19,7 @@ Content-Type: application/json
   "title": "Test document",
   "shareWithGroup": false,
   "shareWithDepartment": false,
+  "public": false,
   "content": {
     "customerID": 44,
     "customerRanking": 3

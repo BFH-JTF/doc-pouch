@@ -11,10 +11,11 @@ DocPouch is primarily intended for:
 - **Testing environments**: Perfect for testing applications without setting up complex database systems
 - **Secure internal environments**: Suitable for internal applications where security is not a major concern
 
-> **Note**: DocPouch is not designed for high-performance production environments or applications requiring advanced
-> security features. The database is file and text-based, prioritizing simplicity and a small footprint over performance.
+> **Note**: DocPouch is not designed for high-performance production environments or applications requiring security
+> features. The database is file and text-based, prioritizing simplicity and a small footprint over performance.
+> Auth tokens are stored in localStorage for simplicity. This can be abused by Cross-Site Scripting.
 
-DocPouch handles users, documents and document structures.
+DocPouch handles users, documents, document types, and document structures.
 ### Users
 A user entry describes a system user including the name, password, role, and email (if provided)
 
@@ -22,6 +23,27 @@ A user entry describes a system user including the name, password, role, and ema
 
 Documents store the main data. They can be all sort of data objects as long as they can be express in JSON. They can
 follow their own structure or follow an existing document structure.
+
+Documents have access control settings:
+
+- **Private**: Only the owner and administrators can access the document.
+- **Shared with Group**: All users in the owner's group can read the document.
+- **Shared with Department**: All users in the owner's department can read the document.
+- **Public**: All authenticated users can read the document.
+
+Owners can change these settings in the document editor.
+
+### Document Types
+
+Document types provide a way to categorize and classify documents. Each document type has:
+
+- **Name**: A descriptive name for the type
+- **Description**: Additional information about the type
+- **Type**: A numeric identifier for the type category
+- **SubType**: A numeric identifier for sub-categorization
+
+Document types help organize documents and can be used for filtering and querying. For example, you might have document
+types like "Invoice", "Report", or "Contract" with different type/subType codes.
 
 ### Document Structures
 Document structures describe how documents following this structure are structured and what information they hold.
@@ -110,7 +132,68 @@ Documents using a document structure have to structure their content like this:
 }
 ```
 
+## Getting Started with Docker
 
+### Using Docker Compose (Recommended)
+
+To run DocPouch using Docker Compose, create a `docker-compose.yml` file with the following content:
+
+```yaml
+services:
+  doc-pouch:
+    image: ghcr.io/bfh-jtf/doc-pouch:latest
+    ports:
+      - "3030:3030"
+    volumes:
+      - "./db:/app/db"
+      - "./log:/app/log"
+    environment:
+      - PORT=3030
+      - MEMORY_ONLY=false
+    restart: unless-stopped
+```
+
+Then, run the following command to start the application:
+
+```bash
+docker compose up -d
+```
+
+### Using Docker CLI
+
+Alternatively, you can run DocPouch directly using the Docker CLI:
+
+```bash
+docker run -d \
+  --name doc-pouch \
+  -p 3030:3030 \
+  -v ./db:/app/db \
+  -v ./log:/app/log \
+  ghcr.io/bfh-jtf/doc-pouch:latest
+```
+
+### Configuration
+
+DocPouch can be configured using environment variables:
+
+| Variable      | Description                                                                | Default     |
+|---------------|----------------------------------------------------------------------------|-------------|
+| `PORT`        | The port the server will listen on.                                        | `3030`      |
+| `MEMORY_ONLY` | Set to `true` to use an in-memory database (data will be lost on restart). | `false`     |
+| `PREFIX`      | Prefix for database filenames.                                             | `docpouch-` |
+
+### Persisting Data
+
+To persist your data and logs, ensure you mount volumes for `/app/db` and `/app/log` as shown in the examples above.
+
+### Initial Credentials
+
+On the first start, DocPouch creates a default administrator account:
+
+- **Username**: `admin`
+- **Password**: `adminSecret`
+
+> **Security Note**: Please change the administrator password immediately after the first login.
 
 ## API
 
@@ -124,11 +207,13 @@ DocPouch provides a RESTful API with an [OpenAPI documentation]() and the follow
 - `DELETE /users/remove/{userID}` - Remove a user and all their documents (admin only)
 
 ### Document Management
-- `GET /docs/list` - List all documents (owned by the user or all for admins)
-- `GET /docs/fetch/{documentID}` - Get a specific document by ID
+
+- `GET /docs/list` - List all documents readable by the user (including public ones)
+- `POST /docs/fetch` - Get documents based on a query object (including public ones)
 - `POST /docs/create` - Create a new document
 - `PATCH /docs/update/{documentID}` - Update an existing document
 - `DELETE /docs/remove/{documentID}` - Remove a document
+- `GET /docs/fetch/{documentID}` - Get a specific document by ID (deprecated, use /docs/fetch)
 
 ### Document Type Management
 
@@ -144,7 +229,7 @@ DocPouch provides a RESTful API with an [OpenAPI documentation]() and the follow
 - `DELETE /structures/remove/{structureID}` - Remove a data structure (admin only)
 
 All API endpoints (except login) require authentication using JWT tokens. You can find an OpenAPI specification
-in the `docPouch.yml` file.
+in the `docpouch_openAPI.yaml` file.
 
 > **Note**: API endpoints use standard HTTP response codes: `201` (Created), `204` (No Content), `403` (Forbidden), etc.
 

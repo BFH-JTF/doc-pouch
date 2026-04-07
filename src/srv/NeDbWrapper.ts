@@ -1,5 +1,5 @@
 import Nedb from "@seald-io/nedb";
-import winston, {error} from "winston";
+import winston from "winston";
 import fs from "fs";
 import bcrypt from "bcrypt"
 import type {
@@ -20,7 +20,15 @@ export interface INeDbOptions {
     dbPath?: string;
 }
 
-type NedbSchema = I_DocumentCreationOwned | I_UserCreation | I_StructureCreation | I_DocumentType;
+export type DatabaseCollection = "users" | "documents" | "structures" | "types";
+export type ImportMode = "replace" | "add" | "skip";
+
+export interface IDatabaseExportData {
+    users: any[];
+    documents: any[];
+    structures: any[];
+    types: any[];
+}
 
 export default class NeDbWrapper {
     users: CustomStore
@@ -73,7 +81,6 @@ export default class NeDbWrapper {
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         }
-        this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         this.users.count({}).then((counter) => {
             // No users in database yet?
             if (counter < 1) {
@@ -100,6 +107,7 @@ export default class NeDbWrapper {
                                         description: "This is just a demo, delete when you don't need it anymore",
                                         subType: 0,
                                         type: 1,
+                                        public: false,
                                         content: [{
                                             label: "This is a demo document not following any document structure",
                                             importance: 0
@@ -147,11 +155,18 @@ export default class NeDbWrapper {
         })
     }
 
+    public stop() {
+        this.users.datastore.stopAutocompaction();
+        this.structures.datastore.stopAutocompaction();
+        this.documents.datastore.stopAutocompaction();
+        this.types.datastore.stopAutocompaction();
+    }
+
     isInMemoryOnly(): boolean {
         return this.inMemoryOnly;
     }
 
-    async exportAllData(): Promise<{ users: any[]; documents: any[]; structures: any[]; types: any[] }> {
+    async exportAllData(): Promise<IDatabaseExportData> {
         const [users, documents, structures, types] = await Promise.all([
             this.users.query({}),
             this.documents.query({}),
@@ -165,6 +180,72 @@ export default class NeDbWrapper {
             structures,
             types
         };
+    }
+
+    async exportCollection(collection: DatabaseCollection): Promise<any[]> {
+        return this.getCollectionStore(collection).query({}) as Promise<any[]>;
+    }
+
+    async importCollections(data: Partial<IDatabaseExportData>, mode: ImportMode = "replace"): Promise<void> {
+        const collections: DatabaseCollection[] = ["users", "documents", "structures", "types"];
+
+        for (const collection of collections) {
+            const collectionData = data[collection];
+            if (collectionData === undefined) {
+                continue;
+            }
+
+            if (!Array.isArray(collectionData)) {
+                throw new Error(`Invalid payload for '${collection}'. Expected a JSON array.`);
+            }
+
+            const store = this.getCollectionStore(collection);
+
+            for (const doc of collectionData) {
+                if (mode === "add") {
+                    const docToAdd = {...doc};
+                    delete docToAdd._id;
+                    await store.add(docToAdd);
+                } else if (mode === "skip") {
+                    if (doc._id) {
+                        const existing = await store.query({_id: doc._id});
+                        if (existing.length === 0) {
+                            await store.add(doc);
+                        }
+                    } else {
+                        await store.add(doc);
+                    }
+                } else if (mode === "replace") {
+                    if (doc._id) {
+                        await new Promise((resolve, reject) => {
+                            const cleanDoc = {...doc};
+                            delete cleanDoc._id;
+                            store.datastore.update({_id: doc._id}, cleanDoc, {upsert: true}, (err: any) => {
+                                if (err) reject(err);
+                                else resolve(undefined);
+                            });
+                        });
+                    } else {
+                        await store.add(doc);
+                    }
+                }
+            }
+        }
+    }
+
+    private getCollectionStore(collection: DatabaseCollection): CustomStore {
+        switch (collection) {
+            case "users":
+                return this.users;
+            case "documents":
+                return this.documents;
+            case "structures":
+                return this.structures;
+            case "types":
+                return this.types;
+            default:
+                throw new Error(`Unsupported collection '${collection}'`);
+        }
     }
 
     private getAdminUser(): Promise<I_UserEntry> {
@@ -194,13 +275,14 @@ export default class NeDbWrapper {
                         });
                     }
                 });
+            } else {
+                reject("Requesting user ID is undefined");
             }
         })
     }
 
     getUsersByGroupName(groupName: string, departmentName: string): Promise<I_UserEntry[]> {
         return new Promise((resolve, reject) => {
-            let users: I_UserEntry[] = [];
             this.users.query({group: groupName, department: departmentName})
                 .then((result) => {
                     if (result.length > 0)
@@ -213,7 +295,6 @@ export default class NeDbWrapper {
 
     getUsersByDepartmentName(departmentName: string): Promise<I_UserEntry[]> {
         return new Promise((resolve, reject) => {
-            let users: I_UserEntry[] = [];
             this.users.query({department: departmentName})
                 .then((result) => {
                     if (result.length > 0)
@@ -226,7 +307,6 @@ export default class NeDbWrapper {
 
     listDocAccess(userID: string): Promise<I_DocumentEntry[]> {
         return new Promise(async (resolve, reject) => {
-            let returnArray: I_DocumentEntry[] = [];
             try {
                 const isAdmin = await this.isAdmin(userID);
 
@@ -242,19 +322,26 @@ export default class NeDbWrapper {
                 const allDocs = await this.documents.query({}) as I_DocumentEntry[];
 
                 // Step 2: Get all owners of these documents
-                const ownerIDs = allDocs.map(doc => doc.owner);
+                const ownerIDs = [...new Set(allDocs.map(doc => doc.owner))];
                 const owners = await Promise.all(
                     ownerIDs.map(ownerID => this.getUserByID(ownerID))
                 );
 
                 // Step 3: Create a map from owner ID to their department and group
                 const ownerInfoMap = owners.reduce((acc, owner) => {
-                    acc[owner._id] = {department: owner.department, group: owner.group};
+                    if (owner) {
+                        acc[owner._id] = {department: owner.department, group: owner.group};
+                    }
                     return acc;
                 }, {} as Record<string, { department: string; group: string }>);
 
                 // Step 4: Filter documents based on user's access
                 const filteredDocs = allDocs.filter(doc => {
+                    // Case 0: Document is public
+                    if (doc.public) return true;
+
+                    if (!user) return false;
+
                     const ownerInfo = ownerInfoMap[doc.owner];
 
                     // Case 1: User is the owner
@@ -267,7 +354,6 @@ export default class NeDbWrapper {
                     // Case 3: Shared with group and user is in the same group
                     if (doc.shareWithGroup && ownerInfo?.group === user.group)
                         return true;
-
                     return false;
                 });
 
@@ -320,11 +406,10 @@ export default class NeDbWrapper {
                         } else {
                             resolve(401);
                         }
-                    }).catch((error) => {
+                    }).catch(() => {
                         resolve(401);
                     });
                 } else {
-                    // This was missing - handle case where user is not found
                     resolve(404);
                 }
             }).catch((error) => {
@@ -336,7 +421,7 @@ export default class NeDbWrapper {
 
     removeUser(userID: string) {
         return new Promise((resolve, reject) => {
-            this.documents.remove({owner: userID}).then((numRemoved: number) => {
+            this.documents.remove({owner: userID}).then(() => {
                 this.users.remove({_id: userID}).then((numRemoved: number) => {
                     if (numRemoved > 0) {
                         this.logger.info("Removed user:" + JSON.stringify(userID));
@@ -461,7 +546,7 @@ export default class NeDbWrapper {
                             if (structure && "_id" in structure && typeof structure._id === "string") {
                                 this.structures.update(structure._id, newStructure).then((result) => {
                                     resolve(result);
-                                }).catch(error => {
+                                }).catch(() => {
                                     reject(400);
                                 });
                             } else {
@@ -470,7 +555,7 @@ export default class NeDbWrapper {
                         } else {
                             reject(404);
                         }
-                    }).catch(error => {
+                    }).catch(() => {
                         reject(400)
                     });
                 }
@@ -570,7 +655,8 @@ export default class NeDbWrapper {
                 title: document.title,
                 type: document.type,
                 shareWithGroup: document.shareWithGroup,
-                shareWithDepartment: document.shareWithDepartment
+                shareWithDepartment: document.shareWithDepartment,
+                public: document.public
             }
 
             this.documents.add(newDocument).then((savedDocument) => {
@@ -642,7 +728,7 @@ export default class NeDbWrapper {
                         return;
                     }
                     let document = result[0] as I_DocumentEntry;
-                    const isAdmin = this.isAdmin(requestingUserID).then((isAdmin) => {
+                    this.isAdmin(requestingUserID).then((isAdmin) => {
                         if (isAdmin || document.owner === requestingUserID) {
                             this.documents.remove({_id: documentID}).then((numRemoved) => {
                                 if (numRemoved > 0) {
@@ -672,11 +758,43 @@ export default class NeDbWrapper {
         });
     }
 
+    async checkDatabaseConsistency(): Promise<I_DocumentEntry[]> {
+        const users = await this.users.query({});
+        const types = await this.types.query({});
+        const documents = await this.documents.query({});
+
+        const userIds = new Set(users.map(u => (u as I_UserEntry)._id));
+        const typeSubTypeSet = new Set(types.map(t => {
+            const dt = t as I_DocumentType;
+            return `${dt.type}-${dt.subType}`;
+        }));
+
+        const faultyDocuments: I_DocumentEntry[] = [];
+
+        for (const doc of documents as I_DocumentEntry[]) {
+            let isValid = true;
+            if (!userIds.has(doc.owner)) {
+                this.logger.warn(`Document ${doc._id} has invalid owner: ${doc.owner}`);
+                isValid = false;
+            }
+            if (!typeSubTypeSet.has(`${doc.type}-${doc.subType}`)) {
+                this.logger.warn(`Document ${doc._id} has invalid type-subType: ${doc.type}-${doc.subType}`);
+                isValid = false;
+            }
+
+            if (!isValid) {
+                faultyDocuments.push(doc);
+            }
+        }
+
+        return faultyDocuments;
+    }
+
     writeDocumentType(newTypeData: I_DocumentType, requestingUserID: string): Promise<I_DocumentType> {
         return new Promise((resolve, reject) => {
             this.isAdmin(requestingUserID).then(isAdmin => {
                 if (isAdmin) {
-                    this.types.query({type: newTypeData.type, subType: newTypeData.subType}).then(docs => {
+                    this.types.query({type: newTypeData.type, subType: newTypeData.subType}).then(() => {
                         if (newTypeData._id === undefined) {
                             // new entry
                             this.types.add(newTypeData).then((newDocument) => {
@@ -684,8 +802,8 @@ export default class NeDbWrapper {
                                 resolve(newDocument as I_DocumentType);
                             }).catch(reject);
                         } else {
-                            // No duplicate found or it's the same document, proceed to update
-                            this.types.update(newTypeData._id, newTypeData).then((numUpdated) => {
+                            // No duplicate found, or it's the same document, proceed to update
+                            this.types.update(newTypeData._id, newTypeData).then(() => {
                                 this.logger.info("Updated document type: " + newTypeData._id);
                                 resolve(newTypeData);
                             }).catch(reject);
@@ -751,6 +869,18 @@ class CustomStore {
                     reject(err);
                 } else {
                     resolve(newDocument as I_DocumentEntry | I_UserEntry | I_StructureEntry);
+                }
+            });
+        });
+    }
+
+    async insertMany(inputData: any[]): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.datastore.insert(inputData, (err: Error | null) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
                 }
             });
         });

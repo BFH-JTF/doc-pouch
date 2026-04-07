@@ -11,6 +11,7 @@ import DocumentPad from "./components/DocumentPad.vue";
 import StructureDisplay from "./components/StructureDisplay.vue";
 import docPouchLogo from './assets/docPouch.png';
 import AboutDialog from "./components/AboutDialog.vue";
+import UpdateAvailableDialog from "./components/UpdateAvailableDialog.vue";
 import type {
   I_EventString,
   I_DocumentEntry,
@@ -49,6 +50,9 @@ let loadedUser = ref<I_UserEntry | undefined>(undefined);
 let loadedStructure = ref<I_DataStructure | undefined>(undefined);
 const snackBarMessage = ref('');
 const snackBarVisible = ref(false);
+const showUpdateDialog = ref(false);
+const faultyDocuments = ref<I_DocumentEntry[]>([]);
+const showConsistencyAlert = ref(false);
 let isAdmin = computed(() => {
   if (authToken.value === null) {
     return false;
@@ -128,6 +132,10 @@ function handleNetworkEvent(event: I_EventString, data: any) {
     case "newType":
       break
 
+    case "databaseInconsistency" as any:
+      faultyDocuments.value = data.faultyDocuments;
+      showConsistencyAlert.value = true;
+      break;
 
   }
 }
@@ -238,6 +246,8 @@ async function fetchData() {
     handleApiError(error, "fetching types");
     typeArray.value = [];
   }
+
+  await migrateDatabase();
 }
 
 function handleLoginSuccess(loginInformation: I_LoginResponse | null) {
@@ -255,6 +265,20 @@ function handleLoginSuccess(loginInformation: I_LoginResponse | null) {
   }
 }
 
+async function checkForUpdates() {
+  try {
+    const response = await fetch('/version/check');
+    if (response.ok) {
+      const data = await response.json();
+      if (data.hasUpdate) {
+        showUpdateDialog.value = true;
+      }
+    }
+  } catch (error) {
+    console.error('Failed to check for updates:', error);
+  }
+}
+
 onMounted(async () => {
   const storedToken = localStorage.getItem('authToken');
 
@@ -263,6 +287,7 @@ onMounted(async () => {
     setToken(storedToken);
 
     await fetchData();
+    await checkForUpdates();
   }
 });
 
@@ -369,10 +394,25 @@ function successfullySaved() {
   snackBarVisible.value = true;
 }
 
-async function handleExportDatabase() {
+type ExportScope = 'all' | 'users' | 'documents' | 'structures' | 'types';
+type ExportFormat = 'zip' | 'json';
+
+function getFilenameFromContentDisposition(headerValue: string | null, fallback: string): string {
+  if (!headerValue) {
+    return fallback;
+  }
+
+  const match = headerValue.match(/filename="?([^"]+)"?/i);
+  return match && match[1] ? match[1] : fallback;
+}
+
+async function handleExportDatabase(scope: ExportScope = 'all', format: ExportFormat = 'zip') {
   try {
-    // Use a relative URL without port
-    const exportUrl = '/database/export';
+    const params = new URLSearchParams({
+      scope,
+      format
+    });
+    const exportUrl = `/database/export?${params.toString()}`;
     
     const token = authToken.value;
     if (!token) {
@@ -381,13 +421,9 @@ async function handleExportDatabase() {
       return;
     }
 
-    // Show progress indicator
-    snackBarMessage.value = 'Exporting database, please wait...';
+    snackBarMessage.value = `Exporting ${scope} (${format.toUpperCase()}), please wait...`;
     snackBarVisible.value = true;
 
-    console.log("Fetching from URL:", exportUrl);
-
-    // Fetch with better error handling
     const response = await fetch(exportUrl, {
       method: 'GET',
       headers: {
@@ -395,36 +431,54 @@ async function handleExportDatabase() {
       }
     });
 
-    if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      setToken(null);
+      showLoginDialog.value = true;
+      throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+    } else if (!response.ok) {
       throw new Error(`Export failed: ${response.status} ${response.statusText}`);
     }
 
-    // Get the blob from the response
     const blob = await response.blob();
-    console.log('Blob size:', blob.size, 'bytes');
-    
-    // Create a URL for the blob
     const url = window.URL.createObjectURL(blob);
+    const fallbackFilename = scope === 'all'
+        ? (format === 'zip' ? 'docpouch-database.zip' : 'docpouch-database.json')
+        : `docpouch-${scope}.json`;
+    const filename = getFilenameFromContentDisposition(response.headers.get('content-disposition'), fallbackFilename);
 
-    // Create a link and trigger download
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'docpouch-database.zip';
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
 
-    // Clean up
     setTimeout(() => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     }, 100);
-    
-    snackBarMessage.value = 'Database export successful!';
+
+    snackBarMessage.value = `Export successful: ${filename}`;
     snackBarVisible.value = true;
   } catch (error: any) {
     console.error('Error exporting database:', error);
     snackBarMessage.value = `Error exporting database: ${error.message}`;
     snackBarVisible.value = true;
+  }
+}
+
+async function migrateDatabase() {
+  // pre-1.1.0
+  console.log("Checking for database migration... (pre-1.1.0");
+  for (const doc of docArray.value) {
+    if (doc.public === undefined) {
+      console.log(`Migrating document ${doc._id}: adding public: false`);
+      doc.public = false;
+      try {
+        await apiClient.updateDocument(doc._id, doc);
+      } catch (error) {
+        console.error(`Error migrating document ${doc._id}:`, error);
+      }
+    }
   }
 }
 </script>
@@ -468,11 +522,39 @@ async function handleExportDatabase() {
           </template>
 
           <v-list>
-            <v-list-item @click="handleExportDatabase">
+            <v-list-item @click="handleExportDatabase('all', 'zip')">
               <v-list-item-icon>
                 <v-icon>mdi-database-export</v-icon>
               </v-list-item-icon>
-              <v-list-item-title>Export Database</v-list-item-title>
+              <v-list-item-title>Export Database (ZIP)</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item @click="handleExportDatabase('documents', 'json')">
+              <v-list-item-icon>
+                <v-icon>mdi-file-document-outline</v-icon>
+              </v-list-item-icon>
+              <v-list-item-title>Export Documents (JSON)</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item @click="handleExportDatabase('users', 'json')">
+              <v-list-item-icon>
+                <v-icon>mdi-account-outline</v-icon>
+              </v-list-item-icon>
+              <v-list-item-title>Export Users (JSON)</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item @click="handleExportDatabase('types', 'json')">
+              <v-list-item-icon>
+                <v-icon>mdi-format-list-bulleted-type</v-icon>
+              </v-list-item-icon>
+              <v-list-item-title>Export Types (JSON)</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item @click="handleExportDatabase('structures', 'json')">
+              <v-list-item-icon>
+                <v-icon>mdi-table</v-icon>
+              </v-list-item-icon>
+              <v-list-item-title>Export Structures (JSON)</v-list-item-title>
             </v-list-item>
 
             <v-list-item @click="showImportDialog = true">
@@ -494,6 +576,18 @@ async function handleExportDatabase() {
       <v-alert v-if="isLoggedIn" type="info" variant="tonal" closable class="ma-4">
         <strong>Welcome to DocPouch Administration</strong> — an open-source document management system that allows you
         to organize, edit, and share structured data. This panel lets you manage users, data structures, and documents.
+      </v-alert>
+
+      <v-alert v-if="showConsistencyAlert" class="ma-4" closable type="error" variant="tonal"
+               @click:close="showConsistencyAlert = false">
+        <strong>Database Inconsistency Detected!</strong>
+        The following documents have invalid owners, types, or subtypes:
+        <ul class="mt-2">
+          <li v-for="doc in faultyDocuments" :key="doc._id">
+            <strong>{{ doc.title }}</strong> (ID: {{ doc._id }}) - Owner: {{ doc.owner }}, Type: {{ doc.type }},
+            Subtype: {{ doc.subType }}
+          </li>
+        </ul>
       </v-alert>
 
       <v-container class="h-100 px-4">
@@ -624,6 +718,7 @@ async function handleExportDatabase() {
                    @update:show="handleDialogUpdate"/>
       <AboutDialog :show="showAboutDialog" @close="showAboutDialog = false"/>
       <ImportDatabaseDialog :show="showImportDialog" @close="showImportDialog = false" @logout="handleLogout"/>
+      <UpdateAvailableDialog :show="showUpdateDialog" @close="showUpdateDialog = false"/>
     </v-main>
   </v-app>
 </template>

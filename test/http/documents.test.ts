@@ -40,11 +40,22 @@ describe('Document Management API Tests', () => {
         adminUser = users.adminUser;
         regularUser = users.regularUser;
 
+        // Create required document types
+        await dataManager.types.add({type: 1, subType: 1, name: 'Type 1-1'});
+        await dataManager.types.add({type: 2, subType: 3, name: 'Type 2-3'});
+        await dataManager.types.add({type: 3, subType: 2, name: 'Type 3-2'});
+        await dataManager.types.add({type: 4, subType: 5, name: 'Type 4-5'});
+        await dataManager.types.add({type: 7, subType: 8, name: 'Type 7-8'});
+        await dataManager.types.add({type: 9, subType: 10, name: 'Type 9-10'});
+        await dataManager.types.add({type: 11, subType: 12, name: 'Type 11-12'});
+        await dataManager.types.add({type: 10, subType: 20, name: 'Type 10-20'});
+
         // Create a test document for the regular user
         const testDocument: I_DocumentCreation = {
             title: 'Test Document',
             type: 1,
             subType: 1,
+            public: false,
             content: {text: 'This is a test document'},
             shareWithGroup: false,
             shareWithDepartment: false
@@ -58,7 +69,7 @@ describe('Document Management API Tests', () => {
 
     // Close the test server after all tests
     afterAll(async () => {
-        await closeTestServer(server);
+        await closeTestServer(networkManager);
     });
 
     describe('POST /docs/create', () => {
@@ -67,6 +78,7 @@ describe('Document Management API Tests', () => {
                 title: 'New Test Document',
                 type: 2,
                 subType: 3,
+                public: false,
                 content: {text: 'This is a new test document'},
                 shareWithGroup: true,
                 shareWithDepartment: false
@@ -97,6 +109,7 @@ describe('Document Management API Tests', () => {
                 title: 'Unauthenticated Document',
                 type: 1,
                 subType: 1,
+                public: false,
                 content: JSON.stringify({text: 'This should not be created'}),
                 shareWithGroup: false,
                 shareWithDepartment: false
@@ -130,6 +143,7 @@ describe('Document Management API Tests', () => {
                 title: 'Admin Document',
                 type: 3,
                 subType: 2,
+                public: false,
                 content: {text: 'This is an admin document'},
                 shareWithGroup: false,
                 shareWithDepartment: false
@@ -159,6 +173,7 @@ describe('Document Management API Tests', () => {
                 title: 'Admin Document',
                 type: 3,
                 subType: 2,
+                public: false,
                 content: {text: 'This is an admin document'},
                 shareWithGroup: false,
                 shareWithDepartment: false
@@ -182,6 +197,7 @@ describe('Document Management API Tests', () => {
                 title: 'Shared Document',
                 type: 4,
                 subType: 5,
+                public: false,
                 content: {text: 'This is a shared document'},
                 shareWithGroup: false,
                 shareWithDepartment: true
@@ -239,6 +255,7 @@ describe('Document Management API Tests', () => {
                 title: 'Specific Type Document',
                 type: 10,
                 subType: 20,
+                public: false,
                 content: {text: 'This has a specific type and subtype'},
                 shareWithGroup: false,
                 shareWithDepartment: false
@@ -363,6 +380,7 @@ describe('Document Management API Tests', () => {
                 title: 'Shared Document for Update',
                 type: 7,
                 subType: 8,
+                public: false,
                 content: {text: 'This is a shared document for update test'},
                 shareWithGroup: true,
                 shareWithDepartment: false
@@ -408,6 +426,7 @@ describe('Document Management API Tests', () => {
                 title: 'Private Admin Document for Update',
                 type: 9,
                 subType: 10,
+                public: false,
                 content: {text: 'This is a private admin document for update test'},
                 shareWithGroup: false,
                 shareWithDepartment: false
@@ -471,6 +490,7 @@ describe('Document Management API Tests', () => {
                 title: 'Shared Document for Delete',
                 type: 11,
                 subType: 12,
+                public: false,
                 content: {text: 'This is a shared document for delete test'},
                 shareWithGroup: true,
                 shareWithDepartment: false
