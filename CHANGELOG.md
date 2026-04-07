@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.2.0...v1.2.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* removed unused import `helmet` ([132a929](https://github.com/BFH-JTF/doc-pouch/commit/132a9296b033699ff12e7dede0484e81b5a82196))
+
 # [1.2.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.1.0...v1.2.0) (2026-04-07)
 
 
