@@ -51,6 +51,8 @@ let loadedStructure = ref<I_DataStructure | undefined>(undefined);
 const snackBarMessage = ref('');
 const snackBarVisible = ref(false);
 const showUpdateDialog = ref(false);
+const faultyDocuments = ref<I_DocumentEntry[]>([]);
+const showConsistencyAlert = ref(false);
 let isAdmin = computed(() => {
   if (authToken.value === null) {
     return false;
@@ -130,6 +132,10 @@ function handleNetworkEvent(event: I_EventString, data: any) {
     case "newType":
       break
 
+    case "databaseInconsistency" as any:
+      faultyDocuments.value = data.faultyDocuments;
+      showConsistencyAlert.value = true;
+      break;
 
   }
 }
@@ -570,6 +576,18 @@ async function migrateDatabase() {
       <v-alert v-if="isLoggedIn" type="info" variant="tonal" closable class="ma-4">
         <strong>Welcome to DocPouch Administration</strong> — an open-source document management system that allows you
         to organize, edit, and share structured data. This panel lets you manage users, data structures, and documents.
+      </v-alert>
+
+      <v-alert v-if="showConsistencyAlert" class="ma-4" closable type="error" variant="tonal"
+               @click:close="showConsistencyAlert = false">
+        <strong>Database Inconsistency Detected!</strong>
+        The following documents have invalid owners, types, or subtypes:
+        <ul class="mt-2">
+          <li v-for="doc in faultyDocuments" :key="doc._id">
+            <strong>{{ doc.title }}</strong> (ID: {{ doc._id }}) - Owner: {{ doc.owner }}, Type: {{ doc.type }},
+            Subtype: {{ doc.subType }}
+          </li>
+        </ul>
       </v-alert>
 
       <v-container class="h-100 px-4">

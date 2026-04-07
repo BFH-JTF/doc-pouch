@@ -752,6 +752,38 @@ export default class NeDbWrapper {
         });
     }
 
+    async checkDatabaseConsistency(): Promise<I_DocumentEntry[]> {
+        const users = await this.users.query({});
+        const types = await this.types.query({});
+        const documents = await this.documents.query({});
+
+        const userIds = new Set(users.map(u => (u as I_UserEntry)._id));
+        const typeSubTypeSet = new Set(types.map(t => {
+            const dt = t as I_DocumentType;
+            return `${dt.type}-${dt.subType}`;
+        }));
+
+        const faultyDocuments: I_DocumentEntry[] = [];
+
+        for (const doc of documents as I_DocumentEntry[]) {
+            let isValid = true;
+            if (!userIds.has(doc.owner)) {
+                this.logger.warn(`Document ${doc._id} has invalid owner: ${doc.owner}`);
+                isValid = false;
+            }
+            if (!typeSubTypeSet.has(`${doc.type}-${doc.subType}`)) {
+                this.logger.warn(`Document ${doc._id} has invalid type-subType: ${doc.type}-${doc.subType}`);
+                isValid = false;
+            }
+
+            if (!isValid) {
+                faultyDocuments.push(doc);
+            }
+        }
+
+        return faultyDocuments;
+    }
+
     writeDocumentType(newTypeData: I_DocumentType, requestingUserID: string): Promise<I_DocumentType> {
         return new Promise((resolve, reject) => {
             this.isAdmin(requestingUserID).then(isAdmin => {
