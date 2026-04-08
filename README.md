@@ -174,13 +174,75 @@ docker run -d \
 
 ### Configuration
 
-DocPouch can be configured using environment variables:
+DocPouch can be configured using environment variables. These can be set in your Docker Compose file, as CLI arguments,
+or in a `.env` file when running locally.
+
+#### Core Configuration
 
 | Variable      | Description                                                                | Default     |
 |---------------|----------------------------------------------------------------------------|-------------|
 | `PORT`        | The port the server will listen on.                                        | `3030`      |
 | `MEMORY_ONLY` | Set to `true` to use an in-memory database (data will be lost on restart). | `false`     |
 | `PREFIX`      | Prefix for database filenames.                                             | `docpouch-` |
+
+#### Security Configuration
+
+| Variable     | Description                                                   | Default                            |
+|--------------|---------------------------------------------------------------|------------------------------------|
+| `JWT_SECRET` | Secret key used to sign JWT tokens. **Change in production!** | `ThisIsMyVeryOwnAndCreativeSecret` |
+
+#### CORS Configuration
+
+| Variable          | Description                                     | Default                       |
+|-------------------|-------------------------------------------------|-------------------------------|
+| `ALLOWED_ORIGINS` | Comma-separated list of allowed origins (CORS). | `*` (all origins allowed)     |
+| `ALLOWED_HEADERS` | Comma-separated list of allowed headers.        | `Content-Type, Authorization` |
+
+#### Example Configuration
+
+**Using Docker Compose:**
+
+```yaml
+services:
+  doc-pouch:
+    image: ghcr.io/bfh-jtf/doc-pouch:latest
+    ports:
+      - "3030:3030"
+    volumes:
+      - "./db:/app/db"
+      - "./log:/app/log"
+    environment:
+      - PORT=3030
+      - MEMORY_ONLY=false
+      - PREFIX=myapp-
+      - JWT_SECRET=your-secure-secret-here
+      - ALLOWED_ORIGINS=https://example.com,https://app.example.com
+    restart: unless-stopped
+```
+
+**Using .env file for local development:**
+
+```bash
+PORT=3030
+MEMORY_ONLY=false
+PREFIX=docpouch-
+JWT_SECRET=your-development-secret
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+ALLOWED_HEADERS=Content-Type, Authorization, X-Requested-With
+```
+
+**Using Docker CLI:**
+
+```bash
+docker run -d \
+  --name doc-pouch \
+  -p 3030:3030 \
+  -v ./db:/app/db \
+  -v ./log:/app/log \
+  -e JWT_SECRET=your-secure-secret \
+  -e ALLOWED_ORIGINS=https://example.com \
+  ghcr.io/bfh-jtf/doc-pouch:latest
+```
 
 ### Persisting Data
 
