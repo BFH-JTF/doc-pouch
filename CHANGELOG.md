@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.2.1...v1.3.0) (2026-04-08)
+
+
+### Features
+
+* add environment-based CORS and JWT secret configuration ([9a3aa3f](https://github.com/BFH-JTF/doc-pouch/commit/9a3aa3f756947bb46e4be0f0fbc0261a3b78eb2f))
+
 ## [1.2.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.2.0...v1.2.1) (2026-04-07)
 
 
