@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.0...v1.3.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* expand README with detailed configuration instructions ([5048abc](https://github.com/BFH-JTF/doc-pouch/commit/5048abc598048ad6cd6fa3fcd8bdf39cacdd88aa))
+
 # [1.3.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.2.1...v1.3.0) (2026-04-08)
 
 
