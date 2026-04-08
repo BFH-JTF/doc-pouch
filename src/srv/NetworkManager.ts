@@ -103,7 +103,7 @@ export default class NetworkManager {
     constructor(logger: winston.Logger, dataManager: NeDbWrapper, port: number, corsOptions = {
         origin: "*",
         credentials: true
-    }) {
+    } as any) {
         this.corsOptions = corsOptions;
         this.port = port;
         this.expressApp = express();

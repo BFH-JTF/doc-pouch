@@ -10,4 +10,7 @@ services:
       - PORT=3030
       - MEMORY_ONLY=false
       - PREFIX=test_
+      - JWT_SECRET=your-secure-jwt-secret-here
+      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+      - ALLOWED_HEADERS=Content-Type,Authorization
     restart: unless-stopped

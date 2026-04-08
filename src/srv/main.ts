@@ -4,9 +4,18 @@ import winston from "winston";
 import fs from "fs";
 import {checkForUpdates} from "./updateChecker.js";
 
-const corsOptions = {
-    origin: "*",
-    credentials: true
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || "*";
+const ALLOWED_HEADERS = process.env.ALLOWED_HEADERS || "Content-Type, Authorization";
+
+const origins = ALLOWED_ORIGINS.split(",").map(o => o.trim());
+const corsOptions: {
+    origin: string | string[];
+    credentials: boolean;
+    allowedHeaders: string[];
+} = {
+    origin: origins.length === 1 ? origins[0] : origins,
+    credentials: true,
+    allowedHeaders: ALLOWED_HEADERS.split(",").map(h => h.trim())
 }
 
 // use environment variables to configure settings
