@@ -15,6 +15,15 @@ jobs:
       issues: write
       pull-requests: write
     steps:
+      - name: Verify token
+        run: |
+          if [ -z "${{ secrets.RELEASE_TOKEN }}" ]; then
+            echo "RELEASE_TOKEN is empty!"
+          else
+            echo "RELEASE_TOKEN is set (length: ${#RELEASE_TOKEN})"
+          fi
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
       - name: Checkout code
         uses: actions/checkout@v4
         with:
