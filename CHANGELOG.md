@@ -1,3 +1,10 @@
+## [1.3.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.2...v1.3.3) (2026-04-09)
+
+
+### Bug Fixes
+
+* change default log to info ([e9475af](https://github.com/BFH-JTF/doc-pouch/commit/e9475af28e86439397af500ae284f98640a4783c))
+
 ## [1.3.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.1...v1.3.2) (2026-04-09)
 
 
