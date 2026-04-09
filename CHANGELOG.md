@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.1...v1.3.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* update GitHub workflows to use latest action versions ([cef3e3c](https://github.com/BFH-JTF/doc-pouch/commit/cef3e3c462c0928268cd65e42d3a50689180d279))
+
 ## [1.3.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.0...v1.3.1) (2026-04-08)
 
 
