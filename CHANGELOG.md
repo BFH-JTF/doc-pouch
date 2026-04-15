@@ -1,3 +1,10 @@
+## [1.3.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.3...v1.3.4) (2026-04-15)
+
+
+### Bug Fixes
+
+* remove unused `credentials` field and reorder middleware setup ([257cdde](https://github.com/BFH-JTF/doc-pouch/commit/257cddef4078b467e15ca514c00402e0d6bfa17a))
+
 ## [1.3.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.2...v1.3.3) (2026-04-09)
 
 
