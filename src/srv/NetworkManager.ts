@@ -147,9 +147,9 @@ export default class NetworkManager {
         const vuePath = path.resolve(process.cwd(), 'dist/srv/vue');
         this.logger.info(`Serving static files from: ${vuePath}`);
 
+        this.expressApp.use(cors(this.corsOptions));
         this.expressApp.use(express.static(vuePath));
         this.expressApp.use(express.json());
-        this.expressApp.use(cors(this.corsOptions));
         this.expressApp.use(cspMiddleware);
         this.expressApp.disable('etag'); // Disable ETag header to prevent caching of responses
 

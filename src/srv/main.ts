@@ -10,11 +10,9 @@ const ALLOWED_HEADERS = process.env.ALLOWED_HEADERS || "Content-Type, Authorizat
 const origins = ALLOWED_ORIGINS.split(",").map(o => o.trim());
 const corsOptions: {
     origin: string | string[];
-    credentials: boolean;
     allowedHeaders: string[];
 } = {
     origin: origins.length === 1 ? origins[0] : origins,
-    credentials: true,
     allowedHeaders: ALLOWED_HEADERS.split(",").map(h => h.trim())
 }
 
