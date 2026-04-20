@@ -1,3 +1,17 @@
+# [1.4.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.4...v1.4.0) (2026-04-20)
+
+
+### Bug Fixes
+
+* update @vitejs/plugin-vue and @rolldown/pluginutils to latest versions ([5fe1843](https://github.com/BFH-JTF/doc-pouch/commit/5fe18437ecbc349ca8e5f06c3d1d07594c351927))
+
+
+### Features
+
+* add migration routine for adding `displayName` to structure fields (pre-1.3.4) ([9f5b7fc](https://github.com/BFH-JTF/doc-pouch/commit/9f5b7fc0f5cf1d88cffc3f8383dcf2c56f8dd3e2))
+* improve database initialization and update dependencies ([aece4fe](https://github.com/BFH-JTF/doc-pouch/commit/aece4fec58486b2e0e7103aa7d3883317cd3758f))
+* update OpenAPI spec to v1.3.4 with new endpoints, schema changes, and enhancements ([0680a64](https://github.com/BFH-JTF/doc-pouch/commit/0680a642446b39de084bf628f82bdad90ad25375))
+
 ## [1.3.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.3...v1.3.4) (2026-04-15)
 
 
