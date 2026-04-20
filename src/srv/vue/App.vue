@@ -480,6 +480,24 @@ async function migrateDatabase() {
       }
     }
   }
+
+  // pre-1.3.4
+  console.log("Checking for database migration... (pre-1.3.4");
+  for (const struct of structureArray.value) {
+    if (struct._id) {
+      for (let field of struct.fields) {
+        if (field.displayName === undefined) {
+          console.log(`Migrating document ${struct._id}: adding displayName: ${field.name}`);
+          field.displayName = field.name;
+          try {
+            await apiClient.updateStructure(struct._id, struct);
+          } catch (error) {
+            console.error(`Error migrating document ${struct._id}:`, error);
+          }
+        }
+      }
+    }
+  }
 }
 </script>
 
