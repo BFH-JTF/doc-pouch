@@ -65,7 +65,7 @@ const treeItems = computed(() => {
 function createFieldNode(field: I_StructureField): I_StructureTreeItem {
   // Create the node for this field
   const node: I_StructureTreeItem = {
-    name: `${field.name}`,
+    name: `${field.displayName} [${field.name}]`,
     id: field.name,
     children: []
   };
@@ -85,11 +85,11 @@ function createFieldNode(field: I_StructureField): I_StructureTreeItem {
       node.color = typeIcons.array.color;
       
       if (field.items === 'string' || field.items === 'number' || field.items === 'boolean') {
-        node.name = `${field.name} (Array of ${field.items})`;
+        node.name = `${field.displayName} [${field.name}] (Array of ${field.items})`;
         // Add small badge or icon for item type
         const itemTypeInfo = typeIcons[field.items] || typeIcons.default;
       } else if (field.items) {
-        node.name = `${field.name} (Array of structures)`;
+        node.name = `${field.displayName} [${field.name}] (Array of structures)`;
         
         // Try to find the referenced structure
         const referencedStructure = props.structureList.find(s => s._id === field.items);

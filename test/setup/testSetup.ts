@@ -29,6 +29,9 @@ const TEST_PORT = 3031;
 export async function setupTestServer() {
     const dataManager = new NeDbWrapper(testLogger, {inMemoryOnly: true});
 
+    // Wait for database initialization to complete before starting tests
+    await dataManager.waitForInitialization();
+
     // Let NetworkManager create and listen on its own server instance
     const corsOptions = {
         origin: "*",

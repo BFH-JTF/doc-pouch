@@ -40,6 +40,7 @@ export default class NeDbWrapper {
     private readonly inMemoryOnly: boolean;
     private readonly filenamePrefix: string | undefined;
     private readonly dbPath: string | undefined;
+    private readonly initializationPromise: Promise<void>;
 
     constructor(winstonLogger: winston.Logger, options: INeDbOptions = {}) {
         this.logger = winstonLogger;
@@ -81,78 +82,76 @@ export default class NeDbWrapper {
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         }
-        this.users.count({}).then((counter) => {
-            // No users in database yet?
-            if (counter < 1) {
-                // Create default admin
-                this.createUser({
-                    password: "adminSecret",
-                    name: "admin",
-                    department: "administration",
-                    group: "auto-created",
-                    isAdmin: true,
-                }).then((addedUser) => {
-                    this.logger.info(`Created new admin user: ${JSON.stringify(addedUser)}`);
-                    this.documents.count({}).then((counter) => {
-                        // No documents in database yet?
-                        if (counter < 1) {
-                            // Create demo document
-                            this.getAdminUser().then((admin) => {
-                                if (admin._id) {
-                                    let defaultDocument: I_DocumentCreationOwned = {
-                                        shareWithDepartment: false,
-                                        shareWithGroup: false,
-                                        title: "Demo Document",
-                                        owner: admin._id,
-                                        description: "This is just a demo, delete when you don't need it anymore",
-                                        subType: 0,
-                                        type: 1,
-                                        public: false,
-                                        content: [{
-                                            label: "This is a demo document not following any document structure",
-                                            importance: 0
-                                        }]
-                                    }
+        this.initializationPromise = this.initializeDatabase();
+    }
 
-                                    this.documents.add(defaultDocument).then((document) => {
-                                        this.logger.info(`Created new document: ${JSON.stringify(document)}`);
-                                    });
+    public async waitForInitialization(): Promise<void> {
+        return this.initializationPromise;
+    }
 
-                                    this.structures.count({}).then((counter) => {
-                                        // No structures in database yet?
-                                        if (counter < 1) {
-                                            // Create demo structure
-                                            this.getAdminUser().then((admin) => {
-                                                if (admin._id) {
-                                                    let defaultStructure: I_StructureEntry = {
-                                                        _id: "tt5vo04DN3jm8Bqe",
-                                                        description: "This is a demo structure.",
-                                                        name: "City Info",
-                                                        fields: [
-                                                            {
-                                                                name: "City name",
-                                                                type: "string",
-                                                            },
-                                                            {
-                                                                name: "# of inhabitants",
-                                                                type: "number"
-                                                            }
-                                                        ]
-                                                    }
-                                                    this.structures.add(defaultStructure).then((structure) => {
-                                                        this.logger.info(`Created new structure: ${JSON.stringify(structure)}`);
-                                                    });
-                                                }
-                                            })
-                                        }
-                                    })
-                                }
-                            })
-                        }
-                    })
-                })
+    private async initializeDatabase(): Promise<void> {
+        const userCount = await this.users.count({});
+        if (userCount < 1) {
+            const addedUser = await this.createUser({
+                password: "adminSecret",
+                name: "admin",
+                department: "administration",
+                group: "auto-created",
+                isAdmin: true,
+            });
+            this.logger.info(`Created new admin user: ${JSON.stringify(addedUser)}`);
+        }
+
+        const docCount = await this.documents.count({});
+        if (docCount < 1) {
+            const admin = await this.getAdminUser();
+            if (admin._id) {
+                const defaultDocument: I_DocumentCreationOwned = {
+                    shareWithDepartment: false,
+                    shareWithGroup: false,
+                    title: "Demo Document",
+                    owner: admin._id,
+                    description: "This is just a demo, delete when you don't need it anymore",
+                    subType: 0,
+                    type: 1,
+                    public: false,
+                    content: [{
+                        label: "This is a demo document not following any document structure",
+                        importance: 0
+                    }]
+                };
+                const document = await this.documents.add(defaultDocument);
+                this.logger.info(`Created new document: ${JSON.stringify(document)}`);
             }
-        })
+        }
+
+        const structCount = await this.structures.count({});
+        if (structCount < 1) {
+            const admin = await this.getAdminUser();
+            if (admin._id) {
+                const defaultStructure: I_StructureEntry = {
+                    _id: "tt5vo04DN3jm8Bqe",
+                    description: "This is a demo structure.",
+                    name: "City Info",
+                    fields: [
+                        {
+                            name: "cityName",
+                            displayName: "City Name",
+                            type: "string",
+                        },
+                        {
+                            name: "inhabitants",
+                            displayName: "# of Inhabitants",
+                            type: "number"
+                        }
+                    ]
+                };
+                const structure = await this.structures.add(defaultStructure);
+                this.logger.info(`Created new structure: ${JSON.stringify(structure)}`);
+            }
+        }
+
+        this.logger.info("Database initialization complete");
     }
 
     public stop() {
@@ -386,7 +385,6 @@ export default class NeDbWrapper {
                             })
                                 .then((result) => {
                                     this.logger.info("Created new user account: " + JSON.stringify(newUser));
-
                                     resolve(result as I_UserEntry);
                                 })
                         })

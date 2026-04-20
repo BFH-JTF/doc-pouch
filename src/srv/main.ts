@@ -60,4 +60,11 @@ let dbOptions: INeDbOptions = {
 checkForUpdates(winstonLogger);
 
 const dataManager = new NeDbWrapper(winstonLogger, dbOptions);
-new NetworkManager(winstonLogger, dataManager, PORT, corsOptions);
+
+dataManager.waitForInitialization().then(() => {
+    winstonLogger.info("Database initialized, starting server...");
+    new NetworkManager(winstonLogger, dataManager, PORT, corsOptions);
+}).catch((error) => {
+    winstonLogger.error(`Failed to initialize database: ${error}`);
+    process.exit(1);
+});
