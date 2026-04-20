@@ -2,10 +2,10 @@ openapi: 3.0.1
 info:
   title: DocPouch
   description: A light-weight, document-based database including user-management. DocPouch is meant for tests, development or internal applications, where security is not a major factor. The database is file and text based and therefore also not layed out for high performance. Instead the main focus of DocPouch is simplicity and a small footprint.
-  version: 1.0.2
+  version: 1.3.4
 servers:
-  - url: 'https://docpouch.example.com/api/v1'
-    description: 'Main API server'
+  - url: 'http://localhost:3030'
+    description: 'Local development server'
 tags:
   - name: administration
     description: User management endpoints
@@ -36,6 +36,10 @@ paths:
               schema:
                 type: object
                 properties:
+                  _id:
+                    type: string
+                    description: "The user's unique ID"
+                    example: "p3O5LB4T6C4PgkvW"
                   token:
                     type: string
                     description: "JWT authentication token"
@@ -45,10 +49,15 @@ paths:
                   userName:
                     type: string
                     description: "The user's display name"
+                  expiresIn:
+                    type: number
+                    description: "Token expiration time in seconds"
                 required:
+                  - _id
                   - token
                   - isAdmin
                   - userName
+                  - expiresIn
         401:
           description: "Invalid credentials"
         404:
@@ -213,16 +222,16 @@ paths:
         content:
           application/json:
             schema:
-              type: array
-              items:
-                $ref: "#/components/schemas/DocumentQuery"
+              $ref: "#/components/schemas/DocumentQuery"
       responses:
         200:
           description: "Documents matching the query criteria"
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Document"
+                type: array
+                items:
+                  $ref: "#/components/schemas/Document"
         401:
           description: "User does not have access to this document"
         404:
@@ -444,6 +453,32 @@ paths:
         404:
           description: "Document type not found"
 
+  /version/check:
+    get:
+      summary: Check for application updates
+      description: "Check if a newer version of the application is available."
+      tags:
+        - administration
+      responses:
+        200:
+          description: "Update check result"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hasUpdate:
+                    type: boolean
+                    description: "Whether a newer version is available"
+                  currentVersion:
+                    type: string
+                    description: "The current application version"
+                  latestVersion:
+                    type: string
+                    description: "The latest available version"
+        503:
+          description: "Update check not available yet"
+
   /database/export:
     get:
       summary: Export the database
@@ -536,6 +571,18 @@ components:
           type: string
           description: "Unique ID of document. Only used for queries and deletions"
           example: "3ufDC0Rh5g7arSC9"
+        owner:
+          type: string
+          description: "The _id of the user who owns this document"
+          example: "p3O5LB4T6C4PgkvW"
+        title:
+          type: string
+          description: "The title of the document"
+          example: "Mission Statement"
+        description:
+          type: string
+          description: "The description of the document"
+          example: "A brief description of the document"
         type:
           type: integer
           description: "Type of document - can be used by user for document organization"
@@ -544,14 +591,19 @@ components:
           type: integer
           description: "Sub-type of document - can be used by user for document organization"
           example: 11
-        title:
-          type: string
-          description: "The title of the document"
-          example: "Mission Statement"
         content:
-          type: string
-          description: "The content of the document in a string. If you want to store binary data it needs to be Base64 encoded."
-          example: "{\"msg\": \"We strive for a world that ... \"}"
+          type: array
+          description: "The content of the document as an array of field objects"
+          items:
+            type: object
+            properties:
+              label:
+                type: string
+                description: "Field label"
+              importance:
+                type: integer
+                description: "Field importance level"
+          example: [ { "label": "Document content here", "importance": 0 } ]
         shareWithGroup:
           type: boolean
           description: "If true, the document is shared with all users in the owner's group"
@@ -566,6 +618,7 @@ components:
           example: false
       required:
         - _id
+        - owner
         - title
         - type
         - subType
@@ -580,6 +633,10 @@ components:
           type: string
           description: "Unique ID of document. Only used for queries and deletions"
           example: "3ufDC0Rh5g7arSC9"
+        owner:
+          type: string
+          description: "The _id of the user who owns this document"
+          example: "p3O5LB4T6C4PgkvW"
         type:
           type: integer
           description: "Type of document - can be used by user for document organization"
@@ -611,24 +668,37 @@ components:
     
     NewDocument:
       type: object
-      description: "Data element for creating a new document"
+      description: "Data element for creating a new document. The owner field is automatically set from the authenticated user's JWT token."
       properties:
-        type:
-          type: integer
-          description: "Type of document - can be used by user for document organization"
-          example: 17
-        subtype:
-          type: integer
-          description: "Sub-type of document - can be used by user for document organization"
-          example: 11
         title:
           type: string
           description: "The title of the document"
           example: "Mission Statement"
-        content:
+        description:
           type: string
-          description: "The content of the document in a string. If you want to store binary data it needs to be Base64 encoded."
-          example: "{\"msg\": \"We strive for a world that ... \"}"
+          description: "The description of the document"
+          example: "A brief description of the document"
+        type:
+          type: integer
+          description: "Type of document - can be used by user for document organization"
+          example: 17
+        subType:
+          type: integer
+          description: "Sub-type of document - can be used by user for document organization"
+          example: 11
+        content:
+          type: array
+          description: "The content of the document as an array of field objects"
+          items:
+            type: object
+            properties:
+              label:
+                type: string
+                description: "Field label"
+              importance:
+                type: integer
+                description: "Field importance level"
+          example: [ { "label": "Document content here", "importance": 0 } ]
         shareWithGroup:
           type: boolean
           description: "If true, the document is shared with all users in the owner's group"
@@ -644,7 +714,7 @@ components:
       required:
         - title
         - type
-        - subtype
+        - subType
         - content
         - shareWithDepartment
         - shareWithGroup
@@ -655,25 +725,29 @@ components:
       description: "Data element describing the user-facing side of a user account"
       properties:
         _id:
-          type: integer
-          description: "A unique not-changable user ID"
-          example: 2
+          type: string
+          description: "A unique not-changeable user ID"
+          example: "p3O5LB4T6C4PgkvW"
         name:
           type: string
           description: "User names can be changed at any time and are not necessarily unique. Users are uniquely identified based on their id."
-          example: "Darth Vader"
+          example: "admin"
         email:
           type: string
           description: "User email address"
-          example: "darth@gmail.com"
+          example: "admin@example.com"
         department:
           type: string
           description: "The department the user is part of"
-          example: "Administration"
+          example: "administration"
         group:
           type: string
           description: "The group the user is part of"
-          example: "The Magentas"
+          example: "auto-created"
+        isAdmin:
+          type: boolean
+          description: "Whether the user has administrator privileges"
+          example: true
       required:
         - _id
         - name
@@ -765,12 +839,16 @@ components:
       description: "Data element describing a data structure"
       properties:
         _id:
-          type: integer
-          description: "Unique ID of data structure, is used as type for documents"
-          example: 18
-        title:
           type: string
-          description: "The title of the structure"
+          description: "Unique ID of data structure, is used as type for documents"
+          example: "tt5vo04DN3jm8Bqe"
+        name:
+          type: string
+          description: "The name of the structure"
+          example: "City Info"
+        description:
+          type: string
+          description: "The description of the structure"
           example: "Data resulting from Vision-Mission-Value-Canvas"
         fields:
           type: array
@@ -778,17 +856,20 @@ components:
           items:
             $ref: "#/components/schemas/DataField"
       required:
-        - title
+        - name
         - fields
-        - _id
 
     DataStructureCreation:
       type: object
       description: "Data element describing a data structure"
       properties:
-        title:
+        name:
           type: string
-          description: "The title of the structure"
+          description: "The name of the structure"
+          example: "City Info"
+        description:
+          type: string
+          description: "The description of the structure"
           example: "Data resulting from Vision-Mission-Value-Canvas"
         fields:
           type: array
@@ -796,7 +877,7 @@ components:
           items:
             $ref: "#/components/schemas/DataField"
       required:
-        - title
+        - name
         - fields
 
     DataField:
