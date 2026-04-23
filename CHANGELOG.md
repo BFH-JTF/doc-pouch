@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.4.0...v1.4.1) (2026-04-23)
+
+
+### Bug Fixes
+
+* remove unused `_id` and `expiresIn` fields from OpenAPI spec, add new socket event for database inconsistencies ([e1cfbf9](https://github.com/BFH-JTF/doc-pouch/commit/e1cfbf935d5e81a62bf93768e328a1b61bccb817))
+
 # [1.4.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.3.4...v1.4.0) (2026-04-20)
 
 
