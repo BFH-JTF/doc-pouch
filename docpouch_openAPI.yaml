@@ -36,10 +36,6 @@ paths:
               schema:
                 type: object
                 properties:
-                  _id:
-                    type: string
-                    description: "The user's unique ID"
-                    example: "p3O5LB4T6C4PgkvW"
                   token:
                     type: string
                     description: "JWT authentication token"
@@ -49,15 +45,10 @@ paths:
                   userName:
                     type: string
                     description: "The user's display name"
-                  expiresIn:
-                    type: number
-                    description: "Token expiration time in seconds"
                 required:
-                  - _id
                   - token
                   - isAdmin
                   - userName
-                  - expiresIn
         401:
           description: "Invalid credentials"
         404:
