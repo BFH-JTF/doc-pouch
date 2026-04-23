@@ -53,20 +53,21 @@ socket.on('connect', () => {
 
 These are the events that the server emits to clients:
 
-| Event Name         | Description                               | Payload Structure                                      | Triggered By           | Access             |
-|--------------------|-------------------------------------------|--------------------------------------------------------|------------------------|--------------------|
-| `heartbeatPing`    | Server checking if client is alive        | None                                                   | Sent every 60 seconds  | All clients        |
-| `newDocument`      | Notifies about new document creation      | `{ newDocument: { _id: string, title: string, ... } }` | Document creation      | Document accessors |
-| `changedDocument`  | Notifies about document updates           | `{ changedDocument: { _id: string, ... } }`            | Document update        | Document accessors |
-| `removedDocument`  | Notifies about document deletion          | `{ removedID: string }`                                | Document deletion      | Document accessors |
-| `newUser`          | Notifies about new user creation          | `{ newUser: { _id: string, name: string, ... } }`      | User creation          | Admin only         |
-| `changedUser`      | Notifies about user updates               | `{ changedUser: { _id: string, ... } }`                | User update            | Admin only         |
-| `removedUser`      | Notifies about user deletion              | `{ removedID: string }`                                | User deletion          | Admin only         |
-| `newStructure`     | Notifies about new structure creation     | `{ newStructure: { _id: string, name: string, ... } }` | Structure creation     | All clients        |
-| `changedStructure` | Notifies about structure updates          | `{ changedStructure: { _id: string, ... } }`           | Structure update       | All clients        |
-| `removedStructure` | Notifies about structure deletion         | `{ removedID: string }`                                | Structure deletion     | All clients        |
-| `newType`          | Notifies about new document type creation | `{ newType: { _id: string, name: string, ... } }`      | Document type creation | All clients        |
-| `removedType`      | Notifies about document type deletion     | `{ removedID: string }`                                | Document type deletion | All clients        |
+| Event Name              | Description                                | Payload Structure                                      | Triggered By           | Access             |
+|-------------------------|--------------------------------------------|--------------------------------------------------------|------------------------|--------------------|
+| `heartbeatPing`         | Server checking if client is alive         | None                                                   | Sent every 60 seconds  | All clients        |
+| `newDocument`           | Notifies about new document creation       | `{ newDocument: { _id: string, title: string, ... } }` | Document creation      | Document accessors |
+| `changedDocument`       | Notifies about document updates            | `{ changedDocument: { _id: string, ... } }`            | Document update        | Document accessors |
+| `removedDocument`       | Notifies about document deletion           | `{ removedID: string }`                                | Document deletion      | Document accessors |
+| `newUser`               | Notifies about new user creation           | `{ newUser: { _id: string, name: string, ... } }`      | User creation          | Admin only         |
+| `changedUser`           | Notifies about user updates                | `{ changedUser: { _id: string, ... } }`                | User update            | Admin only         |
+| `removedUser`           | Notifies about user deletion               | `{ removedID: string }`                                | User deletion          | Admin only         |
+| `newStructure`          | Notifies about new structure creation      | `{ newStructure: { _id: string, name: string, ... } }` | Structure creation     | All clients        |
+| `changedStructure`      | Notifies about structure updates           | `{ changedStructure: { _id: string, ... } }`           | Structure update       | All clients        |
+| `removedStructure`      | Notifies about structure deletion          | `{ removedID: string }`                                | Structure deletion     | All clients        |
+| `newType`               | Notifies about new document type creation  | `{ newType: { _id: string, name: string, ... } }`      | Document type creation | All clients        |
+| `removedType`           | Notifies about document type deletion      | `{ removedID: string }`                                | Document type deletion | All clients        |
+| `databaseInconsistency` | Notifies admin about data integrity issues | `{ faultyDocuments: [...] }`                           | Admin connection       | Admin only         |
 
 ### Example: Handling Events with DocPouch Client
 
