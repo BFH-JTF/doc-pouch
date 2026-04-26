@@ -2,12 +2,16 @@ import Nedb from "@seald-io/nedb";
 import winston from "winston";
 import fs from "fs";
 import bcrypt from "bcrypt"
-import type {
-    I_UserEntry,
-    I_DocumentEntry,
-    I_StructureEntry,
-    I_UserCreation,
-    I_DocumentCreation, I_StructureCreation, I_DocumentCreationOwned, I_DocumentQuery, I_DocumentType, I_DocumentUpdate
+import {
+    type I_UserEntry,
+    type I_DocumentEntry,
+    type I_UserCreation,
+    type I_DocumentCreation,
+    type I_StructureCreation,
+    type I_DocumentCreationOwned,
+    type I_DocumentQuery,
+    type I_DocumentUpdate,
+    type I_DataStructure,
 } from "docpouch-client";
 
 // Type declaration to help TypeScript understand Nedb constructor
@@ -20,21 +24,20 @@ export interface INeDbOptions {
     dbPath?: string;
 }
 
-export type DatabaseCollection = "users" | "documents" | "structures" | "types";
+export type DatabaseCollection = "users" | "documents" | "structures";
 export type ImportMode = "replace" | "add" | "skip";
 
 export interface IDatabaseExportData {
     users: any[];
     documents: any[];
     structures: any[];
-    types: any[];
 }
 
 export default class NeDbWrapper {
     users: CustomStore
     structures: CustomStore
     documents: CustomStore
-    types: CustomStore
+    types: CustomStore // only for backwards compatibility pre 1.9.0
     logger: winston.Logger
     saltRounds: number = 10;
     private readonly inMemoryOnly: boolean;
@@ -89,69 +92,18 @@ export default class NeDbWrapper {
         return this.initializationPromise;
     }
 
-    private async initializeDatabase(): Promise<void> {
-        const userCount = await this.users.count({});
-        if (userCount < 1) {
-            const addedUser = await this.createUser({
-                password: "adminSecret",
-                name: "admin",
-                department: "administration",
-                group: "auto-created",
-                isAdmin: true,
-            });
-            this.logger.info(`Created new admin user: ${JSON.stringify(addedUser)}`);
-        }
+    async exportAllData(): Promise<IDatabaseExportData> {
+        const [users, documents, structures] = await Promise.all([
+            this.users.query({}),
+            this.documents.query({}),
+            this.structures.query({}),
+        ]);
 
-        const docCount = await this.documents.count({});
-        if (docCount < 1) {
-            const admin = await this.getAdminUser();
-            if (admin._id) {
-                const defaultDocument: I_DocumentCreationOwned = {
-                    shareWithDepartment: false,
-                    shareWithGroup: false,
-                    title: "Demo Document",
-                    owner: admin._id,
-                    description: "This is just a demo, delete when you don't need it anymore",
-                    subType: 0,
-                    type: 1,
-                    public: false,
-                    content: [{
-                        label: "This is a demo document not following any document structure",
-                        importance: 0
-                    }]
-                };
-                const document = await this.documents.add(defaultDocument);
-                this.logger.info(`Created new document: ${JSON.stringify(document)}`);
-            }
-        }
-
-        const structCount = await this.structures.count({});
-        if (structCount < 1) {
-            const admin = await this.getAdminUser();
-            if (admin._id) {
-                const defaultStructure: I_StructureEntry = {
-                    _id: "tt5vo04DN3jm8Bqe",
-                    description: "This is a demo structure.",
-                    name: "City Info",
-                    fields: [
-                        {
-                            name: "cityName",
-                            displayName: "City Name",
-                            type: "string",
-                        },
-                        {
-                            name: "inhabitants",
-                            displayName: "# of Inhabitants",
-                            type: "number"
-                        }
-                    ]
-                };
-                const structure = await this.structures.add(defaultStructure);
-                this.logger.info(`Created new structure: ${JSON.stringify(structure)}`);
-            }
-        }
-
-        this.logger.info("Database initialization complete");
+        return {
+            users,
+            documents,
+            structures,
+        };
     }
 
     public stop() {
@@ -165,28 +117,8 @@ export default class NeDbWrapper {
         return this.inMemoryOnly;
     }
 
-    async exportAllData(): Promise<IDatabaseExportData> {
-        const [users, documents, structures, types] = await Promise.all([
-            this.users.query({}),
-            this.documents.query({}),
-            this.structures.query({}),
-            this.types.query({})
-        ]);
-
-        return {
-            users,
-            documents,
-            structures,
-            types
-        };
-    }
-
-    async exportCollection(collection: DatabaseCollection): Promise<any[]> {
-        return this.getCollectionStore(collection).query({}) as Promise<any[]>;
-    }
-
     async importCollections(data: Partial<IDatabaseExportData>, mode: ImportMode = "replace"): Promise<void> {
-        const collections: DatabaseCollection[] = ["users", "documents", "structures", "types"];
+        const collections: DatabaseCollection[] = ["users", "documents", "structures"];
 
         for (const collection of collections) {
             const collectionData = data[collection];
@@ -232,6 +164,20 @@ export default class NeDbWrapper {
         }
     }
 
+    async exportCollection(collection: DatabaseCollection): Promise<any[]> {
+        return this.getCollectionStore(collection).query({}) as Promise<any[]>;
+    }
+
+    // Structure methods with access control
+    getStructures(): Promise<I_DataStructure[]> {
+        return new Promise((resolve, reject) => {
+            // Structures are visible to anyone
+            this.structures.query({}).then((result) => {
+                resolve(result as I_DataStructure[]);
+            }).catch(reject);
+        });
+    }
+
     private getCollectionStore(collection: DatabaseCollection): CustomStore {
         switch (collection) {
             case "users":
@@ -240,8 +186,6 @@ export default class NeDbWrapper {
                 return this.documents;
             case "structures":
                 return this.structures;
-            case "types":
-                return this.types;
             default:
                 throw new Error(`Unsupported collection '${collection}'`);
         }
@@ -487,22 +431,12 @@ export default class NeDbWrapper {
         })
     }
 
-    // Structure methods with access control
-    getStructures(): Promise<I_StructureEntry[]> {
-        return new Promise((resolve, reject) => {
-            // Structures are visible to anyone
-            this.structures.query({}).then((result) => {
-                resolve(result as I_StructureEntry[]);
-            }).catch(reject);
-        });
-    }
-
-    getStructureByID(structureID: number): Promise<I_StructureEntry> {
+    getStructureByID(structureID: number): Promise<I_DataStructure> {
         return new Promise((resolve, reject) => {
             // Structures are visible to anyone
             this.structures.query({_id: structureID}).then((result) => {
                 if (result.length > 0) {
-                    resolve(result[0] as I_StructureEntry);
+                    resolve(result[0] as I_DataStructure);
                 } else {
                     reject("Structure not found");
                 }
@@ -510,7 +444,7 @@ export default class NeDbWrapper {
         });
     }
 
-    createStructure(structure: I_StructureCreation, requestingUserID: string): Promise<I_StructureEntry> {
+    createStructure(structure: I_StructureCreation, requestingUserID: string): Promise<I_DataStructure> {
         return new Promise((resolve, reject) => {
             this.isAdmin(requestingUserID).then((isAdmin) => {
                 if (!isAdmin) {
@@ -524,7 +458,7 @@ export default class NeDbWrapper {
                     } else {
                         this.structures.add(structure).then((result) => {
                             this.logger.info("Created new structure: " + JSON.stringify(result));
-                            resolve(result as I_StructureEntry);
+                            resolve(result as I_DataStructure);
                         }).catch(reject);
                     }
                 }).catch(reject);
@@ -532,7 +466,7 @@ export default class NeDbWrapper {
         });
     }
 
-    updateStructure(structureID: string, newStructure: I_StructureEntry, requestingUserID: string): Promise<number> {
+    updateStructure(structureID: string, newStructure: I_DataStructure, requestingUserID: string): Promise<number> {
         return new Promise((resolve, reject) => {
             this.isAdmin(requestingUserID).then((isAdmin) => {
                 if (!isAdmin)
@@ -559,6 +493,38 @@ export default class NeDbWrapper {
                 }
             });
         });
+    }
+
+    async checkDatabaseConsistency(): Promise<I_DocumentEntry[]> {
+        const users = await this.users.query({});
+        const structures = await this.structures.query({});
+        const documents = await this.documents.query({});
+
+        const userIds = new Set(users.map(u => (u as I_UserEntry)._id));
+        const typeSubTypeSet = new Set(structures.map(t => {
+            const dt = t as I_DataStructure;
+            return `${dt.type}-${dt.subType}`;
+        }));
+
+        const faultyDocuments: I_DocumentEntry[] = [];
+
+        for (const doc of documents as I_DocumentEntry[]) {
+            let isValid = true;
+            if (!userIds.has(doc.owner)) {
+                this.logger.warn(`Document ${doc._id} has invalid owner: ${doc.owner}`);
+                isValid = false;
+            }
+            if (!typeSubTypeSet.has(`${doc.type}-${doc.subType}`)) {
+                this.logger.warn(`Document ${doc._id} has invalid type-subType: ${doc.type}-${doc.subType}`);
+                isValid = false;
+            }
+
+            if (!isValid) {
+                faultyDocuments.push(doc);
+            }
+        }
+
+        return faultyDocuments;
     }
 
     removeStructure(structureID: string, requestingUserID: string): Promise<number> {
@@ -748,90 +714,74 @@ export default class NeDbWrapper {
         });
     }
 
-    getDocumentTypes(): Promise<I_DocumentType[]> {
-        return new Promise((resolve, reject) => {
-            this.types.query({}).then((result) => {
-                resolve(result as I_DocumentType[]);
-            }).catch(reject);
-        });
-    }
+    private async initializeDatabase(): Promise<void> {
+        const userCount = await this.users.count({});
+        if (userCount < 1) {
+            const addedUser = await this.createUser({
+                password: "adminSecret",
+                name: "admin",
+                department: "administration",
+                group: "auto-created",
+                isAdmin: true,
+            });
+            this.logger.info(`Created new admin user: ${JSON.stringify(addedUser)}`);
+        }
 
-    async checkDatabaseConsistency(): Promise<I_DocumentEntry[]> {
-        const users = await this.users.query({});
-        const types = await this.types.query({});
-        const documents = await this.documents.query({});
-
-        const userIds = new Set(users.map(u => (u as I_UserEntry)._id));
-        const typeSubTypeSet = new Set(types.map(t => {
-            const dt = t as I_DocumentType;
-            return `${dt.type}-${dt.subType}`;
-        }));
-
-        const faultyDocuments: I_DocumentEntry[] = [];
-
-        for (const doc of documents as I_DocumentEntry[]) {
-            let isValid = true;
-            if (!userIds.has(doc.owner)) {
-                this.logger.warn(`Document ${doc._id} has invalid owner: ${doc.owner}`);
-                isValid = false;
-            }
-            if (!typeSubTypeSet.has(`${doc.type}-${doc.subType}`)) {
-                this.logger.warn(`Document ${doc._id} has invalid type-subType: ${doc.type}-${doc.subType}`);
-                isValid = false;
-            }
-
-            if (!isValid) {
-                faultyDocuments.push(doc);
+        const docCount = await this.documents.count({});
+        if (docCount < 1) {
+            const admin = await this.getAdminUser();
+            if (admin._id) {
+                const defaultDocument: I_DocumentCreationOwned = {
+                    shareWithDepartment: false,
+                    shareWithGroup: false,
+                    title: "Demo Document",
+                    owner: admin._id,
+                    description: "This is just a demo, delete when you don't need it anymore",
+                    subType: 0,
+                    type: 1,
+                    public: false,
+                    content: [{
+                        label: "This is a demo document not following any document structure",
+                        importance: 0
+                    }]
+                };
+                const document = await this.documents.add(defaultDocument);
+                this.logger.info(`Created new document: ${JSON.stringify(document)}`);
             }
         }
 
-        return faultyDocuments;
-    }
-
-    writeDocumentType(newTypeData: I_DocumentType, requestingUserID: string): Promise<I_DocumentType> {
-        return new Promise((resolve, reject) => {
-            this.isAdmin(requestingUserID).then(isAdmin => {
-                if (isAdmin) {
-                    this.types.query({type: newTypeData.type, subType: newTypeData.subType}).then(() => {
-                        if (newTypeData._id === undefined) {
-                            // new entry
-                            this.types.add(newTypeData).then((newDocument) => {
-                                this.logger.info("Created new document type: " + JSON.stringify(newDocument));
-                                resolve(newDocument as I_DocumentType);
-                            }).catch(reject);
-                        } else {
-                            // No duplicate found, or it's the same document, proceed to update
-                            this.types.update(newTypeData._id, newTypeData).then(() => {
-                                this.logger.info("Updated document type: " + newTypeData._id);
-                                resolve(newTypeData);
-                            }).catch(reject);
+        const structCount = await this.structures.count({});
+        if (structCount < 1) {
+            const admin = await this.getAdminUser();
+            if (admin._id) {
+                const defaultStructure: I_DataStructure = {
+                    _id: "tt5vo04DN3jm8Bqe",
+                    description: "This is a demo structure.",
+                    name: "City Info",
+                    type: 99,
+                    subType: 99,
+                    fields: [
+                        {
+                            name: "cityName",
+                            displayName: "City Name",
+                            type: "string",
+                        },
+                        {
+                            name: "inhabitants",
+                            displayName: "# of Inhabitants",
+                            type: "number"
                         }
-                    })
-                } else
-                    reject(401)
-            })
+                    ]
+                };
+                const structure = await this.structures.add(defaultStructure);
+                this.logger.info(`Created new structure: ${JSON.stringify(structure)}`);
+            }
+        }
 
-        });
+        this.logger.info("Database initialization complete");
     }
 
-    removeDocumentType(documentTypeID: string, requestingUserID: string): Promise<number> {
-        return new Promise((resolve, reject) => {
-            this.isAdmin(requestingUserID).then((isAdmin) => {
-                if (isAdmin) {
-                    this.types.remove({_id: documentTypeID}).then((numRemoved) => {
-                        if (numRemoved > 0) {
-                            this.logger.info("Removed document type: " + JSON.stringify(documentTypeID));
-                            resolve(numRemoved);
-                        } else {
-                            reject(404);
-                        }
-                    });
-                } else {
-                    reject(401);
-                }
-            });
-        });
-    }
+
 }
 
 class CustomStore {
@@ -860,13 +810,13 @@ class CustomStore {
         });
     }
 
-    async add(inputData: I_DocumentCreationOwned | I_UserCreation | I_StructureCreation | I_DocumentType): Promise<I_DocumentEntry | I_UserEntry | I_StructureEntry | I_DocumentType> {
+    async add(inputData: I_DocumentCreationOwned | I_UserCreation | I_StructureCreation): Promise<I_DocumentEntry | I_UserEntry | I_DataStructure> {
         return new Promise((resolve, reject) => {
             this.datastore.insert(inputData, (err: Error | null, newDocument: any) => {
                 if (err) {
                     reject(err);
                 } else {
-                    resolve(newDocument as I_DocumentEntry | I_UserEntry | I_StructureEntry);
+                    resolve(newDocument as I_DocumentEntry | I_UserEntry | I_DataStructure);
                 }
             });
         });
@@ -884,7 +834,7 @@ class CustomStore {
         });
     }
 
-    async query(query: object): Promise<I_DocumentEntry[] | I_UserEntry[] | I_StructureEntry[] | I_DocumentType[]> {
+    async query(query: object): Promise<I_DocumentEntry[] | I_UserEntry[] | I_DataStructure[]> {
         return new Promise((resolve, reject) => {
             this.datastore.find(query, (err: any, newDocument: I_DocumentEntry[] | I_UserEntry[]) => {
                 if (err) {

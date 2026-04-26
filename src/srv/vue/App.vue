@@ -498,6 +498,32 @@ async function migrateDatabase() {
       }
     }
   }
+
+  // pre-2.0.0
+  console.log("Checking for database migration... (pre-2.0");
+  let typeMap = new Map<string, string>()
+  for (let type of typeArray.value) {
+    if (type.defaultStructureID) {
+      typeMap.set(type.defaultStructure, `${type.type}-${type.subtype}`)
+    }
+  }
+  for (const struct of structureArray.value) {
+    if (struct._id) {
+      if (!struct.type || !struct.subType) {
+        let typeString = typeMap.get(struct._id)
+        if (typeString) {
+          let [type, subType] = typeString.split("-");
+          struct.type = Number(type);
+          struct.subType = Number(subType);
+          try {
+            await apiClient.updateStructure(struct._id, struct);
+          } catch (error) {
+            console.error(`Error adding type-subtype to document ${struct._id}:`, error);
+          }
+        }
+      }
+    }
+  }
 }
 </script>
 

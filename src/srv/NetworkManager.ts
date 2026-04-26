@@ -3,7 +3,7 @@ import express from 'express';
 import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
-import type {I_DocumentType, I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
+import type {I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode} from "./NeDbWrapper.js";
 import winston from "winston";
 import jwt from "jsonwebtoken"
@@ -18,7 +18,7 @@ import AdmZip from "adm-zip";
 import {JWTOptions} from "./webTokenStuff.js";
 import {getCachedUpdateResult} from "./updateChecker.js";
 
-const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures", "types"];
+const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
 
@@ -40,7 +40,7 @@ function parseDatabaseScope(rawScope: unknown): DatabaseScope {
         return normalized;
     }
 
-    throw new Error("Invalid scope. Allowed values: all, users, documents, structures, types.");
+    throw new Error("Invalid scope. Allowed values: all, users, documents, structures.");
 }
 
 function parseExportFormat(rawFormat: unknown): ExportFormat {
@@ -458,51 +458,6 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.post("/types/write", this.authenticateJWT, (req, res) => {
-            console.log("Writing document type: ", req.body);
-            if (this.validator.getValidatedObject("typeCreation", req.body)) {
-                this.dataManager.writeDocumentType(req.body, req.userid)
-                    .then((structure) => {
-                        this.socketServer.sendEventToAllClients(req.socketID, "newType", {newType: structure});
-                        this.logger.info("New document type created:", structure);
-                        res.status(200).json(structure);
-                    })
-                    .catch((error) => {
-                        res.status(error).json({error: error});
-                    });
-            } else {
-                res.status(400).json({error: "Invalid document type data"});
-            }
-        });
-
-        this.expressApp.get('/types/list', this.authenticateJWT, (req, res) => {
-            this.dataManager.getDocumentTypes()
-                .then((types: I_DocumentType[]) => {
-                    res.status(200).json(types);
-                }).catch((error) => {
-                res.status(500).json({error: error.message});
-            });
-        });
-
-        this.expressApp.delete("/types/remove/:documentTypeID", this.authenticateJWT, (req, res) => {
-            const documentTypeID = req.params.documentTypeID;
-            if (documentTypeID !== undefined) {
-                this.dataManager.removeDocumentType(documentTypeID, req.userid)
-                    .then((numRemoved) => {
-                        if (numRemoved > 0) {
-                            res.status(200).json({message: "Document type removed successfully"});
-                            this.socketServer.sendEventToAllClients(req.socketID, "removedType", {removedID: documentTypeID});
-                            this.logger.info("Document type removed:", documentTypeID);
-                        } else {
-                            res.status(404).json({error: "Document type not found"});
-                        }
-                    })
-                    .catch((error) => {
-                        res.status(error).json({error: error});
-                    });
-            }
-        });
-
         this.expressApp.get("/version/check", (req, res) => {
             const updateResult = getCachedUpdateResult();
             if (updateResult) {
@@ -578,8 +533,7 @@ export default class NetworkManager {
                     archive.append(JSON.stringify(exportData.users, null, 2), {name: 'docpouch-users.json'});
                     archive.append(JSON.stringify(exportData.documents, null, 2), {name: 'docpouch-documents.json'});
                     archive.append(JSON.stringify(exportData.structures, null, 2), {name: 'docpouch-structures.json'});
-                    archive.append(JSON.stringify(exportData.types, null, 2), {name: 'docpouch-types.json'});
-                    archive.finalize();
+                    await archive.finalize();
                     return;
                 } catch (error) {
                     this.logger.error("Error exporting database:", error);
@@ -662,7 +616,7 @@ export default class NetworkManager {
                     const zipEntries = zip.getEntries();
 
                     const collectionsData: any = {};
-                    const collections: DatabaseCollection[] = ["users", "documents", "structures", "types"];
+                    const collections: DatabaseCollection[] = ["users", "documents", "structures"];
 
                     for (const entry of zipEntries) {
                         const entryName = entry.name.toLowerCase();
