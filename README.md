@@ -15,7 +15,7 @@ DocPouch is primarily intended for:
 > features. The database is file and text-based, prioritizing simplicity and a small footprint over performance.
 > Auth tokens are stored in localStorage for simplicity. This can be abused by Cross-Site Scripting.
 
-DocPouch handles users, documents, document types, and document structures.
+DocPouch handles users, documents, and document structures.
 ### Users
 A user entry describes a system user including the name, password, role, and email (if provided)
 
@@ -32,18 +32,6 @@ Documents have access control settings:
 - **Public**: All authenticated users can read the document.
 
 Owners can change these settings in the document editor.
-
-### Document Types
-
-Document types provide a way to categorize and classify documents. Each document type has:
-
-- **Name**: A descriptive name for the type
-- **Description**: Additional information about the type
-- **Type**: A numeric identifier for the type category
-- **SubType**: A numeric identifier for sub-categorization
-
-Document types help organize documents and can be used for filtering and querying. For example, you might have document
-types like "Invoice", "Report", or "Contract" with different type/subType codes.
 
 ### Document Structures
 Document structures describe how documents following this structure are structured and what information they hold.
@@ -275,14 +263,6 @@ DocPouch provides a RESTful API with an [OpenAPI documentation]() and the follow
 - `POST /docs/create` - Create a new document
 - `PATCH /docs/update/{documentID}` - Update an existing document
 - `DELETE /docs/remove/{documentID}` - Remove a document
-- `GET /docs/fetch/{documentID}` - Get a specific document by ID (deprecated, use /docs/fetch)
-
-### Document Type Management
-
-- `GET /types/list` - Get all document types
-- `POST /types/create` - Create a new document type
-- `PATCH /types/update/{typeID}` - Update a document type
-- `DELETE /types/remove/{typeID}` - Remove a document type
 
 ### Data Structure Management
 - `GET /structures/list` - Get all data structures
@@ -298,7 +278,7 @@ in the `docpouch_openAPI.yaml` file.
 ## Real-Time Updates
 
 DocPouch supports WebSocket-based real-time updates using Socket.io. Events are triggered for documents, users,
-structures, and types.
+and structures.
 
 To simplify integration, use the official client library: [docpouch-client](https://github.com/BFH-JTF/docpouch-client),
 which handles authentication, connection, and event handling.

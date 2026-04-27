@@ -65,8 +65,6 @@ These are the events that the server emits to clients:
 | `newStructure`          | Notifies about new structure creation      | `{ newStructure: { _id: string, name: string, ... } }` | Structure creation     | All clients        |
 | `changedStructure`      | Notifies about structure updates           | `{ changedStructure: { _id: string, ... } }`           | Structure update       | All clients        |
 | `removedStructure`      | Notifies about structure deletion          | `{ removedID: string }`                                | Structure deletion     | All clients        |
-| `newType`               | Notifies about new document type creation  | `{ newType: { _id: string, name: string, ... } }`      | Document type creation | All clients        |
-| `removedType`           | Notifies about document type deletion      | `{ removedID: string }`                                | Document type deletion | All clients        |
 | `databaseInconsistency` | Notifies admin about data integrity issues | `{ faultyDocuments: [...] }`                           | Admin connection       | Admin only         |
 
 ### Example: Handling Events with DocPouch Client
@@ -130,7 +128,6 @@ Events are sent to clients based on their permissions and document access rights
 - **Document events**: Sent to document owners, users with shared access (department/group sharing), and admin users
 - **User events**: Sent only to admin users
 - **Structure events**: Sent to all connected clients
-- **Type events**: Sent to all connected clients
 
 The server implements sophisticated access control through methods like:
 
@@ -166,8 +163,7 @@ function handleNetworkEvent(event, data) {
         case "newUser":
         case "changedUser":
         case "removedUser":
-            // Refresh user list (admin only)
-            refreshUsers();
+            console.log('User removed:', data.removedID);
             break;
 
         case "newStructure":
@@ -176,13 +172,9 @@ function handleNetworkEvent(event, data) {
             // Refresh structure list
             refreshStructures();
             break;
-
-        case "newType":
-        case "removedType":
-            // Refresh document types
-            refreshTypes();
-            break;
     }
+}
+}
 }
 
 // Login and setup
@@ -221,11 +213,6 @@ async function refreshUsers() {
 async function refreshStructures() {
     const structures = await apiClient.getStructures();
     // Update UI with structures
-}
-
-async function refreshTypes() {
-    const types = await apiClient.listTypes();
-    // Update UI with types
 }
 ```
 
@@ -299,15 +286,6 @@ socket.on('changedStructure', (data) => {
 socket.on('removedStructure', (data) => {
     console.log('Structure removed:', data.removedID);
 });
-
-// Type events
-socket.on('newType', (data) => {
-    console.log('New type created:', data.newType);
-});
-
-socket.on('removedType', (data) => {
-    console.log('Type removed:', data.removedID);
-});
 ```
 
 ## Message Structure
@@ -321,7 +299,6 @@ All data is sent using the `I_WsMessage` interface, which may contain one of the
 - `changedUser`: Contains a user update
 - `newStructure`: Contains a newly created structure
 - `changedStructure`: Contains a structure update
-- `newType`: Contains a newly created document type
 
 ## Implementation Notes
 
@@ -348,6 +325,4 @@ When using the DocPouch client library, these methods automatically trigger the 
 - `apiClient.createStructure()` → triggers `newStructure` events
 - `apiClient.updateStructure()` → triggers `changedStructure` events
 - `apiClient.removeStructure()` → triggers `removedStructure` events
-- `apiClient.createType()` → triggers `newType` events
-- `apiClient.removeType()` → triggers `removedType` events
 
