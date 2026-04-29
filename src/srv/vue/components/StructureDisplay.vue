@@ -12,6 +12,18 @@ const emit = defineEmits<{
   'update:structure': [updatedStructure: I_DataStructure];
 }>();
 
+const editableStructure = ref<I_DataStructure | undefined>(undefined);
+
+watch(() => props.displayStructure, (newStructure) => {
+  editableStructure.value = newStructure ? JSON.parse(JSON.stringify(newStructure)) : undefined;
+}, {immediate: true, deep: true});
+
+function updateStructure() {
+  if (editableStructure.value) {
+    emit('update:structure', editableStructure.value);
+  }
+}
+
 // Tree item interface for Vuetify tree view
 interface I_StructureTreeItem {
   name: string;
@@ -193,6 +205,56 @@ watch(treeItems, (newItems) => {
             <span class="ml-1">{{ props.displayStructure._id }}</span><br>
             <span class="ml-1">{{ props.displayStructure?.description }}</span>
           </div>
+
+          <v-row v-if="editableStructure" class="mb-3" dense>
+            <v-col cols="12" md="6">
+              <v-text-field
+                  v-model="editableStructure.name"
+                  :readonly="!props.isAdmin"
+                  density="compact"
+                  hide-details
+                  label="Name"
+                  variant="outlined"
+                  @change="updateStructure"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="6" md="3">
+              <v-text-field
+                  v-model.number="editableStructure.type"
+                  :readonly="!props.isAdmin"
+                  density="compact"
+                  hide-details
+                  label="Type"
+                  type="number"
+                  variant="outlined"
+                  @change="updateStructure"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="6" md="3">
+              <v-text-field
+                  v-model.number="editableStructure.subType"
+                  :readonly="!props.isAdmin"
+                  density="compact"
+                  hide-details
+                  label="Subtype"
+                  type="number"
+                  variant="outlined"
+                  @change="updateStructure"
+              ></v-text-field>
+            </v-col>
+            <v-col cols="12">
+              <v-textarea
+                  v-model="editableStructure.description"
+                  :readonly="!props.isAdmin"
+                  density="compact"
+                  hide-details
+                  label="Description"
+                  rows="2"
+                  variant="outlined"
+                  @change="updateStructure"
+              ></v-textarea>
+            </v-col>
+          </v-row>
 
           <!-- Ensure the tree container has proper styling -->
           <div class="structure-tree-container">

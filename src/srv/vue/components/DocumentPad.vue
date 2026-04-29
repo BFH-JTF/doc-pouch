@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from 'vue';
-import type {I_DocumentEntry, I_UserEntry} from "docpouch-client";
+import type {I_DataStructure, I_DocumentEntry, I_UserEntry} from "docpouch-client";
 import type DbPouchClient from 'docpouch-client';
 
 const props = defineProps<{
   documentList: I_DocumentEntry[];
   userlist: I_UserEntry[]; // Added userlist prop to map owner IDs to usernames
   apiClient: DbPouchClient;
-  documentTypes?: any[]; // List of defined document types with type and subType
+  documentStructures?: I_DataStructure[];
 }>();
 
 const emit = defineEmits<{
@@ -21,8 +21,8 @@ const titleFilter = ref('');
 const typeFilter = ref<number | null>(null);
 const subtypeFilter = ref<number | null>(null);
 const ownerFilter = ref('');
-const filterMode = ref<'raw' | 'named'>('raw'); // 'raw' = type/subtype, 'named' = document type name
-const namedTypeFilter = ref('');
+const filterMode = ref<'raw' | 'structure'>('structure');
+const structureFilter = ref('');
 
 const showDeleteConfirmDialog = ref(false);
 const documentToDelete = ref<string | null>(null);
@@ -87,18 +87,26 @@ const availableOwners = computed(() => {
   return [...new Set(ownerUsernames)].sort();
 });
 
-// Check if document types are defined with their own type and subType
-const hasDefinedDocumentTypes = computed(() => {
-  return props.documentTypes && props.documentTypes.length > 0;
+const hasDefinedDocumentStructures = computed(() => {
+  return props.documentStructures && props.documentStructures.length > 0;
 });
 
-// Get unique named document types (type+subType combinations from props.documentTypes)
-const availableNamedTypes = computed(() => {
-  if (!props.documentTypes || props.documentTypes.length === 0) return [];
+const availableStructures = computed(() => {
+  if (!props.documentStructures || props.documentStructures.length === 0) return [];
 
-  // Return all defined document types, sorted by name
-  return props.documentTypes.slice().sort((a, b) => a.name.localeCompare(b.name));
+  return props.documentStructures.slice().sort((a, b) => a.name.localeCompare(b.name));
 });
+
+const getStructureForDocument = (document: I_DocumentEntry): I_DataStructure | undefined => {
+  return props.documentStructures?.find(structure =>
+      structure.type === document.type && structure.subType === document.subType
+  );
+};
+
+const getStructureLabelForDocument = (document: I_DocumentEntry): string => {
+  const structure = getStructureForDocument(document);
+  return structure ? structure.name : `Unknown structure (${document.type}/${document.subType})`;
+};
 
 // Enhanced document list with filtering
 const documents = computed(() => {
@@ -122,10 +130,9 @@ const documents = computed(() => {
     if (subtypeFilter.value !== null) {
       filteredDocs = filteredDocs.filter(doc => doc.subType === subtypeFilter.value);
     }
-  } else if (filterMode.value === 'named') {
-    // Filter by named document type
-    if (namedTypeFilter.value) {
-      const selectedType = props.documentTypes?.find(dt => dt.name === namedTypeFilter.value);
+  } else if (filterMode.value === 'structure') {
+    if (structureFilter.value) {
+      const selectedType = props.documentStructures?.find(dt => dt.name === structureFilter.value);
       if (selectedType) {
         filteredDocs = filteredDocs.filter(doc =>
             doc.type === selectedType.type && doc.subType === selectedType.subType
@@ -145,6 +152,7 @@ const documents = computed(() => {
       title: entry.title,
       type: entry.type,
       subType: entry.subType,
+      structureName: getStructureLabelForDocument(entry),
       owner: getUsernameFromID(entry.owner), // Display username instead of ID
       ownerId: entry.owner, // Keep the original owner ID for reference
       shareWithGroup: entry.shareWithGroup || false,
@@ -179,24 +187,24 @@ const clearFilters = () => {
   titleFilter.value = '';
   typeFilter.value = null;
   subtypeFilter.value = null;
-  namedTypeFilter.value = '';
+  structureFilter.value = '';
   ownerFilter.value = '';
 };
 
 // Check if any filters are active
 const hasActiveFilters = computed(() => {
   const rawTypeActive = filterMode.value === 'raw' && (titleFilter.value || typeFilter.value !== null || subtypeFilter.value !== null || ownerFilter.value);
-  const namedTypeActive = filterMode.value === 'named' && (titleFilter.value || namedTypeFilter.value || ownerFilter.value);
-  return rawTypeActive || namedTypeActive;
+  const structureActive = filterMode.value === 'structure' && (titleFilter.value || structureFilter.value || ownerFilter.value);
+  return rawTypeActive || structureActive;
 });
 
 // Switch filter mode and clear type/subtype filters
-const switchFilterMode = (newMode: 'raw' | 'named') => {
+const switchFilterMode = (newMode: 'raw' | 'structure') => {
   if (filterMode.value !== newMode) {
     filterMode.value = newMode;
     typeFilter.value = null;
     subtypeFilter.value = null;
-    namedTypeFilter.value = '';
+    structureFilter.value = '';
   }
 };
 </script>
@@ -209,9 +217,9 @@ const switchFilterMode = (newMode: 'raw' | 'named') => {
         <v-icon icon="mdi-filter" class="mr-2"></v-icon>
         Filters
         <v-spacer></v-spacer>
-        <!-- Filter Mode Toggle (only show if document types are defined) -->
+        <!-- Filter Mode Toggle (only show if document structures are defined) -->
         <v-btn-toggle
-            v-if="hasDefinedDocumentTypes"
+            v-if="hasDefinedDocumentStructures"
             v-model="filterMode"
             class="mr-2"
             density="compact"
@@ -221,9 +229,9 @@ const switchFilterMode = (newMode: 'raw' | 'named') => {
             <v-icon class="mr-1" icon="mdi-numeric"></v-icon>
             Raw Type
           </v-btn>
-          <v-btn size="small" title="Filter by defined document type name" value="named">
-            <v-icon class="mr-1" icon="mdi-tag-text"></v-icon>
-            Named Type
+          <v-btn size="small" title="Filter by document structure" value="structure">
+            <v-icon class="mr-1" icon="mdi-table"></v-icon>
+            Structure
           </v-btn>
         </v-btn-toggle>
         <v-btn
@@ -289,8 +297,8 @@ const switchFilterMode = (newMode: 'raw' | 'named') => {
               ></v-select>
             </v-col>
           </template>
-          <!-- Named Type Filter - 3 columns evenly distributed -->
-          <template v-else-if="filterMode === 'named'">
+          <!-- Structure Filter - 3 columns evenly distributed -->
+          <template v-else-if="filterMode === 'structure'">
             <v-col class="pr-md-1" cols="12" md="4">
               <v-text-field
                   v-model="titleFilter"
@@ -304,13 +312,13 @@ const switchFilterMode = (newMode: 'raw' | 'named') => {
             </v-col>
             <v-col class="px-md-1 mt-2 mt-md-0" cols="12" md="4">
               <v-select
-                  v-model="namedTypeFilter"
-                  :items="availableNamedTypes.map(t => t.name)"
+                  v-model="structureFilter"
+                  :items="availableStructures.map(t => t.name)"
                   clearable
                   density="compact"
                   hide-details
-                  label="Filter by document type"
-                  prepend-inner-icon="mdi-tag-text"
+                  label="Filter by structure"
+                  prepend-inner-icon="mdi-table"
                   variant="outlined"
               ></v-select>
             </v-col>
@@ -351,12 +359,8 @@ const switchFilterMode = (newMode: 'raw' | 'named') => {
           <v-list-item-subtitle>
             <div class="d-flex flex-row">
               <span class="mr-3">
-                <v-icon icon="mdi-format-list-bulleted-type" size="small" class="mr-1"></v-icon>
-                Type: {{ document.type }}
-              </span>
-              <span class="mr-3">
-                <v-icon icon="mdi-format-list-text" size="small" class="mr-1"></v-icon>
-                Subtype: {{ document.subType }}
+                <v-icon class="mr-1" icon="mdi-table" size="small"></v-icon>
+                {{ document.structureName }}
               </span>
               <span class="mr-3">
                 <v-icon icon="mdi-account" size="small" class="mr-1"></v-icon>

@@ -1,13 +1,26 @@
 <script setup lang="ts">
 import {ref, computed} from 'vue';
-import type {I_DocumentType, I_StructureEntry} from "docpouch-client";
+import type {I_DataStructure} from "docpouch-client";
 import TypeCreationDialog from './TypeCreationDialog.vue';
-import type DbPouchClient from 'docpouch-client';
+
+interface I_LegacyDocumentType {
+  _id?: string;
+  name: string;
+  type: number;
+  subType: number;
+  description?: string;
+  defaultStructureID?: string;
+}
+
+interface I_LegacyTypeClient {
+  removeType: (typeID: string) => Promise<void>;
+  createType: (type: I_LegacyDocumentType) => Promise<I_LegacyDocumentType>;
+}
 
 const props = defineProps<{
-  typeList: I_DocumentType[];
-  structureList: I_StructureEntry[];
-  apiClient: DbPouchClient;
+  typeList: I_LegacyDocumentType[];
+  structureList: I_DataStructure[];
+  apiClient: I_LegacyTypeClient;
   isAdmin: boolean;
 }>();
 
@@ -55,7 +68,7 @@ const selectType = (id: string) => {
   selectedTypeID.value = id;
 };
 
-function handleTypeCreated(newType: I_DocumentType) {
+function handleTypeCreated(newType: I_LegacyDocumentType) {
   try {
     props.apiClient.createType(newType).then(res => {
       emit('typeListChanged');

@@ -17,18 +17,25 @@ import type {
   I_DocumentEntry,
   I_UserEntry,
   I_DataStructure,
-  I_LoginResponse,
-  I_DocumentType
+  I_LoginResponse
 } from "docpouch-client";
-import TypePad from "./components/TypePad.vue";
-import TypeDisplay from "./components/TypeDisplay.vue";
+
+interface I_LegacyDocumentType {
+  _id?: string;
+  name: string;
+  type: number;
+  subType: number;
+  subtype?: number;
+  description?: string;
+  defaultStructureID?: string;
+  defaultStructure?: string;
+}
 
 const serverPort = 3030;
 enum DisplayComponent {
   documentViewer,
   userViewer,
-  structureViewer,
-  typeViewer
+  structureViewer
 }
 
 const authToken = ref<string | null>(null);
@@ -37,7 +44,7 @@ const expandedPanel = ref('documents'); // Default to users panel being open
 const userArray = ref(<I_UserEntry[]>[]);
 const docArray = ref(<I_DocumentEntry[]>[]);
 const structureArray = ref(<I_DataStructure[]>[]);
-const typeArray = ref(<I_DocumentType[]>[]);
+const typeArray = ref(<I_LegacyDocumentType[]>[]);
 let shownComponent = ref(DisplayComponent.documentViewer);
 const apiClient = new DbPouchClient(window.location.href.slice(0, window.location.href.lastIndexOf('/')), serverPort, handleNetworkEvent);
 const isLoggedIn = computed(() => authToken.value !== null);
@@ -93,13 +100,6 @@ watch(realtimeUpdates, (newVal, oldVal) => {
   }
 })
 
-const selectedTypeID = ref<string | null>(null); // This should be set to the currently selected type
-
-function handleTypeSelect(newTypeID: string) {
-  selectedTypeID.value = newTypeID;
-  shownComponent.value = DisplayComponent.typeViewer;
-}
-
 function handleNetworkEvent(event: I_EventString, data: any) {
   switch (event) {
     case "newUser":
@@ -130,6 +130,9 @@ function handleNetworkEvent(event: I_EventString, data: any) {
       break;
 
     case "newType":
+    case "changedType":
+    case "removedType":
+      fetchLegacyTypes();
       break
 
     case "databaseInconsistency" as any:
@@ -204,6 +207,48 @@ async function handleStructureRemoved(structureID: string) {
       });
 }
 
+async function handleStructureUpdate(structure: I_DataStructure) {
+  if (!structure._id) {
+    return;
+  }
+
+  apiClient.updateStructure(structure._id, structure).then(() => {
+    successfullySaved();
+    fetchData().then(() => {
+      handleStructureSelected(structure._id as string);
+    });
+  }).catch(error => {
+    console.error("Error updating structure:", error);
+    handleApiError(error, "updating structure");
+  });
+}
+
+async function fetchLegacyTypes() {
+  const token = authToken.value;
+  if (!token) {
+    typeArray.value = [];
+    return;
+  }
+
+  try {
+    const response = await fetch('/types/list', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      typeArray.value = [];
+      return;
+    }
+
+    typeArray.value = await response.json();
+  } catch (error) {
+    console.debug("Legacy document type list unavailable; skipping legacy type migration.", error);
+    typeArray.value = [];
+  }
+}
+
 async function fetchData() {
   if (authToken.value === null) {
     console.log("Token is null, not fetching data.")
@@ -238,14 +283,8 @@ async function fetchData() {
     structureArray.value = [];
   }
 
-  // Fetch Types
-  console.debug("Fetching types");
-  try {
-    typeArray.value = await apiClient.getTypes();
-  } catch (error) {
-    handleApiError(error, "fetching types");
-    typeArray.value = [];
-  }
+  // Fetch legacy document types for pre-2.0.0 migration only.
+  await fetchLegacyTypes();
 
   await migrateDatabase();
 }
@@ -298,6 +337,7 @@ function handleDialogUpdate(isUnknown: boolean) {
     userArray.value = [];
     docArray.value = [];
     structureArray.value = [];
+    typeArray.value = [];
     loadedDocument.value = undefined;
     loadedUser.value = undefined;
     loadedStructure.value = undefined;
@@ -353,6 +393,7 @@ function handleLogout() {
   userArray.value = [];
   docArray.value = [];
   structureArray.value = [];
+  typeArray.value = [];
   loadedDocument.value = undefined;
   loadedUser.value = undefined;
   loadedStructure.value = undefined;
@@ -379,22 +420,12 @@ function handleApiError(error: unknown, context: string = "API operation") {
   }
 }
 
-function handleTypeEdit(newType: I_DocumentType) {
-  apiClient.updateType(newType).then(() => {
-    successfullySaved();
-    fetchData();
-  }).catch(error => {
-    console.error("Error updating document type:", error);
-    handleApiError(error, "document type update");
-  });
-}
-
 function successfullySaved() {
   snackBarMessage.value = 'Save successful!';
   snackBarVisible.value = true;
 }
 
-type ExportScope = 'all' | 'users' | 'documents' | 'structures' | 'types';
+type ExportScope = 'all' | 'users' | 'documents' | 'structures';
 type ExportFormat = 'zip' | 'json';
 
 function getFilenameFromContentDisposition(headerValue: string | null, fallback: string): string {
@@ -503,8 +534,10 @@ async function migrateDatabase() {
   console.log("Checking for database migration... (pre-2.0");
   let typeMap = new Map<string, string>()
   for (let type of typeArray.value) {
-    if (type.defaultStructureID) {
-      typeMap.set(type.defaultStructure, `${type.type}-${type.subtype}`)
+    const defaultStructureID = type.defaultStructureID ?? type.defaultStructure;
+    const subType = type.subType ?? type.subtype;
+    if (defaultStructureID !== undefined && subType !== undefined) {
+      typeMap.set(defaultStructureID, `${type.type}-${subType}`)
     }
   }
   for (const struct of structureArray.value) {
@@ -587,13 +620,6 @@ async function migrateDatabase() {
               <v-list-item-title>Export Users (JSON)</v-list-item-title>
             </v-list-item>
 
-            <v-list-item @click="handleExportDatabase('types', 'json')">
-              <v-list-item-icon>
-                <v-icon>mdi-format-list-bulleted-type</v-icon>
-              </v-list-item-icon>
-              <v-list-item-title>Export Types (JSON)</v-list-item-title>
-            </v-list-item>
-
             <v-list-item @click="handleExportDatabase('structures', 'json')">
               <v-list-item-icon>
                 <v-icon>mdi-table</v-icon>
@@ -625,7 +651,7 @@ async function migrateDatabase() {
       <v-alert v-if="showConsistencyAlert" class="ma-4" closable type="error" variant="tonal"
                @click:close="showConsistencyAlert = false">
         <strong>Database Inconsistency Detected!</strong>
-        The following documents have invalid owners, types, or subtypes:
+        The following documents have invalid owners or structure references:
         <ul class="mt-2">
           <li v-for="doc in faultyDocuments" :key="doc._id">
             <strong>{{ doc.title }}</strong> (ID: {{ doc._id }}) - Owner: {{ doc.owner }}, Type: {{ doc.type }},
@@ -657,26 +683,10 @@ async function migrateDatabase() {
                 </v-expansion-panel-text>
               </v-expansion-panel>
 
-              <v-expansion-panel value="types">
-                <v-expansion-panel-title>
-                  <v-icon start>mdi-format-list-bulleted-type</v-icon>
-                  Document Types
-                </v-expansion-panel-title>
-                <v-expansion-panel-text>
-                  <TypePad :type-list="typeArray"
-                           :structure-list="structureArray"
-                           :api-client="apiClient"
-                           :is-admin="isAdmin"
-                           @type-list-changed="fetchData"
-                           @type-selected-i-d="handleTypeSelect"
-                  />
-                </v-expansion-panel-text>
-              </v-expansion-panel>
-
               <v-expansion-panel value="structures">
                 <v-expansion-panel-title>
                   <v-icon start>mdi-table</v-icon>
-                  Data Structures
+                  Document Structures
                 </v-expansion-panel-title>
                 <v-expansion-panel-text>
                   <StructurePad
@@ -701,7 +711,7 @@ async function migrateDatabase() {
                       :userlist="userArray"
                       :documentList="docArray"
                       :api-client="apiClient"
-                      :document-types="typeArray"
+                      :document-structures="structureArray"
                       @document-list-changed="fetchData"
                       @document-removed="handleDocumentRemoved"
                   />
@@ -714,6 +724,7 @@ async function migrateDatabase() {
             <DocumentDisplay
                 id="2"
                 :object="loadedDocument"
+                :structure-list="structureArray"
                 v-show="shownComponent === DisplayComponent.documentViewer"
                 @update:object="handleDocumentUpdate"
             />
@@ -728,13 +739,9 @@ async function migrateDatabase() {
                 :displayStructure="loadedStructure"
                 :structure-list="structureArray"
                 :is-admin="isAdmin"
+                @update:structure="handleStructureUpdate"
                 v-if="shownComponent === DisplayComponent.structureViewer"
             />
-            <TypeDisplay :displayed-type-i-d="selectedTypeID"
-                         :type-list="typeArray"
-                         :structure-list="structureArray"
-                         @update:type="handleTypeEdit"
-                         v-if="shownComponent === DisplayComponent.typeViewer"/>
           </v-col>
         </v-row>
       </v-container>

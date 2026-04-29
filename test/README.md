@@ -31,7 +31,6 @@ HTTP endpoint tests verify the functionality of the REST API endpoints defined i
 - `users.test.ts`: Tests for user management endpoints
 - `documents.test.ts`: Tests for document management endpoints
 - `structures.test.ts`: Tests for data structure endpoints
-- `types.test.ts`: Tests for document type endpoints
 
 Each test file covers:
 
@@ -50,7 +49,6 @@ WebSocket event tests verify the real-time event functionality defined in the So
 - `document.events.test.ts`: Tests for document-related events
 - `user.events.test.ts`: Tests for user-related events
 - `structure.events.test.ts`: Tests for structure-related events
-- `type.events.test.ts`: Tests for document type-related events
 
 Each test file covers:
 

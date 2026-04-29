@@ -96,13 +96,18 @@ describe('Structure WebSocket Events Tests', () => {
             // Create a new structure
             const newStructure: I_StructureCreation = {
                 name: 'Test Structure',
+                description: 'A test document structure',
+                type: 1,
+                subType: 1,
                 fields: [
                     {
                         name: 'Field 1',
+                        displayName: 'Field 1',
                         type: 'string'
                     },
                     {
                         name: 'Field 2',
+                        displayName: 'Field 2',
                         type: 'number'
                     }
                 ]
@@ -120,6 +125,9 @@ describe('Structure WebSocket Events Tests', () => {
             expect(adminData).toHaveProperty('newStructure');
             expect(adminData.newStructure).toHaveProperty('_id');
             expect(adminData.newStructure?.name).toBe(newStructure.name);
+            expect(adminData.newStructure.description).toBe(newStructure.description);
+            expect(adminData.newStructure.type).toBe(newStructure.type);
+            expect(adminData.newStructure.subType).toBe(newStructure.subType);
             expect(adminData.newStructure.fields).toHaveLength(newStructure.fields.length);
             expect(adminData.newStructure.fields[0].name).toBe(newStructure.fields[0].name);
             expect(adminData.newStructure.fields[0].type).toBe(newStructure.fields[0].type);
@@ -127,6 +135,9 @@ describe('Structure WebSocket Events Tests', () => {
             expect(userData).toHaveProperty('newStructure');
             expect(userData.newStructure).toHaveProperty('_id');
             expect(userData.newStructure?.name).toBe(newStructure.name);
+            expect(userData.newStructure.description).toBe(newStructure.description);
+            expect(userData.newStructure.type).toBe(newStructure.type);
+            expect(userData.newStructure.subType).toBe(newStructure.subType);
             expect(userData.newStructure.fields).toHaveLength(newStructure.fields.length);
             expect(userData.newStructure.fields[0].name).toBe(newStructure.fields[0].name);
             expect(userData.newStructure.fields[0].type).toBe(newStructure.fields[0].type);
@@ -138,9 +149,13 @@ describe('Structure WebSocket Events Tests', () => {
             // Create a structure
             const newStructure: I_StructureCreation = {
                 name: 'Structure to Update',
+                description: 'A document structure to update',
+                type: 2,
+                subType: 1,
                 fields: [
                     {
                         name: 'Original Field',
+                        displayName: 'Original Field',
                         type: 'string'
                     }
                 ]
@@ -159,13 +174,18 @@ describe('Structure WebSocket Events Tests', () => {
             // Update the structure
             const updateData: I_StructureUpdate = {
                 name: 'Updated Structure Title',
+                description: 'Updated document structure',
+                type: 2,
+                subType: 2,
                 fields: [
                     {
                         name: 'Updated Field',
+                        displayName: 'Updated Field',
                         type: 'string'
                     },
                     {
                         name: 'New Field',
+                        displayName: 'New Field',
                         type: 'boolean'
                     }
                 ]
@@ -183,6 +203,9 @@ describe('Structure WebSocket Events Tests', () => {
             expect(adminData).toHaveProperty('changedStructure');
             expect(adminData.changedStructure._id).toBe(structureId);
             expect(adminData.changedStructure.name).toBe(updateData.name);
+            expect(adminData.changedStructure.description).toBe(updateData.description);
+            expect(adminData.changedStructure.type).toBe(updateData.type);
+            expect(adminData.changedStructure.subType).toBe(updateData.subType);
             expect(adminData.changedStructure.fields).toHaveLength(updateData.fields.length);
             expect(adminData.changedStructure.fields[0].name).toBe(updateData.fields[0].name);
             expect(adminData.changedStructure.fields[1].name).toBe(updateData.fields[1].name);
@@ -191,6 +214,9 @@ describe('Structure WebSocket Events Tests', () => {
             expect(userData).toHaveProperty('changedStructure');
             expect(userData.changedStructure._id).toBe(structureId);
             expect(userData.changedStructure.name).toBe(updateData.name);
+            expect(userData.changedStructure.description).toBe(updateData.description);
+            expect(userData.changedStructure.type).toBe(updateData.type);
+            expect(userData.changedStructure.subType).toBe(updateData.subType);
             expect(userData.changedStructure.fields).toHaveLength(updateData.fields.length);
             expect(userData.changedStructure.fields[0].name).toBe(updateData.fields[0].name);
             expect(userData.changedStructure.fields[1].name).toBe(updateData.fields[1].name);
@@ -203,9 +229,13 @@ describe('Structure WebSocket Events Tests', () => {
             // Create a structure
             const newStructure: I_StructureCreation = {
                 name: 'Structure to Delete',
+                description: 'A document structure to delete',
+                type: 3,
+                subType: 1,
                 fields: [
                     {
                         name: 'Field',
+                        displayName: 'Field',
                         type: 'string'
                     }
                 ]
@@ -275,9 +305,13 @@ describe('Structure WebSocket Events Tests', () => {
             // Create a new structure
             const newStructure: I_StructureCreation = {
                 name: 'Multi-Client Test Structure',
+                description: 'A multi-client document structure',
+                type: 4,
+                subType: 1,
                 fields: [
                     {
                         name: 'Field',
+                        displayName: 'Field',
                         type: 'string'
                     }
                 ]

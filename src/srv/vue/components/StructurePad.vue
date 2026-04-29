@@ -66,7 +66,12 @@ const filteredStructures = computed(() => {
 
   // Map to display format and sort by name
   return result.map((entry: I_DataStructure) => {
-    return {id: entry._id, title: entry.name}
+    return {
+      id: entry._id,
+      title: entry.name,
+      type: entry.type,
+      subType: entry.subType
+    }
   }).sort((a, b) => a.title.localeCompare(b.title));
 });
 
@@ -125,7 +130,6 @@ const selectStructure = (structureID: string | undefined) => {
         <v-list-item
             v-for="structure in filteredStructures"
           :key="structure.id"
-          :title="structure.title"
           :active="selectedStructureID !== null && selectedStructureID === structure.id"
           @click="selectStructure(structure.id)"
           class="structure-list-item"
@@ -135,6 +139,10 @@ const selectStructure = (structureID: string | undefined) => {
               <v-icon icon="mdi-table"></v-icon>
             </v-avatar>
           </template>
+          <v-list-item-title>{{ structure.title }}</v-list-item-title>
+          <v-list-item-subtitle>
+            Type: {{ structure.type }} / Subtype: {{ structure.subType }}
+          </v-list-item-subtitle>
         </v-list-item>
 
         <!-- Empty state when no structures match filters -->

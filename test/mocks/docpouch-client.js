@@ -1,7 +1,5 @@
-// JavaScript
 // Minimal runtime mock for `docpouch-client` used in server tests.
 // Keep methods that tests or server code may call at runtime.
-// Keep this file CommonJS to avoid ESM parsing problems.
 
 class DbPouchClient {
     constructor(/* baseUrl, port, networkHandler */) {
@@ -65,17 +63,14 @@ class DbPouchClient {
     // add more no-op methods as needed by your code under test
 }
 
-// Export the default class and named exports for types (runtime doesn't need them, but exporting placeholders avoids import errors)
-module.exports = {
-    __esModule: true,
-    default: DbPouchClient,
-    // Minimal value placeholders for any named imports used at runtime (tests import types only normally)
-    I_UserCreation: {},
-    I_UserUpdate: {},
-    I_DocumentType: {},
-    I_UserEntry: {},
-    I_DocumentEntry: {},
-    I_DataStructure: {},
-    I_LoginResponse: {},
-    I_EventString: {},
-};
+export default DbPouchClient;
+
+// Minimal value placeholders for any named imports used at runtime.
+export const I_UserCreation = {};
+export const I_UserUpdate = {};
+export const I_DocumentType = {};
+export const I_UserEntry = {};
+export const I_DocumentEntry = {};
+export const I_DataStructure = {};
+export const I_LoginResponse = {};
+export const I_EventString = {};

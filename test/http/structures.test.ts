@@ -9,7 +9,7 @@ import {
     closeTestServer,
     authenticatedRequest
 } from '../setup/testSetup.js';
-import type {I_StructureCreation, I_StructureEntry, I_StructureUpdate} from "docpouch-client";
+import type {I_DataStructure, I_StructureCreation, I_StructureUpdate} from "docpouch-client";
 
 describe('Data Structure API Tests', () => {
     let server: Server;
@@ -39,13 +39,18 @@ describe('Data Structure API Tests', () => {
         // Create a test data structure as admin
         const testStructure: I_StructureCreation = {
             name: 'Test Structure',
+            description: 'A test document structure',
+            type: 1,
+            subType: 1,
             fields: [
                 {
                     name: 'Field 1',
+                    displayName: 'Field 1',
                     type: 'string'
                 },
                 {
                     name: 'Field 2',
+                    displayName: 'Field 2',
                     type: 'number'
                 }
             ]
@@ -66,17 +71,23 @@ describe('Data Structure API Tests', () => {
         test('admin should be able to create a new data structure', async () => {
             const newStructure: I_StructureCreation = {
                 name: 'New Test Structure',
+                description: 'A new test document structure',
+                type: 2,
+                subType: 1,
                 fields: [
                     {
                         name: 'Text Field',
+                        displayName: 'Text Field',
                         type: 'string'
                     },
                     {
                         name: 'Boolean Field',
+                        displayName: 'Boolean Field',
                         type: 'boolean'
                     },
                     {
                         name: 'Array Field',
+                        displayName: 'Array Field',
                         type: 'array',
                         items: 'string'
                     }
@@ -90,6 +101,9 @@ describe('Data Structure API Tests', () => {
             expect(response.status).toBe(200);
             expect(response.body).toHaveProperty('_id');
             expect(response.body.name).toBe(newStructure.name);
+            expect(response.body.description).toBe(newStructure.description);
+            expect(response.body.type).toBe(newStructure.type);
+            expect(response.body.subType).toBe(newStructure.subType);
             expect(response.body.fields).toHaveLength(newStructure.fields.length);
 
             // Check that fields are correctly saved
@@ -105,9 +119,13 @@ describe('Data Structure API Tests', () => {
         test('regular user should not be able to create a data structure', async () => {
             const newStructure: I_StructureCreation = {
                 name: 'Unauthorized Structure',
+                description: 'Unauthorized document structure',
+                type: 3,
+                subType: 1,
                 fields: [
                     {
                         name: 'Field',
+                        displayName: 'Field',
                         type: 'string'
                     }
                 ]
@@ -135,10 +153,14 @@ describe('Data Structure API Tests', () => {
 
         test('should return 401 for unauthenticated request', async () => {
             const newStructure = {
-                title: 'Unauthenticated Structure',
+                name: 'Unauthenticated Structure',
+                description: 'Unauthenticated document structure',
+                type: 4,
+                subType: 1,
                 fields: [
                     {
                         name: 'Field',
+                        displayName: 'Field',
                         type: 'string'
                     }
                 ]
@@ -158,9 +180,13 @@ describe('Data Structure API Tests', () => {
             // Create another structure
             const anotherStructure: I_StructureCreation = {
                 name: 'Another Structure',
+                description: 'Another document structure',
+                type: 5,
+                subType: 1,
                 fields: [
                     {
                         name: 'Field',
+                        displayName: 'Field',
                         type: 'string'
                     }
                 ]
@@ -192,7 +218,7 @@ describe('Data Structure API Tests', () => {
             expect(response.body.length).toBeGreaterThanOrEqual(1); // At least the test structure
 
             // Check that the test structure is in the response
-            const testStructure = response.body.find((structure: I_StructureEntry) => structure._id === testStructureId);
+            const testStructure = response.body.find((structure: I_DataStructure) => structure._id === testStructureId);
             expect(testStructure).toBeDefined();
         });
 
@@ -206,17 +232,23 @@ describe('Data Structure API Tests', () => {
         test('admin should be able to update a data structure', async () => {
             const updateData: I_StructureUpdate = {
                 name: 'Updated Structure Title',
+                description: 'Updated document structure',
+                type: 1,
+                subType: 2,
                 fields: [
                     {
                         name: 'Updated Field 1',
+                        displayName: 'Updated Field 1',
                         type: 'string'
                     },
                     {
                         name: 'Updated Field 2',
+                        displayName: 'Updated Field 2',
                         type: 'number'
                     },
                     {
                         name: 'New Field',
+                        displayName: 'New Field',
                         type: 'boolean'
                     }
                 ]
@@ -229,9 +261,12 @@ describe('Data Structure API Tests', () => {
 
             // Verify the structure was updated
             const listResponse = await authenticatedRequest(server, adminToken).get('/structures/list');
-            const updatedStructure: I_StructureEntry = listResponse.body.find((structure: any) => structure._id === testStructureId);
+            const updatedStructure: I_DataStructure = listResponse.body.find((structure: any) => structure._id === testStructureId);
 
             expect(updatedStructure.name).toBe(updateData.name);
+            expect(updatedStructure.description).toBe(updateData.description);
+            expect(updatedStructure.type).toBe(updateData.type);
+            expect(updatedStructure.subType).toBe(updateData.subType);
             expect(updatedStructure.fields).toHaveLength(updateData.fields.length);
             expect(updatedStructure.fields[0].name).toBe(updateData.fields[0].name);
             expect(updatedStructure.fields[2].name).toBe(updateData.fields[2].name);
@@ -241,9 +276,13 @@ describe('Data Structure API Tests', () => {
         test('regular user should not be able to update a data structure', async () => {
             const updateData: I_StructureUpdate = {
                 name: 'Unauthorized Update',
+                description: 'Unauthorized document structure update',
+                type: 1,
+                subType: 3,
                 fields: [
                     {
                         name: 'Unauthorized Field',
+                        displayName: 'Unauthorized Field',
                         type: 'string'
                     }
                 ]
@@ -258,10 +297,14 @@ describe('Data Structure API Tests', () => {
 
         test('should return 404 for non-existent structure', async () => {
             const updateData = {
-                title: 'Non-existent Structure Update',
+                name: 'Non-existent Structure Update',
+                description: 'Non-existent document structure update',
+                type: 1,
+                subType: 4,
                 fields: [
                     {
                         name: 'Field',
+                        displayName: 'Field',
                         type: 'string'
                     }
                 ]
@@ -276,10 +319,14 @@ describe('Data Structure API Tests', () => {
 
         test('should return 401 for unauthenticated request', async () => {
             const updateData = {
-                title: 'Unauthenticated Update',
+                name: 'Unauthenticated Update',
+                description: 'Unauthenticated document structure update',
+                type: 1,
+                subType: 5,
                 fields: [
                     {
                         name: 'Field',
+                        displayName: 'Field',
                         type: 'string'
                     }
                 ]

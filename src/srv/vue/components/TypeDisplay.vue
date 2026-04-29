@@ -1,18 +1,27 @@
 <script setup lang="ts">
 import {computed, ref, watch} from 'vue';
-import type {I_DocumentType, I_StructureEntry} from 'docpouch-client';
+import type {I_DataStructure} from 'docpouch-client';
+
+interface I_LegacyDocumentType {
+  _id?: string;
+  name: string;
+  type: number;
+  subType: number;
+  description?: string;
+  defaultStructureID?: string;
+}
 
 const props = defineProps<{
   displayedTypeID: string | null;
-  typeList: I_DocumentType[];
-  structureList: I_StructureEntry[];
+  typeList: I_LegacyDocumentType[];
+  structureList: I_DataStructure[];
 }>();
 
 const emit = defineEmits<{
-  (event: 'update:type', value: I_DocumentType): void;
+  (event: 'update:type', value: I_LegacyDocumentType): void;
 }>();
 
-let newType = ref<I_DocumentType>({
+let newType = ref<I_LegacyDocumentType>({
   _id: "",
   name: "",
   type: -1,
@@ -66,11 +75,11 @@ let existingOtherTypes = computed(() => {
 
 let selectedTypeID = ref<string | null>(null);
 
-function updateType(newType: I_DocumentType) {
+function updateType(newType: I_LegacyDocumentType) {
   emit('update:type', newType);
 }
 
-function moveType(freshType: number, typeDocument: I_DocumentType) {
+function moveType(freshType: number, typeDocument: I_LegacyDocumentType) {
   const existingSubtypesForType = props.typeList
       .filter(type => type.type === freshType)
       .map(type => type.subType);

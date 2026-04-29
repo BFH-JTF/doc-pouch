@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import type {I_DocumentEntry, I_DocumentUpdate} from "docpouch-client";
+import type {I_DataStructure, I_DocumentEntry} from "docpouch-client";
 
 const props = defineProps<{
   object: I_DocumentEntry | undefined;
   id: string;
+  structureList: I_DataStructure[];
 }>();
 
 const emit = defineEmits<{
@@ -47,6 +48,42 @@ const updateShareSetting = (setting: string, value: boolean | null) => {
 
   const updatedObject = JSON.parse(JSON.stringify(props.object));
   updatedObject[setting] = value;
+  emit('update:object', updatedObject);
+};
+
+const selectedStructureID = computed(() => {
+  if (!props.object) {
+    return null;
+  }
+
+  return props.structureList.find(structure =>
+      structure.type === props.object?.type && structure.subType === props.object?.subType
+  )?._id ?? null;
+});
+
+const structureOptions = computed(() => {
+  return props.structureList
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(structure => ({
+        title: `${structure.name} (${structure.type}/${structure.subType})`,
+        value: structure._id
+      }));
+});
+
+const updateDocumentStructure = (structureID: string | null) => {
+  if (!props.object || !structureID) {
+    return;
+  }
+
+  const selectedStructure = props.structureList.find(structure => structure._id === structureID);
+  if (!selectedStructure) {
+    return;
+  }
+
+  const updatedObject = JSON.parse(JSON.stringify(props.object));
+  updatedObject.type = selectedStructure.type;
+  updatedObject.subType = selectedStructure.subType;
   emit('update:object', updatedObject);
 };
 
@@ -332,95 +369,23 @@ const getValueAtPath = (obj: any, path: string[]): any => {
           </div>
 
           <div class="d-flex align-center">
-            <div class="mr-4 d-flex align-center">
-              <span class="font-weight-medium">Type:</span> 
-
-              <!-- Type editing -->
-              <template v-if="isEditing(['type'])">
-                <div class="d-flex align-center ml-2">
-                  <v-text-field
-                    v-model="editingValue"
-                    density="compact"
-                    hide-details
-                    variant="outlined"
-                    class="edit-field"
-                    type="number"
-                    @keydown="handleKeyDown"
-                    autofocus
-                  ></v-text-field>
-                  <v-btn 
-                    icon="mdi-check" 
-                    size="small" 
-                    color="success" 
-                    class="ml-2"
-                    @click="saveEdit()"
-                  ></v-btn>
-                  <v-btn 
-                    icon="mdi-close" 
-                    size="small" 
-                    color="error" 
-                    class="ml-2"
-                    @click="cancelEdit()"
-                  ></v-btn>
-                </div>
-              </template>
-              <div v-else class="d-flex align-center ml-1">
-                <span>{{ props.object.type }}</span>
-                <v-btn
-                  icon="mdi-pencil"
-                  size="x-small"
-                  variant="text"
-                  color="primary"
-                  class="ml-2"
-                  @click.stop="startEditing(['type'], props.object.type)"
-                ></v-btn>
-              </div>
+            <div class="mr-4 d-flex align-center flex-grow-1">
+              <span class="font-weight-medium mr-2">Structure:</span>
+              <v-select
+                  :items="structureOptions"
+                  :model-value="selectedStructureID"
+                  class="structure-select"
+                  density="compact"
+                  hide-details
+                  placeholder="Unknown structure"
+                  variant="outlined"
+                  @update:model-value="updateDocumentStructure"
+              ></v-select>
             </div>
 
-            <div class="mr-4 d-flex align-center">
-              <span class="font-weight-medium">Subtype:</span> 
-
-              <!-- Subtype editing -->
-              <template v-if="isEditing(['subType'])">
-                <div class="d-flex align-center ml-2">
-                  <v-text-field
-                    v-model="editingValue"
-                    density="compact"
-                    hide-details
-                    variant="outlined"
-                    class="edit-field"
-                    type="number"
-                    @keydown="handleKeyDown"
-                    autofocus
-                  ></v-text-field>
-                  <v-btn 
-                    icon="mdi-check" 
-                    size="small" 
-                    color="success" 
-                    class="ml-2"
-                    @click="saveEdit()"
-                  ></v-btn>
-                  <v-btn 
-                    icon="mdi-close" 
-                    size="small" 
-                    color="error" 
-                    class="ml-2"
-                    @click="cancelEdit()"
-                  ></v-btn>
-                </div>
-              </template>
-              <div v-else class="d-flex align-center ml-1">
-                <span>{{ props.object.subType }}</span>
-                <v-btn
-                  icon="mdi-pencil"
-                  size="x-small"
-                  variant="text"
-                  color="primary"
-                  class="ml-2"
-                  @click.stop="startEditing(['subType'], props.object.subType)"
-                ></v-btn>
-              </div>
-            </div>
+            <v-chip class="mr-4" color="primary" size="small" variant="tonal">
+              {{ props.object.type }}/{{ props.object.subType }}
+            </v-chip>
 
             <span v-if="editingPath.length > 0" class="ml-auto text-caption">
               Editing: {{ getPathString(editingPath) }}
@@ -782,6 +747,10 @@ const getValueAtPath = (obj: any, path: string[]): any => {
 
 .edit-field {
   font-size: 14px;
+}
+
+.structure-select {
+  max-width: 360px;
 }
 
 .raw-json {

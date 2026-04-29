@@ -99,17 +99,26 @@
 
 <script setup lang="ts">
 import {ref, computed, watch, onMounted} from 'vue';
-import type {I_DocumentType, I_StructureEntry} from 'docpouch-client';
+import type {I_DataStructure} from 'docpouch-client';
+
+interface I_LegacyDocumentType {
+  _id?: string;
+  name: string;
+  type: number;
+  subType: number;
+  description?: string;
+  defaultStructureID?: string;
+}
 
 const props = defineProps<{
-  typeList: I_DocumentType[];
-  structureList: I_StructureEntry[];
+  typeList: I_LegacyDocumentType[];
+  structureList: I_DataStructure[];
   show?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'cancelDialog'): void;
-  (e: 'typeCreated', type: I_DocumentType): void;
+  (e: 'typeCreated', type: I_LegacyDocumentType): void;
 }>();
 
 const formValid = computed(() => {
@@ -123,7 +132,7 @@ const formValid = computed(() => {
   return true;
 });
 const newTypeRadio = ref(true);
-const newType = ref<I_DocumentType>({
+const newType = ref<I_LegacyDocumentType>({
   name: "",
   type: 0,
   subType: 0,
