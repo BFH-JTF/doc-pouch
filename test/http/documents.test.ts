@@ -40,15 +40,63 @@ describe('Document Management API Tests', () => {
         adminUser = users.adminUser;
         regularUser = users.regularUser;
 
-        // Create required document types
-        await dataManager.types.add({type: 1, subType: 1, name: 'Type 1-1'});
-        await dataManager.types.add({type: 2, subType: 3, name: 'Type 2-3'});
-        await dataManager.types.add({type: 3, subType: 2, name: 'Type 3-2'});
-        await dataManager.types.add({type: 4, subType: 5, name: 'Type 4-5'});
-        await dataManager.types.add({type: 7, subType: 8, name: 'Type 7-8'});
-        await dataManager.types.add({type: 9, subType: 10, name: 'Type 9-10'});
-        await dataManager.types.add({type: 11, subType: 12, name: 'Type 11-12'});
-        await dataManager.types.add({type: 10, subType: 20, name: 'Type 10-20'});
+        // Create required document structures
+        await dataManager.structures.add({
+            type: 1,
+            subType: 1,
+            name: 'Type 1-1',
+            description: 'Test structure',
+            fields: []
+        });
+        await dataManager.structures.add({
+            type: 2,
+            subType: 3,
+            name: 'Type 2-3',
+            description: 'Test structure',
+            fields: []
+        });
+        await dataManager.structures.add({
+            type: 3,
+            subType: 2,
+            name: 'Type 3-2',
+            description: 'Test structure',
+            fields: []
+        });
+        await dataManager.structures.add({
+            type: 4,
+            subType: 5,
+            name: 'Type 4-5',
+            description: 'Test structure',
+            fields: []
+        });
+        await dataManager.structures.add({
+            type: 7,
+            subType: 8,
+            name: 'Type 7-8',
+            description: 'Test structure',
+            fields: []
+        });
+        await dataManager.structures.add({
+            type: 9,
+            subType: 10,
+            name: 'Type 9-10',
+            description: 'Test structure',
+            fields: []
+        });
+        await dataManager.structures.add({
+            type: 11,
+            subType: 12,
+            name: 'Type 11-12',
+            description: 'Test structure',
+            fields: []
+        });
+        await dataManager.structures.add({
+            type: 10,
+            subType: 20,
+            name: 'Type 10-20',
+            description: 'Test structure',
+            fields: []
+        });
 
         // Create a test document for the regular user
         const testDocument: I_DocumentCreation = {

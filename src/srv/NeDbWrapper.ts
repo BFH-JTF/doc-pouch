@@ -737,8 +737,8 @@ export default class NeDbWrapper {
                     title: "Demo Document",
                     owner: admin._id,
                     description: "This is just a demo, delete when you don't need it anymore",
-                    subType: 0,
-                    type: 1,
+                    subType: 99,
+                    type: 99,
                     public: false,
                     content: [{
                         label: "This is a demo document not following any document structure",

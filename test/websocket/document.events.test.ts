@@ -41,9 +41,15 @@ describe('Document WebSocket Events Tests', () => {
         adminUser = users.adminUser;
         regularUser = users.regularUser;
 
-        // Create required document types
+        // Create required document structures
         for (let i = 1; i <= 6; i++) {
-            await dataManager.types.add({type: i, subType: i, name: `Type ${i}-${i}`});
+            await dataManager.structures.add({
+                type: i,
+                subType: i,
+                name: `Type ${i}-${i}`,
+                description: 'Test structure',
+                fields: []
+            });
         }
 
         // Connect sockets with authentication
@@ -120,13 +126,13 @@ describe('Document WebSocket Events Tests', () => {
             // Verify the event data
             expect(adminData).toHaveProperty('newDocument');
             expect(adminData.newDocument).toHaveProperty('_id');
-            expect(adminData.newDocument.title).toBe(newDocument.title);
-            expect(adminData.newDocument.content).toEqual(newDocument.content);
+            expect(adminData.newDocument?.title).toBe(newDocument.title);
+            expect(adminData.newDocument?.content).toEqual(newDocument.content);
 
             expect(userData).toHaveProperty('newDocument');
             expect(userData.newDocument).toHaveProperty('_id');
-            expect(userData.newDocument.title).toBe(newDocument.title);
-            expect(userData.newDocument.content).toEqual(newDocument.content);
+            expect(userData.newDocument?.title).toBe(newDocument.title);
+            expect(userData.newDocument?.content).toEqual(newDocument.content);
         });
 
         test('should emit newDocument event only to users with access when document is shared with group', async () => {
@@ -199,10 +205,10 @@ describe('Document WebSocket Events Tests', () => {
 
             // Verify the event data
             expect(adminData).toHaveProperty('newDocument');
-            expect(adminData.newDocument.shareWithGroup).toBe(true);
+            expect(adminData.newDocument?.shareWithGroup).toBe(true);
 
             expect(userData).toHaveProperty('newDocument');
-            expect(userData.newDocument.shareWithGroup).toBe(true);
+            expect(userData.newDocument?.shareWithGroup).toBe(true);
 
             // Third user should not receive the event
             expect(thirdUserReceivedEvent).toBe(false);
@@ -248,14 +254,14 @@ describe('Document WebSocket Events Tests', () => {
 
             // Verify the event data
             expect(adminData).toHaveProperty('changedDocument');
-            expect(adminData.changedDocument._id).toBe(documentId);
-            expect(adminData.changedDocument.title).toBe(updateData.title);
-            expect(adminData.changedDocument.content).toStrictEqual(updateData.content);
+            expect(adminData.changedDocument?._id).toBe(documentId);
+            expect(adminData.changedDocument?.title).toBe(updateData.title);
+            expect(adminData.changedDocument?.content).toStrictEqual(updateData.content);
 
             expect(userData).toHaveProperty('changedDocument');
-            expect(userData.changedDocument._id).toBe(documentId);
-            expect(userData.changedDocument.title).toBe(updateData.title);
-            expect(userData.changedDocument.content).toStrictEqual(updateData.content);
+            expect(userData.changedDocument?._id).toBe(documentId);
+            expect(userData.changedDocument?.title).toBe(updateData.title);
+            expect(userData.changedDocument?.content).toStrictEqual(updateData.content);
         });
 
         test('should emit changedDocument event only to users with access when document is updated', async () => {
@@ -340,10 +346,12 @@ describe('Document WebSocket Events Tests', () => {
 
             // Verify the event data
             expect(adminData).toHaveProperty('changedDocument');
-            expect(adminData.changedDocument._id).toBe(documentId);
+            expect(adminData.changedDocument).toHaveProperty('_id');
+            expect(adminData.changedDocument?._id).toBe(documentId);
 
             expect(userData).toHaveProperty('changedDocument');
-            expect(userData.changedDocument._id).toBe(documentId);
+            expect(adminData.changedDocument).toHaveProperty('_id');
+            expect(userData.changedDocument?._id).toBe(documentId);
 
             // Third user should not receive the event
             expect(thirdUserReceivedEvent).toBe(false);
