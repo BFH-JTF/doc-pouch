@@ -247,7 +247,7 @@ On the first start, DocPouch creates a default administrator account:
 
 ## API
 
-DocPouch provides a RESTful API with an [OpenAPI documentation]() and the following main endpoints:
+DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.github.io/doc-pouch/) and the following main endpoints:
 
 ### User Management
 - `POST /users/login` - Authenticate a user and receive a JWT token
