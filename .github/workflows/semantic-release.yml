@@ -42,3 +42,13 @@ jobs:
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Update OpenAPI version
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          sed -i "s/version: [0-9.]\+/version: $VERSION/" docpouch_openAPI.yaml
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add docpouch_openAPI.yaml
+          git diff-index --quiet HEAD || git commit -m "docs: update OpenAPI version to $VERSION"
+          git push
