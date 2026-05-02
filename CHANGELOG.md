@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.5.0...v1.5.1) (2026-05-02)
+
+
+### Bug Fixes
+
+* add correct link to OpenAPI documentation ([ac25c5a](https://github.com/BFH-JTF/doc-pouch/commit/ac25c5a3c327df1373cb2a1c205dae444f290290))
+
 # [1.5.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.4.2...v1.5.0) (2026-05-02)
 
 
