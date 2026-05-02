@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.4.1...v1.4.2) (2026-05-02)
+
+
+### Bug Fixes
+
+* uncomment Install Redoc CLI step in openapi-docs workflow ([dd93c9a](https://github.com/BFH-JTF/doc-pouch/commit/dd93c9ab38adbbd9829dc10096d3aef4bf1843c9))
+
 ## [1.4.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.4.0...v1.4.1) (2026-04-23)
 
 
