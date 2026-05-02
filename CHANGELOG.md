@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.5.1...v1.6.0) (2026-05-02)
+
+
+### Features
+
+* Added new test files for database consistency checks. ([4ad1e90](https://github.com/BFH-JTF/doc-pouch/commit/4ad1e90408047a2e45b2bce43f0020bc4dd471e0))
+
 ## [1.5.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.5.0...v1.5.1) (2026-05-02)
 
 
