@@ -1,3 +1,16 @@
+# [1.5.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.4.2...v1.5.0) (2026-05-02)
+
+
+### Bug Fixes
+
+* remove document type management from API, OpenAPI spec, and documentation ([19dc166](https://github.com/BFH-JTF/doc-pouch/commit/19dc1664c3ee7cae88b5fe1e2ae85c042cf1f324))
+
+
+### Features
+
+* Added document structure creation in tests, ensuring consistency in event data verification for new and changed documents. Adjusted demo document attributes to reflect the new document structure paradigm. ([20ba4c7](https://github.com/BFH-JTF/doc-pouch/commit/20ba4c748d70a15182f5961d19b388934de48cc9))
+* Introduce structure-based document management, replacing individual type/subtype with predefined data structures ([e2bcd23](https://github.com/BFH-JTF/doc-pouch/commit/e2bcd2333e3cd807778af61c92a381228f014ae1))
+
 ## [1.4.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.4.1...v1.4.2) (2026-05-02)
 
 
