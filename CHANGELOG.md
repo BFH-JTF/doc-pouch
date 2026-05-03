@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.7.0...v1.7.1) (2026-05-03)
+
+
+### Bug Fixes
+
+* handle case where there is nothing to commit in OpenAPI version update step ([833db08](https://github.com/BFH-JTF/doc-pouch/commit/833db084254df82fadb106f4c7bcdb44b441ad60))
+
 # [1.7.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.6.0...v1.7.0) (2026-05-03)
 
 
