@@ -12,6 +12,20 @@ const emit = defineEmits<{
   'update:structure': [updatedStructure: I_DataStructure];
 }>();
 
+const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure'];
+const primitiveTypes = ['string', 'number', 'boolean'];
+
+const isDuplicateTypeSubtype = computed(() => {
+  if (!editableStructure.value || editableStructure.value.type === undefined || editableStructure.value.subType === undefined) {
+    return false;
+  }
+  return props.structureList.some(s =>
+      s._id !== editableStructure.value!._id &&
+      s.type === editableStructure.value!.type &&
+      s.subType === editableStructure.value!.subType
+  );
+});
+
 const editableStructure = ref<I_DataStructure | undefined>(undefined);
 
 watch(() => props.displayStructure, (newStructure) => {
@@ -19,8 +33,38 @@ watch(() => props.displayStructure, (newStructure) => {
 }, {immediate: true, deep: true});
 
 function updateStructure() {
-  if (editableStructure.value) {
+  if (editableStructure.value && !isDuplicateTypeSubtype.value) {
     emit('update:structure', editableStructure.value);
+  }
+}
+
+function addField() {
+  if (!editableStructure.value) return;
+  if (!editableStructure.value.fields) {
+    editableStructure.value.fields = [];
+  }
+  editableStructure.value.fields.push({
+    name: "",
+    displayName: "",
+    type: "string",
+    items: undefined
+  });
+  updateStructure();
+}
+
+function removeField(index: number) {
+  if (!editableStructure.value?.fields) return;
+  editableStructure.value.fields.splice(index, 1);
+  updateStructure();
+}
+
+function handleFieldTypeChange(field: I_StructureField, newType: string) {
+  if (newType !== 'array' && newType !== 'structure') {
+    field.items = undefined;
+  } else if (newType === 'array') {
+    field.items = 'string';
+  } else if (newType === 'structure') {
+    field.items = undefined;
   }
 }
 
@@ -223,7 +267,8 @@ watch(treeItems, (newItems) => {
                   v-model.number="editableStructure.type"
                   :readonly="!props.isAdmin"
                   density="compact"
-                  hide-details
+                  :error="isDuplicateTypeSubtype"
+                  :error-messages="isDuplicateTypeSubtype ? 'Type/subtype combination already exists' : ''"
                   label="Type"
                   type="number"
                   variant="outlined"
@@ -235,7 +280,8 @@ watch(treeItems, (newItems) => {
                   v-model.number="editableStructure.subType"
                   :readonly="!props.isAdmin"
                   density="compact"
-                  hide-details
+                  :error="isDuplicateTypeSubtype"
+                  :error-messages="isDuplicateTypeSubtype ? 'Type/subtype combination already exists' : ''"
                   label="Subtype"
                   type="number"
                   variant="outlined"
@@ -313,31 +359,108 @@ watch(treeItems, (newItems) => {
         </div>
       </v-sheet>
 
-      <!-- Structure fields list -->
-      <v-list v-if="props.displayStructure?.fields && props.displayStructure.fields.length > 0" class="structure-fields">
-        <v-list-subheader>Structure Fields</v-list-subheader>
+      <!-- Editable Structure fields list -->
+      <v-card v-if="editableStructure" class="mt-4" variant="outlined">
+        <v-card-title class="text-subtitle-1 py-2">
+          Structure Fields
+          <v-spacer></v-spacer>
+          <v-btn
+              v-if="props.isAdmin"
+              color="primary"
+              prepend-icon="mdi-plus"
+              size="small"
+              @click="addField"
+          >
+            Add Field
+          </v-btn>
+        </v-card-title>
+        <v-card-text class="pt-0">
+          <v-list v-if="editableStructure.fields && editableStructure.fields.length > 0" lines="two">
+            <template v-for="(field, index) in editableStructure.fields" :key="index">
+              <v-list-item>
+                <template v-slot:prepend>
+                  <v-icon :color="typeIcons[field.type]?.color || typeIcons.default.color"
+                          :icon="typeIcons[field.type]?.icon || typeIcons.default.icon"></v-icon>
+                </template>
 
-        <v-list-item v-for="field in props.displayStructure.fields" :key="field.name" class="field-item">
-          <template v-slot:prepend>
-            <v-icon :icon="typeIcons[field.type].icon" :color="typeIcons[field.type].color"></v-icon>
-          </template>
+                <v-list-item-title>
+                  <v-text-field
+                      v-model="field.name"
+                      :readonly="!props.isAdmin"
+                      class="mr-2"
+                      density="compact"
+                      hide-details
+                      label="Field Name"
+                      variant="outlined"
+                      @change="updateStructure"
+                  ></v-text-field>
+                </v-list-item-title>
 
-          <v-list-item-title>{{ field.name }}</v-list-item-title>
+                <v-list-item-subtitle>
+                  <v-row class="align-center mt-1" no-gutters>
+                    <v-col cols="4">
+                      <v-select
+                          v-model="field.type"
+                          :items="fieldTypes"
+                          :readonly="!props.isAdmin"
+                          density="compact"
+                          hide-details
+                          label="Type"
+                          variant="outlined"
+                          @update:model-value="(val: string) => { handleFieldTypeChange(field, val); updateStructure(); }"
+                      ></v-select>
+                    </v-col>
 
-          <template v-slot:append>
-            <v-chip size="small" :color="typeIcons[field.type].color" variant="tonal">
-              {{ field.type }}
-              <template v-if="field.type === 'array' || field.type === 'structure'">
-                <span v-if="field.items" class="ml-1">({{ field.items }})</span>
-              </template>
-            </v-chip>
-          </template>
-        </v-list-item>
-      </v-list>
+                    <v-col v-if="field.type === 'array' || field.type === 'structure'" class="pl-2" cols="4">
+                      <v-select
+                          v-if="field.type === 'structure'"
+                          v-model="field.items"
+                          :items="props.structureList.filter(s => s._id !== editableStructure._id)"
+                          :readonly="!props.isAdmin"
+                          clearable
+                          density="compact"
+                          hide-details
+                          item-title="name"
+                          item-value="_id"
+                          label="Referenced Structure"
+                          variant="outlined"
+                          @change="updateStructure"
+                      ></v-select>
+                      <v-select
+                          v-else-if="field.type === 'array'"
+                          v-model="field.items"
+                          :items="primitiveTypes"
+                          :readonly="!props.isAdmin"
+                          clearable
+                          density="compact"
+                          hide-details
+                          label="Array Item Type"
+                          variant="outlined"
+                          @change="updateStructure"
+                      ></v-select>
+                    </v-col>
 
-      <div v-else-if="props.displayStructure" class="text-center pa-4">
-        No fields defined in this structure
-      </div>
+                    <v-col v-if="props.isAdmin" class="pl-2" cols="2">
+                      <v-btn
+                          color="error"
+                          icon="mdi-delete"
+                          size="small"
+                          variant="text"
+                          @click="removeField(index)"
+                      ></v-btn>
+                    </v-col>
+                  </v-row>
+                </v-list-item-subtitle>
+              </v-list-item>
+              <v-divider v-if="index < editableStructure.fields.length - 1"></v-divider>
+            </template>
+          </v-list>
+
+          <div v-else class="text-center text-grey pa-4">
+            No fields defined. Click "Add Field" to add a field to this structure.
+          </div>
+        </v-card-text>
+      </v-card>
     </v-card-text>
   </v-card>
 </template>

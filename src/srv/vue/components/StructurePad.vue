@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import type {I_DataStructure} from "docpouch-client";
 import type DbPouchClient from 'docpouch-client';
+import StructureCreationDialog from './StructureCreationDialog.vue';
 
 const props = defineProps<{
   structurelist: I_DataStructure[] | undefined;
@@ -77,6 +78,7 @@ const filteredStructures = computed(() => {
 
 const selectedStructureID = ref<string | null>(null);
 const showSuccessSnackbar = ref(false);
+const showCreationDialog = ref(false);
 
 const selectStructure = (structureID: string | undefined) => {
   if (structureID !== undefined) {
@@ -86,6 +88,22 @@ const selectStructure = (structureID: string | undefined) => {
   }
   else
     selectedStructureID.value = null;
+};
+
+const handleStructureCreated = (newStructure: any) => {
+  if (props.apiClient) {
+    props.apiClient.createStructure(newStructure).then(() => {
+      showSuccessSnackbar.value = true;
+      showCreationDialog.value = false;
+      emit('structureListChanged');
+    }).catch(error => {
+      console.error("Error creating structure:", error);
+    });
+  }
+};
+
+const cancelCreation = () => {
+  showCreationDialog.value = false;
 };
 </script>
 
@@ -164,8 +182,18 @@ const selectStructure = (structureID: string | undefined) => {
     </div>
 
     <div v-if="isAdmin" class="d-flex justify-end mt-3">
+      <v-btn class="mr-2" color="primary" prepend-icon="mdi-plus" @click="showCreationDialog = true">New</v-btn>
       <v-btn color="error" prepend-icon="mdi-delete" @click="confirmDelete" :disabled="!selectedStructureID || !props.isAdmin">Remove</v-btn>
     </div>
+
+    <!-- Creation Dialog -->
+    <StructureCreationDialog
+        v-if="showCreationDialog"
+        :show="showCreationDialog"
+        :structure-list="props.structurelist || []"
+        @structure-created="handleStructureCreated"
+        @cancel-dialog="cancelCreation"
+    />
   </div>
 
   <v-snackbar
