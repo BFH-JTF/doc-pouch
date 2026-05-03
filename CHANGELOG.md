@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.6.0...v1.7.0) (2026-05-03)
+
+
+### Features
+
+* Added new functionalities to handle and manage document structures, including: ([8bf750d](https://github.com/BFH-JTF/doc-pouch/commit/8bf750d8ad246a6f8d31a862248af5eb64aa9600))
+
 # [1.6.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.5.1...v1.6.0) (2026-05-02)
 
 
