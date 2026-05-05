@@ -17,7 +17,7 @@ import archiver from "archiver";
 import AdmZip from "adm-zip";
 import {JWTOptions} from "./webTokenStuff.js";
 import {getCachedUpdateResult} from "./updateChecker.js";
-
+import * as oidc from "oidc-provider";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
@@ -72,7 +72,6 @@ function parseImportMode(rawMode: unknown): ImportMode {
 export function cspMiddleware(req: Request, res: Response, next: NextFunction) {
     const nonce = crypto.randomBytes(16).toString('base64');
     res.locals.nonce = nonce;
-
     const csp = [
         "default-src 'none'",
         `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
@@ -99,17 +98,28 @@ export default class NetworkManager {
     webServer: http.Server
     logger: winston.Logger
     validator: SchemaValidator
+    oidcProvider: any
 
     constructor(logger: winston.Logger, dataManager: NeDbWrapper, port: number, corsOptions = {
         origin: "*",
         credentials: true
-    } as any) {
+    }) {
         this.corsOptions = corsOptions;
         this.port = port;
         this.expressApp = express();
         this.dataManager = dataManager;
         this.logger = logger;
         this.validator = new SchemaValidator(logger);
+        this.oidcProvider = new oidc.Provider("http://localhost:3000", {
+            clients: [
+                {
+                    client_id: "foo",
+                    client_secret: "bar",
+                    redirect_uris: ["http://localhost:8080/cb"],
+                    // ... other client properties
+                },
+            ],
+        });
         this.webServer = this.expressApp.listen(this.port, () => {
             const networkInterfaces = os.networkInterfaces();
             let hostAddress = 'localhost';
