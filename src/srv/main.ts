@@ -3,15 +3,13 @@ import NeDbWrapper, {type INeDbOptions} from "./NeDbWrapper.js";
 import winston from "winston";
 import fs from "fs";
 import {checkForUpdates} from "./updateChecker.js";
+import type {I_CorsOption} from "../types.ts";
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || "*";
 const ALLOWED_HEADERS = process.env.ALLOWED_HEADERS || "Content-Type, Authorization";
 
 const origins = ALLOWED_ORIGINS.split(",").map(o => o.trim());
-const corsOptions: {
-    origin: string | string[];
-    allowedHeaders: string[];
-} = {
+const corsOptions: I_CorsOption = {
     origin: origins.length === 1 ? origins[0] : origins,
     allowedHeaders: ALLOWED_HEADERS.split(",").map(h => h.trim())
 }

@@ -13,5 +13,6 @@ services:
       - JWT_SECRET=your-secure-jwt-secret-here
       - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
       - ALLOWED_HEADERS=Content-Type,Authorization
-      - OIDC_ISSUER=https://docpouch.pantek.app
+      - OIDC_ISSUER=https://localhost:3030
+      - OIDC_REGISTRATION_TOKEN=TestToken
     restart: unless-stopped

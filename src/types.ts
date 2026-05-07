@@ -1,7 +1,14 @@
+import type {Socket} from "socket.io";
 // Common type definitions for both frontend and backend
+export interface I_CorsOption {
+    origin: string | string[]
+    allowedHeaders?: string[]
+    credentials?: string
+}
+
 
 // User related types
-import type {Socket} from "socket.io";
+
 
 export interface I_Client {
     socket: Socket

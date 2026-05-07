@@ -18,6 +18,7 @@ import AdmZip from "adm-zip";
 import {JWTOptions} from "./webTokenStuff.js";
 import {getCachedUpdateResult} from "./updateChecker.js";
 import * as oidc from "oidc-provider";
+import type {I_CorsOption} from "../types.ts";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
@@ -100,26 +101,71 @@ export default class NetworkManager {
     validator: SchemaValidator
     oidcProvider: any
 
-    constructor(logger: winston.Logger, dataManager: NeDbWrapper, port: number, corsOptions = {
-        origin: "*",
-        credentials: true
-    }) {
+    constructor(logger: winston.Logger, dataManager: NeDbWrapper, port: number, corsOptions: I_CorsOption) {
         this.corsOptions = corsOptions;
         this.port = port;
         this.expressApp = express();
         this.dataManager = dataManager;
         this.logger = logger;
         this.validator = new SchemaValidator(logger);
-        this.oidcProvider = new oidc.Provider("http://localhost:3000", {
-            clients: [
-                {
-                    client_id: "foo",
-                    client_secret: "bar",
-                    redirect_uris: ["http://localhost:8080/cb"],
-                    // ... other client properties
-                },
-            ],
+        // Generate static JWKS for token signing (development/simple setup)
+        const {publicKey, privateKey} = crypto.generateKeyPairSync('rsa', {
+            modulusLength: 4096,
+            publicKeyEncoding: {type: 'spki', format: 'pem'},
+            privateKeyEncoding: {type: 'pkcs8', format: 'pem'}
         });
+
+        // Convert PEM to JWK format for oidc-provider
+        const keyPair = crypto.createPrivateKey(privateKey);
+        const jwk = keyPair.export({format: 'jwk'});
+        const publicJwk = crypto.createPublicKey(publicKey).export({format: 'jwk'});
+
+        const jwks = {
+            keys: [{
+                kty: 'RSA',
+                use: 'sig',
+                alg: 'RS256',
+                kid: 'docpouch-key-1',
+                ...publicJwk,
+                d: jwk.d,
+                dp: jwk.dp,
+                dq: jwk.dq,
+                q: jwk.q,
+                qi: jwk.qi
+            }]
+        };
+
+        this.oidcProvider = new oidc.Provider(process.env.OIDC_ISSUER || "http://localhost:3000", {
+            jwks: jwks,
+            cookies: {
+                keys: [process.env.OIDC_COOKIE_KEY || 'docpouch-cookie-secret-change-in-production'],
+                long: {secure: process.env.NODE_ENV === 'production', httpOnly: true, sameSite: 'lax'},
+                short: {secure: process.env.NODE_ENV === 'production', httpOnly: true, sameSite: 'lax'}
+            },
+            features: {
+                registration: {
+                    enabled: true,
+                    initialAccessToken: process.env.OIDC_REGISTRATION_TOKEN,
+                    issueRegistrationAccessToken: true,
+                    secretFactory: (ctx) => {
+                        return crypto.randomBytes(64).toString('base64url');
+                    }
+                }
+            },
+            interactions: {
+                url: (ctx, interaction) => {
+                    return `/oidc/interaction/${interaction.uid}`;
+                }
+            },
+            renderError: (ctx, out, error) => {
+                ctx.status = (error as any)?.status || 500;
+                ctx.body = {
+                    error: (error as any)?.message || 'Unknown error',
+                    error_description: (error as any)?.description || 'An error occurred'
+                };
+            }
+        });
+
         this.webServer = this.expressApp.listen(this.port, () => {
             const networkInterfaces = os.networkInterfaces();
             let hostAddress = 'localhost';
@@ -159,6 +205,8 @@ export default class NetworkManager {
 
         this.expressApp.use(cors(this.corsOptions));
         this.expressApp.use(express.static(vuePath));
+        // Serve OIDC login page and static assets
+        this.expressApp.use('/oidc/static', express.static(path.resolve(process.cwd(), 'src/srv')));
         this.expressApp.use(express.json());
         this.expressApp.use(cspMiddleware);
         this.expressApp.disable('etag'); // Disable ETag header to prevent caching of responses
@@ -169,7 +217,71 @@ export default class NetworkManager {
             limits: {fileSize: 100 * 1024 * 1024} // 100MB limit
         });
 
-        this.expressApp.get('/users/list', this.authenticateJWT, (req, res) => {
+        // Serve OIDC login page
+        this.expressApp.get('/oidc/interaction/:uid', async (req, res) => {
+            try {
+                // Verify the interaction exists
+                await this.oidcProvider.interactionDetails(req, res);
+                // Try dist first (production), fall back to src (development)
+                const htmlPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/oidc-login.html'))
+                    ? path.resolve(process.cwd(), 'dist/srv/oidc-login.html')
+                    : path.resolve(process.cwd(), 'src/srv/oidc-login.html');
+                res.sendFile(htmlPath);
+            } catch (err) {
+                res.status(400).send('Invalid or expired login session. Please try again.');
+            }
+        });
+
+        // API endpoint to get interaction details (for displaying client info)
+        this.expressApp.get('/oidc/interaction/:uid/details', async (req, res) => {
+            try {
+                const interaction = await this.oidcProvider.interactionDetails(req, res);
+                const client = interaction.params?.client_id
+                    ? await this.oidcProvider.Client.find(interaction.params.client_id)
+                    : null;
+
+                res.json({
+                    clientName: client?.clientName || client?.client_id || 'Unknown Client',
+                    prompt: interaction.prompt?.name || 'login'
+                });
+            } catch (err) {
+                res.status(400).json({error: 'Invalid interaction'});
+            }
+        });
+
+        // Handle login form submission
+        this.expressApp.post('/oidc/interaction/:uid', async (req, res) => {
+            try {
+                const {uid, prompt} = await this.oidcProvider.interactionDetails(req, res);
+                const {name, password} = req.body;
+
+                // Validate user using existing user store
+                const user = await this.dataManager.validateUser(name, password);
+                if (typeof user === 'number') {
+                    res.status(401).json({error: 'Invalid username or password'});
+                    return;
+                }
+
+                // Build the result based on prompt type
+                const result: any = {
+                    login: {accountId: user._id}
+                };
+
+                // Handle consent if needed
+                if (prompt.name === 'consent') {
+                    result.consent = {
+                        granted: true
+                    };
+                }
+
+                await this.oidcProvider.interactionFinished(req, res, result, {mergeWithLastSubmission: false});
+            } catch (err) {
+                res.status(500).json({error: 'Login failed. Please try again.'});
+            }
+        });
+        this.expressApp.use("/oidc", this.oidcProvider.callback());
+
+        this.expressApp.get('/users/list', this.authenticate, (req, res) => {
             this.dataManager.getUsers(req.userid)
                 .then((users: I_UserEntry[]) => {
                     res.status(200).json(users);
@@ -178,7 +290,7 @@ export default class NetworkManager {
             });
         });
 
-        this.expressApp.post("/users/create", this.authenticateJWT, (req, res) => {
+        this.expressApp.post("/users/create", this.authenticate, (req, res) => {
             let validatedObject = this.validator.getValidatedObject("userCreation", req.body);
             if (validatedObject !== false) {
                 this.dataManager.isAdmin(req.userid).then((isAdmin) => {
@@ -235,7 +347,7 @@ export default class NetworkManager {
             }
         })
 
-        this.expressApp.patch("/users/update/:userID", this.authenticateJWT, (req: Request, res: Response) => {
+        this.expressApp.patch("/users/update/:userID", this.authenticate, (req: Request, res: Response) => {
             const validatedObject = this.validator.getValidatedObject("userUpdate", req.body);
 
             if (validatedObject !== false && req.params.userID !== undefined) {
@@ -285,7 +397,7 @@ export default class NetworkManager {
                 res.status(503).json({error: "Invalid user data"});
         });
 
-        this.expressApp.delete("/users/remove/:userID", this.authenticateJWT, (req, res) => {
+        this.expressApp.delete("/users/remove/:userID", this.authenticate, (req, res) => {
             this.dataManager.isAdmin(req.userid).then((isAdmin: boolean) => {
                 if (!isAdmin)
                     return res.status(401).json({error: "Not authorized to remove this user"});
@@ -301,7 +413,7 @@ export default class NetworkManager {
         })
 
         // Document endpoints with access control
-        this.expressApp.get("/docs/list", this.authenticateJWT, (req, res) => {
+        this.expressApp.get("/docs/list", this.authenticate, (req, res) => {
             this.dataManager.getAllDocuments(req.userid)
                 .then((documents) => {
                     res.status(200).json(documents);
@@ -311,7 +423,7 @@ export default class NetworkManager {
                 });
         });
 
-        this.expressApp.post("/docs/fetch", this.authenticateJWT, (req, res) => {
+        this.expressApp.post("/docs/fetch", this.authenticate, (req, res) => {
             let queryObject = req.body;
             this.validator.getValidatedObject("documentFetch", queryObject);
 
@@ -330,7 +442,7 @@ export default class NetworkManager {
                 });
         });
 
-        this.expressApp.post("/docs/create", this.authenticateJWT, (req, res) => {
+        this.expressApp.post("/docs/create", this.authenticate, (req, res) => {
             if (this.validator.getValidatedObject("documentCreation", req.body)) {
                 this.dataManager.createDocument(req.body, req.userid)
                     .then((document) => {
@@ -354,7 +466,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.patch("/docs/update/:documentID", this.authenticateJWT, (req, res) => {
+        this.expressApp.patch("/docs/update/:documentID", this.authenticate, (req, res) => {
             if (this.validator.getValidatedObject("documentUpdate", req.body) && req.params.documentID !== undefined) {
                 this.dataManager.updateDocument(req.params.documentID, req.body, req.userid)
                     .then((numUpdated) => {
@@ -374,7 +486,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.delete("/docs/remove/:documentID", this.authenticateJWT, (req, res) => {
+        this.expressApp.delete("/docs/remove/:documentID", this.authenticate, (req, res) => {
             if (req.params.documentID !== undefined) {
                 this.socketServer.sendEventToDocumentAccessors(req.socketID, req.params.documentID, "removedDocument", {removedID: req.params.documentID}).then(() => {
                     if (req.params.documentID !== undefined) {
@@ -397,7 +509,7 @@ export default class NetworkManager {
         });
 
         // Structure endpoints with access control
-        this.expressApp.get("/structures/list", this.authenticateJWT, (req, res) => {
+        this.expressApp.get("/structures/list", this.authenticate, (req, res) => {
             this.dataManager.getStructures()
                 .then((structures) => {
                     res.status(200).json(structures);
@@ -407,7 +519,7 @@ export default class NetworkManager {
                 });
         });
 
-        this.expressApp.post("/structures/create", this.authenticateJWT, (req, res) => {
+        this.expressApp.post("/structures/create", this.authenticate, (req, res) => {
             if (this.validator.getValidatedObject("structureCreation", req.body)) {
                 this.dataManager.createStructure(req.body, req.userid)
                     .then((structure) => {
@@ -427,7 +539,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.patch("/structures/update/:structureID", this.authenticateJWT, (req, res) => {
+        this.expressApp.patch("/structures/update/:structureID", this.authenticate, (req, res) => {
             if (this.validator.getValidatedObject("structureUpdate", req.body) && req.params.structureID !== undefined) {
                 const structureID = req.params.structureID;
                 this.dataManager.updateStructure(structureID, req.body, req.userid)
@@ -449,7 +561,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.delete("/structures/remove/:structureID", this.authenticateJWT, (req, res) => {
+        this.expressApp.delete("/structures/remove/:structureID", this.authenticate, (req, res) => {
             const structureID = req.params.structureID;
             if (structureID !== undefined) {
                 this.dataManager.removeStructure(structureID, req.userid)
@@ -478,7 +590,7 @@ export default class NetworkManager {
         });
 
         // Database export endpoint
-        this.expressApp.get("/database/export", this.authenticateJWT, (req, res) => {
+        this.expressApp.get("/database/export", this.authenticate, (req, res) => {
             this.dataManager.isAdmin(req.userid).then(async (isAdmin) => {
                 if (!isAdmin) {
                     return res.status(403).json({error: "Only admins can export the database"});
@@ -556,7 +668,7 @@ export default class NetworkManager {
         });
 
         // Database import endpoint
-        this.expressApp.post("/database/import", this.authenticateJWT, upload.single('file'), (req, res) => {
+        this.expressApp.post("/database/import", this.authenticate, upload.single('file'), (req, res) => {
             this.dataManager.isAdmin(req.userid).then(async (isAdmin) => {
                 if (!isAdmin) {
                     return res.status(403).json({error: "Only admins can import the database"});
@@ -701,39 +813,58 @@ export default class NetworkManager {
 
     }
 
-    private authenticateJWT = (req: Request, res: Response, next: NextFunction) => {
+    private authenticate = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const authHeader = req.headers['authorization'];
             if (!authHeader) {
                 res.status(401).json({error: "No authorization header"});
-                return
+                return;
             }
 
-            const token = authHeader && authHeader.split(' ')[1];
-            if (token == null) {
+            const token = authHeader.split(' ')[1];
+            if (!token) {
                 res.status(401).json({error: "No token provided"});
-                return
+                return;
             }
 
-            jwt.verify(token, JWTOptions.secret, (err: any, payload: any) => {
-                if (err) return res.sendStatus(401);
-                this.dataManager.getUserByID(payload.id).then((user) => {
-                    if (!user) {
-                        res.status(401).json({error: "User not found"});
-                        return
-                    }
-                    req.userid = payload.id;
+            // Try JWT token first (from /users/login)
+            try {
+                const payload = jwt.verify(token, JWTOptions.secret) as any;
+                const user = await this.dataManager.getUserByID(payload.id);
+                if (!user) {
+                    res.status(401).json({error: "User not found"});
+                    return;
+                }
+                req.userid = payload.id;
+                if (req.headers['x-socket-id'])
+                    req.socketID = req.headers['x-socket-id'] as string;
+                return next();
+            } catch (jwtError) {
+                // JWT verification failed, try OIDC token
+            }
+
+            // Try OIDC access token (from OIDC flow)
+            try {
+                // Use oidc-provider's AccessToken.find to validate
+                const accessToken = await this.oidcProvider.AccessToken.find(token);
+
+                if (accessToken && accessToken.accountId) {
+                    req.userid = accessToken.accountId;
                     if (req.headers['x-socket-id'])
                         req.socketID = req.headers['x-socket-id'] as string;
-                    next();
-                }).catch((error) => {
-                    res.status(500).json({error: error.message});
-                    return
-                })
-            });
+                    return next();
+                }
+            } catch (oidcError) {
+                // OIDC token validation failed, fall through to 401
+            }
+
+            // Both methods failed
+            res.status(401).json({error: "Invalid token"});
+            return;
+
         } catch (error) {
             res.status(500).json({error: "Authentication error"});
-            return
+            return;
         }
     };
 

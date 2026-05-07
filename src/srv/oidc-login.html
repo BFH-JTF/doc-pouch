@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>DocPouch - Login</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo h1 {
+            color: #667eea;
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .logo p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .info {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 13px;
+        }
+
+        .client-info {
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .client-info strong {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+<div class="login-container">
+    <div class="logo">
+        <h1>📦 DocPouch</h1>
+        <p>Sign in to continue</p>
+    </div>
+
+    <div id="errorMessage" class="error-message"></div>
+
+    <div id="clientInfo" class="client-info" style="display: none;">
+        <strong>Client:</strong> <span id="clientName"></span>
+    </div>
+
+    <div class="info">
+        Use your DocPouch credentials to sign in. If you don't have an account, contact your administrator.
+    </div>
+
+    <form id="loginForm">
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input id="username" autocomplete="username" autofocus name="username" required type="text">
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input id="password" autocomplete="current-password" name="password" required type="password">
+        </div>
+
+        <button id="submitButton" type="submit">Sign In</button>
+    </form>
+</div>
+
+<script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const uid = urlParams.get('uid');
+
+    // Display client info if available
+    async function loadInteractionDetails() {
+        if (!uid) return;
+
+        try {
+            const response = await fetch(`/oidc/interaction/${uid}/details`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.clientName) {
+                    document.getElementById('clientInfo').style.display = 'block';
+                    document.getElementById('clientName').textContent = data.clientName;
+                }
+            }
+        } catch (err) {
+            console.error('Failed to load interaction details:', err);
+        }
+    }
+
+    loadInteractionDetails();
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const submitButton = document.getElementById('submitButton');
+        const errorMessage = document.getElementById('errorMessage');
+
+        errorMessage.classList.remove('show');
+        submitButton.disabled = true;
+        submitButton.textContent = 'Signing in...';
+
+        try {
+            const response = await fetch(`/oidc/interaction/${uid}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: username,
+                    password: password
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                } else {
+                    window.location.href = '/';
+                }
+            } else {
+                const error = await response.json();
+                errorMessage.textContent = error.error || 'Invalid username or password';
+                errorMessage.classList.add('show');
+            }
+        } catch (err) {
+            errorMessage.textContent = 'An error occurred. Please try again.';
+            errorMessage.classList.add('show');
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Sign In';
+        }
+    });
+</script>
+</body>
+</html>
