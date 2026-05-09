@@ -128,6 +128,7 @@ export default class NetworkManager {
                 kid: 'docpouch-key-1',
                 ...publicJwk,
                 d: jwk.d,
+                p: jwk.p,
                 dp: jwk.dp,
                 dq: jwk.dq,
                 q: jwk.q,
@@ -351,7 +352,7 @@ export default class NetworkManager {
             const validatedObject = this.validator.getValidatedObject("userUpdate", req.body);
 
             if (validatedObject !== false && req.params.userID !== undefined) {
-                const userID = req.params.userID;
+                const userID = req.params.userID as string;
                 const checkPermission = async () => {
                     if (req.userid === userID && !("isAdmin" in validatedObject)) {
                         return true; // User can update their own profile
@@ -402,8 +403,8 @@ export default class NetworkManager {
                 if (!isAdmin)
                     return res.status(401).json({error: "Not authorized to remove this user"});
                 else if (req.params.userID !== undefined) {
-                    this.dataManager.removeUser(req.params.userID).then(() => {
-                        this.socketServer.sendEventToAdmins(req.socketID, "removedUser", {removedID: req.params.userID})
+                    this.dataManager.removeUser(req.params.userID as string).then(() => {
+                        this.socketServer.sendEventToAdmins(req.socketID, "removedUser", {removedID: req.params.userID as string})
                         res.status(200).json({message: "User has been successfully removed"});
                     }).catch((error) => {
                         res.status(404).json({error: error.message});
@@ -468,11 +469,11 @@ export default class NetworkManager {
 
         this.expressApp.patch("/docs/update/:documentID", this.authenticate, (req, res) => {
             if (this.validator.getValidatedObject("documentUpdate", req.body) && req.params.documentID !== undefined) {
-                this.dataManager.updateDocument(req.params.documentID, req.body, req.userid)
+                this.dataManager.updateDocument(req.params.documentID as string, req.body, req.userid)
                     .then((numUpdated) => {
                         if (numUpdated > 0 && req.params.documentID !== undefined) {
                             req.body._id = req.params.documentID;
-                            this.socketServer.sendEventToDocumentAccessors(req.socketID, req.params.documentID, "changedDocument", {changedDocument: req.body});
+                            this.socketServer.sendEventToDocumentAccessors(req.socketID, req.params.documentID as string, "changedDocument", {changedDocument: req.body});
                             res.status(200).json({message: "Document updated successfully"});
                         } else {
                             res.status(404).json({error: "Document not found"});
@@ -488,9 +489,9 @@ export default class NetworkManager {
 
         this.expressApp.delete("/docs/remove/:documentID", this.authenticate, (req, res) => {
             if (req.params.documentID !== undefined) {
-                this.socketServer.sendEventToDocumentAccessors(req.socketID, req.params.documentID, "removedDocument", {removedID: req.params.documentID}).then(() => {
+                this.socketServer.sendEventToDocumentAccessors(req.socketID, req.params.documentID as string, "removedDocument", {removedID: req.params.documentID as string}).then(() => {
                     if (req.params.documentID !== undefined) {
-                        this.dataManager.removeDocument(req.params.documentID, req.userid)
+                        this.dataManager.removeDocument(req.params.documentID as string, req.userid)
                             .then((numRemoved) => {
                                 if (numRemoved > 0) {
                                     res.status(200).json({message: "Document removed successfully"});
@@ -542,7 +543,7 @@ export default class NetworkManager {
         this.expressApp.patch("/structures/update/:structureID", this.authenticate, (req, res) => {
             if (this.validator.getValidatedObject("structureUpdate", req.body) && req.params.structureID !== undefined) {
                 const structureID = req.params.structureID;
-                this.dataManager.updateStructure(structureID, req.body, req.userid)
+                this.dataManager.updateStructure(structureID as string, req.body, req.userid)
                     .then((numUpdated) => {
                         if (numUpdated > 0) {
                             res.status(200).json({message: "Structure updated successfully"});
@@ -564,11 +565,11 @@ export default class NetworkManager {
         this.expressApp.delete("/structures/remove/:structureID", this.authenticate, (req, res) => {
             const structureID = req.params.structureID;
             if (structureID !== undefined) {
-                this.dataManager.removeStructure(structureID, req.userid)
+                this.dataManager.removeStructure(structureID as string, req.userid)
                     .then((numRemoved) => {
                         if (numRemoved > 0) {
                             res.status(200).json({message: "Structure removed successfully"});
-                            this.socketServer.sendEventToAllClients(req.socketID, "removedStructure", {removedID: structureID});
+                            this.socketServer.sendEventToAllClients(req.socketID, "removedStructure", {removedID: structureID as string});
                             this.logger.info("Structure removed:", structureID);
                         } else {
                             res.status(404).json({error: "Structure not found"});
