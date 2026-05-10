@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>DocPouch - Login</title>
-    <style>
+    <style nonce="__NONCE__">
         * {
             margin: 0;
             padding: 0;
@@ -33,6 +33,12 @@
         .logo {
             text-align: center;
             margin-bottom: 30px;
+        }
+
+        .logo-img {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 12px;
         }
 
         .logo h1 {
@@ -142,7 +148,8 @@
 <body>
 <div class="login-container">
     <div class="logo">
-        <h1>📦 DocPouch</h1>
+        <img alt="DocPouch" class="logo-img" src="/oidc/static/docPouch.png">
+        <h1>DocPouch</h1>
         <p>Sign in to continue</p>
     </div>
 
@@ -171,7 +178,7 @@
     </form>
 </div>
 
-<script>
+<script nonce="__NONCE__">
     const urlParams = new URLSearchParams(window.location.search);
     const uid = urlParams.get('uid');
 
@@ -180,7 +187,7 @@
         if (!uid) return;
 
         try {
-            const response = await fetch(`/oidc/interaction/${uid}/details`);
+            const response = await fetch(`/interaction/${uid}/details`);
             if (response.ok) {
                 const data = await response.json();
                 if (data.clientName) {
@@ -208,7 +215,7 @@
         submitButton.textContent = 'Signing in...';
 
         try {
-            const response = await fetch(`/oidc/interaction/${uid}`, {
+            const response = await fetch(`/interaction/${uid}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

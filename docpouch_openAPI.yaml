@@ -13,6 +13,8 @@ tags:
     description: Document management endpoints
   - name: data structures
     description: Data structure management endpoints
+  - name: openid connect
+    description: OpenID Connect (OIDC) provider endpoints
 
 paths:
   /users/login:
@@ -487,6 +489,308 @@ paths:
         403:
           description: "Only admins can import the database"
 
+  /.well-known/openid-configuration:
+    get:
+      summary: OpenID Connect discovery
+      description: "Returns the OpenID Connect provider metadata. This is the standard OIDC discovery endpoint that all OIDC clients use to discover the provider's configuration."
+      tags:
+        - openid connect
+      responses:
+        200:
+          description: "OIDC provider metadata"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcDiscovery"
+
+  /oidc/auth:
+    get:
+      summary: OIDC Authorization endpoint
+      description: "Standard OpenID Connect Authorization endpoint. Initiates the authentication request. Follows the OIDC Core specification."
+      tags:
+        - openid connect
+      parameters:
+        - in: query
+          name: client_id
+          required: true
+          schema:
+            type: string
+          description: "Client identifier"
+        - in: query
+          name: response_type
+          required: true
+          schema:
+            type: string
+            enum: [ code, id_token, "code id_token" ]
+          description: "OAuth response type"
+        - in: query
+          name: scope
+          required: true
+          schema:
+            type: string
+          description: "Space-separated list of scopes (e.g. openid profile)"
+        - in: query
+          name: redirect_uri
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: "Client redirect URI"
+        - in: query
+          name: state
+          required: false
+          schema:
+            type: string
+          description: "Opaque value used to maintain state"
+        - in: query
+          name: nonce
+          required: false
+          schema:
+            type: string
+          description: "String value used to associate a client session with an ID token"
+      responses:
+        302:
+          description: "Redirect to login page or redirect URI"
+        400:
+          description: "Invalid request"
+
+  /oidc/token:
+    post:
+      summary: OIDC Token endpoint
+      description: "Standard OpenID Connect Token endpoint. Exchanges authorization codes for tokens and refreshes tokens."
+      tags:
+        - openid connect
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type:
+                  type: string
+                  enum: [ authorization_code, refresh_token, client_credentials ]
+                  description: "OAuth grant type"
+                code:
+                  type: string
+                  description: "Authorization code (required for authorization_code grant)"
+                refresh_token:
+                  type: string
+                  description: "Refresh token (required for refresh_token grant)"
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: "Redirect URI (required for authorization_code grant)"
+                client_id:
+                  type: string
+                  description: "Client identifier"
+                client_secret:
+                  type: string
+                  description: "Client secret (required for confidential clients)"
+              required:
+                - grant_type
+      responses:
+        200:
+          description: "Token response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcTokenResponse"
+        400:
+          description: "Invalid request"
+
+  /oidc/userinfo:
+    get:
+      summary: OIDC UserInfo endpoint
+      description: "Standard OpenID Connect UserInfo endpoint. Returns claims about the authenticated user."
+      tags:
+        - openid connect
+      security:
+        - userAuth: [ ]
+      responses:
+        200:
+          description: "User claims"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcUserInfo"
+        401:
+          description: "Invalid or missing access token"
+
+  /oidc/jwks:
+    get:
+      summary: OIDC JWKS endpoint
+      description: "Returns the JSON Web Key Set used by the OIDC provider for token signing. Used by clients to verify ID token signatures."
+      tags:
+        - openid connect
+      responses:
+        200:
+          description: "JWKS response"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      description: "JSON Web Key"
+
+  /oidc/reg:
+    post:
+      summary: Register a new OIDC client (dynamic registration)
+      description: "Register a new OIDC client application dynamically. Requires an initial access token provided in the Authorization header."
+      tags:
+        - openid connect
+      security:
+        - oidcRegistrationToken: [ ]
+      requestBody:
+        description: "Client metadata for registration"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OidcClientRegistration"
+      responses:
+        201:
+          description: "Client successfully registered"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcClientResponse"
+        401:
+          description: "Invalid or missing registration access token"
+
+  /oidc/reg/{clientId}:
+    get:
+      summary: Read OIDC client details
+      description: "Retrieve the registration state of an existing OIDC client. Requires the registration access token issued during client registration."
+      tags:
+        - openid connect
+      security:
+        - oidcRegistrationToken: [ ]
+      parameters:
+        - in: path
+          name: clientId
+          required: true
+          schema:
+            type: string
+          description: "The client identifier"
+      responses:
+        200:
+          description: "Client details"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcClientResponse"
+        401:
+          description: "Invalid or missing registration access token"
+
+    put:
+      summary: Update OIDC client registration
+      description: "Update the registration of an existing OIDC client. Requires the registration access token issued during client registration."
+      tags:
+        - openid connect
+      security:
+        - oidcRegistrationToken: [ ]
+      parameters:
+        - in: path
+          name: clientId
+          required: true
+          schema:
+            type: string
+          description: "The client identifier"
+      requestBody:
+        description: "Updated client metadata"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OidcClientRegistration"
+      responses:
+        200:
+          description: "Client updated successfully"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcClientResponse"
+        401:
+          description: "Invalid or missing registration access token"
+
+    delete:
+      summary: Delete OIDC client registration
+      description: "Delete an existing OIDC client. Requires the registration access token issued during client registration."
+      tags:
+        - openid connect
+      security:
+        - oidcRegistrationToken: [ ]
+      parameters:
+        - in: path
+          name: clientId
+          required: true
+          schema:
+            type: string
+          description: "The client identifier"
+      responses:
+        204:
+          description: "Client deleted successfully"
+        401:
+          description: "Invalid or missing registration access token"
+
+  /interaction/{uid}:
+    get:
+      summary: OIDC login page
+      description: "Serves the OIDC login page for user authentication during the authorization flow."
+      tags:
+        - openid connect
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+          description: "Interaction UID"
+      responses:
+        200:
+          description: "Login page HTML"
+          content:
+            text/html:
+              schema:
+                type: string
+        400:
+          description: "Invalid or expired login session"
+
+  /interaction/{uid}/details:
+    get:
+      summary: OIDC interaction details
+      description: "Returns details about an ongoing OIDC interaction, such as the client name and prompt type."
+      tags:
+        - openid connect
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+          description: "Interaction UID"
+      responses:
+        200:
+          description: "Interaction details"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clientName:
+                    type: string
+                    description: "Name of the requesting client"
+                  prompt:
+                    type: string
+                    description: "Type of interaction prompt (e.g. login, consent)"
+        400:
+          description: "Invalid interaction"
+
 components:
   schemas:
     Document:
@@ -827,9 +1131,216 @@ components:
         - name
         - type
 
+    OidcDiscovery:
+      type: object
+      description: "OpenID Connect provider metadata"
+      properties:
+        issuer:
+          type: string
+          description: "OIDC issuer URL"
+        authorization_endpoint:
+          type: string
+          format: uri
+          description: "Authorization endpoint URL"
+        token_endpoint:
+          type: string
+          format: uri
+          description: "Token endpoint URL"
+        userinfo_endpoint:
+          type: string
+          format: uri
+          description: "UserInfo endpoint URL"
+        jwks_uri:
+          type: string
+          format: uri
+          description: "JWKS endpoint URL"
+        registration_endpoint:
+          type: string
+          format: uri
+          description: "Dynamic Client Registration endpoint URL"
+        scopes_supported:
+          type: array
+          items:
+            type: string
+          description: "Supported OAuth scopes"
+        response_types_supported:
+          type: array
+          items:
+            type: string
+          description: "Supported response types"
+        grant_types_supported:
+          type: array
+          items:
+            type: string
+          description: "Supported grant types"
+        subject_types_supported:
+          type: array
+          items:
+            type: string
+          description: "Supported subject types"
+        id_token_signing_alg_values_supported:
+          type: array
+          items:
+            type: string
+          description: "Supported ID token signing algorithms"
+        token_endpoint_auth_methods_supported:
+          type: array
+          items:
+            type: string
+          description: "Supported token endpoint authentication methods"
 
+    OidcTokenResponse:
+      type: object
+      description: "OIDC token response"
+      properties:
+        access_token:
+          type: string
+          description: "The access token"
+        token_type:
+          type: string
+          description: "Token type (e.g. Bearer)"
+        expires_in:
+          type: integer
+          description: "Token expiration time in seconds"
+        id_token:
+          type: string
+          description: "ID token (if openid scope was requested)"
+        refresh_token:
+          type: string
+          description: "Refresh token (if offline_access scope was requested)"
+        scope:
+          type: string
+          description: "Granted scopes"
 
+    OidcUserInfo:
+      type: object
+      description: "OIDC UserInfo claims"
+      properties:
+        sub:
+          type: string
+          description: "Subject identifier (user ID)"
+        name:
+          type: string
+          description: "User display name"
+        email:
+          type: string
+          description: "User email address"
+        department:
+          type: string
+          description: "User department"
+        group:
+          type: string
+          description: "User group"
 
+    OidcClientRegistration:
+      type: object
+      description: "Client metadata for OIDC dynamic client registration"
+      properties:
+        client_name:
+          type: string
+          description: "Human-readable client name"
+          example: "My OIDC Client"
+        redirect_uris:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: "List of allowed redirect URIs"
+          example: [ "http://localhost:8080/cb" ]
+        grant_types:
+          type: array
+          items:
+            type: string
+          description: "List of OAuth grant types"
+          example: [ "authorization_code", "refresh_token" ]
+        response_types:
+          type: array
+          items:
+            type: string
+          description: "List of OAuth response types"
+          example: [ "code" ]
+        scope:
+          type: string
+          description: "Space-separated list of default scopes"
+          example: "openid profile"
+        token_endpoint_auth_method:
+          type: string
+          enum: [ client_secret_basic, client_secret_post, none ]
+          description: "Token endpoint authentication method"
+          example: "client_secret_basic"
+        application_type:
+          type: string
+          enum: [ web, native ]
+          description: "Application type"
+          example: "web"
+        logo_uri:
+          type: string
+          format: uri
+          description: "URL for the client logo"
+        client_uri:
+          type: string
+          format: uri
+          description: "URL of the client application"
+        policy_uri:
+          type: string
+          format: uri
+          description: "URL of the client's privacy policy"
+        tos_uri:
+          type: string
+          format: uri
+          description: "URL of the client's terms of service"
+      required:
+        - client_name
+        - redirect_uris
+
+    OidcClientResponse:
+      type: object
+      description: "Response from OIDC client registration"
+      properties:
+        client_id:
+          type: string
+          description: "Unique client identifier"
+        client_secret:
+          type: string
+          description: "Client secret (for confidential clients)"
+        client_secret_expires_at:
+          type: integer
+          description: "Timestamp when the client secret expires (0 if never)"
+        client_id_issued_at:
+          type: integer
+          description: "Timestamp when the client was registered"
+        registration_access_token:
+          type: string
+          description: "Token for subsequent client management operations"
+        registration_client_uri:
+          type: string
+          format: uri
+          description: "URL for managing this client registration"
+        client_name:
+          type: string
+          description: "Human-readable client name"
+        redirect_uris:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: "Allowed redirect URIs"
+        grant_types:
+          type: array
+          items:
+            type: string
+          description: "Grant types"
+        response_types:
+          type: array
+          items:
+            type: string
+          description: "Response types"
+        scope:
+          type: string
+          description: "Default scopes"
+        token_endpoint_auth_method:
+          type: string
+          description: "Token endpoint authentication method"
 
   securitySchemes:
     userAuth:
@@ -840,3 +1351,8 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    oidcRegistrationToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Initial access token or registration access token for OIDC dynamic client registration. Set via the OIDC_REGISTRATION_TOKEN environment variable."

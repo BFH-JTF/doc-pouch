@@ -6,13 +6,5 @@ services:
     volumes:
       - "./db:/app/db"
       - "./log:/app/log"
-    environment:
-      - PORT=3030
-      - MEMORY_ONLY=false
-      - PREFIX=test_
-      - JWT_SECRET=your-secure-jwt-secret-here
-      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
-      - ALLOWED_HEADERS=Content-Type,Authorization
-      - OIDC_ISSUER=https://localhost:3030
-      - OIDC_REGISTRATION_TOKEN=TestToken
+    env_file: ./.env
     restart: unless-stopped

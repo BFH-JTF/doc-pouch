@@ -18,6 +18,7 @@ import AdmZip from "adm-zip";
 import {JWTOptions} from "./webTokenStuff.js";
 import {getCachedUpdateResult} from "./updateChecker.js";
 import * as oidc from "oidc-provider";
+import OidcAdapter from "./OidcAdapter.js";
 import type {I_CorsOption} from "../types.ts";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
@@ -136,7 +137,8 @@ export default class NetworkManager {
             }]
         };
 
-        this.oidcProvider = new oidc.Provider(process.env.OIDC_ISSUER || "http://localhost:3000", {
+        this.oidcProvider = new oidc.Provider(process.env.OIDC_ISSUER || `http://localhost:${port}`, {
+            adapter: OidcAdapter,
             jwks: jwks,
             cookies: {
                 keys: [process.env.OIDC_COOKIE_KEY || 'docpouch-cookie-secret-change-in-production'],
@@ -144,6 +146,7 @@ export default class NetworkManager {
                 short: {secure: process.env.NODE_ENV === 'production', httpOnly: true, sameSite: 'lax'}
             },
             features: {
+                devInteractions: {enabled: false},
                 registration: {
                     enabled: true,
                     initialAccessToken: process.env.OIDC_REGISTRATION_TOKEN,
@@ -155,7 +158,7 @@ export default class NetworkManager {
             },
             interactions: {
                 url: (ctx, interaction) => {
-                    return `/oidc/interaction/${interaction.uid}`;
+                    return `/interaction/${interaction.uid}`;
                 }
             },
             renderError: (ctx, out, error) => {
@@ -207,7 +210,10 @@ export default class NetworkManager {
         this.expressApp.use(cors(this.corsOptions));
         this.expressApp.use(express.static(vuePath));
         // Serve OIDC login page and static assets
-        this.expressApp.use('/oidc/static', express.static(path.resolve(process.cwd(), 'src/srv')));
+        const oidcStaticPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv'))
+            ? path.resolve(process.cwd(), 'dist/srv')
+            : path.resolve(process.cwd(), 'src/srv');
+        this.expressApp.use('/oidc/static', express.static(oidcStaticPath));
         this.expressApp.use(express.json());
         this.expressApp.use(cspMiddleware);
         this.expressApp.disable('etag'); // Disable ETag header to prevent caching of responses
@@ -219,7 +225,7 @@ export default class NetworkManager {
         });
 
         // Serve OIDC login page
-        this.expressApp.get('/oidc/interaction/:uid', async (req, res) => {
+        this.expressApp.get('/interaction/:uid', async (req, res) => {
             try {
                 // Verify the interaction exists
                 await this.oidcProvider.interactionDetails(req, res);
@@ -227,14 +233,16 @@ export default class NetworkManager {
                 const htmlPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/oidc-login.html'))
                     ? path.resolve(process.cwd(), 'dist/srv/oidc-login.html')
                     : path.resolve(process.cwd(), 'src/srv/oidc-login.html');
-                res.sendFile(htmlPath);
+                let html = fs.readFileSync(htmlPath, 'utf8');
+                html = html.replace(/__NONCE__/g, res.locals.nonce);
+                res.type('html').send(html);
             } catch (err) {
                 res.status(400).send('Invalid or expired login session. Please try again.');
             }
         });
 
         // API endpoint to get interaction details (for displaying client info)
-        this.expressApp.get('/oidc/interaction/:uid/details', async (req, res) => {
+        this.expressApp.get('/interaction/:uid/details', async (req, res) => {
             try {
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
                 const client = interaction.params?.client_id
@@ -251,7 +259,7 @@ export default class NetworkManager {
         });
 
         // Handle login form submission
-        this.expressApp.post('/oidc/interaction/:uid', async (req, res) => {
+        this.expressApp.post('/interaction/:uid', async (req, res) => {
             try {
                 const {uid, prompt} = await this.oidcProvider.interactionDetails(req, res);
                 const {name, password} = req.body;
@@ -281,6 +289,30 @@ export default class NetworkManager {
             }
         });
         this.expressApp.use("/oidc", this.oidcProvider.callback());
+
+        // Proxy well-known OIDC discovery to the OIDC provider (mounted at /oidc)
+        this.expressApp.get('/.well-known/openid-configuration', (req, res) => {
+            const options = {
+                hostname: 'localhost',
+                port: this.port,
+                path: '/oidc/.well-known/openid-configuration',
+                method: 'GET',
+                headers: {...req.headers, host: `localhost:${this.port}`}
+            };
+            const proxyReq = http.request(options, (proxyRes) => {
+                res.status(proxyRes.statusCode || 500);
+                ['content-type', 'content-length', 'cache-control'].forEach(header => {
+                    if (proxyRes.headers[header]) {
+                        res.setHeader(header, proxyRes.headers[header] as string);
+                    }
+                });
+                proxyRes.pipe(res);
+            });
+            proxyReq.on('error', () => {
+                res.status(500).json({error: 'Failed to fetch OIDC configuration'});
+            });
+            proxyReq.end();
+        });
 
         this.expressApp.get('/users/list', this.authenticate, (req, res) => {
             this.dataManager.getUsers(req.userid)
@@ -803,7 +835,8 @@ export default class NetworkManager {
                 req.path.startsWith('/docs') ||
                 req.path.startsWith('/types') ||
                 req.path.startsWith('/structures') ||
-                req.path.startsWith('/database')) {
+                req.path.startsWith('/database') ||
+                req.path.startsWith('/.well-known')) {
                 return next();
             }
 
