@@ -32,6 +32,15 @@ interface I_LegacyDocumentType {
 }
 
 const serverPort = 3030;
+
+interface I_OidcClientConfig {
+  issuer: string;
+  clientId: string;
+  redirectUri: string;
+  scope: string;
+}
+
+const oidcConfig = ref<I_OidcClientConfig | null>(null);
 enum DisplayComponent {
   documentViewer,
   userViewer,
@@ -318,17 +327,96 @@ async function checkForUpdates() {
   }
 }
 
-onMounted(async () => {
-  const storedToken = localStorage.getItem('authToken');
+async function syncOidcUserInfo() {
+  const token = apiClient.getToken();
+  if (!token) return false;
+  try {
+    const meResponse = await fetch('/users/whoami', {
+      headers: {'Authorization': `Bearer ${token}`}
+    });
+    if (meResponse.ok) {
+      const me = await meResponse.json();
+      loggedInUsername.value = me.name;
+      localStorage.setItem('isAdmin', String(me.isAdmin));
+      return true;
+    }
+  } catch {
+  }
+  return false;
+}
 
+onMounted(async () => {
+  // Fetch OIDC config for later use
+  try {
+    const configResponse = await fetch('/api/oidc-client-config');
+    if (configResponse.ok) {
+      const config = await configResponse.json();
+      oidcConfig.value = config;
+      apiClient.setOidcConfig(config);
+    }
+  } catch {
+  }
+
+  // 1. Try OIDC callback (URL has code/state from OIDC redirect)
+  try {
+    const handled = await apiClient.handleOidcCallback();
+    if (handled) {
+      const token = apiClient.getToken();
+      if (token) {
+        console.log("OIDC callback handled, authenticating with OIDC token");
+        authToken.value = token;
+        showLoginDialog.value = false;
+        localStorage.setItem('authMethod', 'oidc');
+        await syncOidcUserInfo();
+        await fetchData();
+        await checkForUpdates();
+        return;
+      }
+    }
+  } catch (e) {
+    console.error("OIDC callback error:", e);
+  }
+
+  // 2. Try OIDC session restore
+  if (apiClient.restoreOidcSession()) {
+    const token = apiClient.getToken();
+    if (token) {
+      console.log("OIDC session restored");
+      authToken.value = token;
+      showLoginDialog.value = false;
+      localStorage.setItem('authMethod', 'oidc');
+      await syncOidcUserInfo();
+      await fetchData();
+      await checkForUpdates();
+      return;
+    }
+  }
+
+  // 3. Fallback to JWT token
+  const storedToken = localStorage.getItem('authToken');
   if (storedToken) {
     console.log("Found token in local storage. Setting it.");
     setToken(storedToken);
-
     await fetchData();
     await checkForUpdates();
   }
 });
+
+async function startOidcLogin() {
+  try {
+    if (!oidcConfig.value) {
+      const configResponse = await fetch('/api/oidc-client-config');
+      if (configResponse.ok) {
+        oidcConfig.value = await configResponse.json();
+      }
+    }
+    if (oidcConfig.value) {
+      await apiClient.loginWithOidc(oidcConfig.value);
+    }
+  } catch (e) {
+    console.error("OIDC login failed:", e);
+  }
+}
 
 function handleDialogUpdate(isUnknown: boolean) {
   showLoginDialog.value = isUnknown;
@@ -388,8 +476,11 @@ function handleUserRemoved(userID: string) {
 }
 
 function handleLogout() {
-  setToken(null);
+  apiClient.logout();
+  authToken.value = null;
+  localStorage.removeItem('authToken');
   localStorage.removeItem('isAdmin');
+  localStorage.removeItem('authMethod');
   userArray.value = [];
   docArray.value = [];
   structureArray.value = [];
@@ -408,7 +499,11 @@ function handleApiError(error: unknown, context: string = "API operation") {
   if (error instanceof Error) {
     if (error.message.includes('401') || error.message.includes('Unauthorized') ||
         error.message.includes('403') || error.message.includes('Forbidden')) {
-      setToken(null);
+      apiClient.logout();
+      authToken.value = null;
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('isAdmin');
+      localStorage.removeItem('authMethod');
       showLoginDialog.value = true;
     } else if (error.message.includes('204')) {
       if (context.includes("specific document")) {
@@ -766,6 +861,7 @@ async function migrateDatabase() {
       </v-footer>
       <LoginDialog v-if="!authToken" v-model:show="showLoginDialog"
                    :api-client="apiClient" @login-success="handleLoginSuccess"
+                   @oidc-login="startOidcLogin"
                    @update:show="handleDialogUpdate"/>
       <AboutDialog :show="showAboutDialog" @close="showAboutDialog = false"/>
       <ImportDatabaseDialog :show="showImportDialog" @close="showImportDialog = false" @logout="handleLogout"/>

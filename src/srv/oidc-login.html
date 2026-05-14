@@ -163,10 +163,10 @@
         Use your DocPouch credentials to sign in. If you don't have an account, contact your administrator.
     </div>
 
-    <form id="loginForm">
+    <form id="loginForm" action="/interaction/__UID__" method="POST">
         <div class="form-group">
             <label for="username">Username</label>
-            <input id="username" autocomplete="username" autofocus name="username" required type="text">
+            <input id="username" autocomplete="username" autofocus name="name" required type="text">
         </div>
 
         <div class="form-group">
@@ -179,15 +179,12 @@
 </div>
 
 <script nonce="__NONCE__">
-    const urlParams = new URLSearchParams(window.location.search);
-    const uid = urlParams.get('uid');
+    const UID = '__UID__';
 
     // Display client info if available
     async function loadInteractionDetails() {
-        if (!uid) return;
-
         try {
-            const response = await fetch(`/interaction/${uid}/details`);
+            const response = await fetch(`/interaction/${UID}/details`);
             if (response.ok) {
                 const data = await response.json();
                 if (data.clientName) {
@@ -202,50 +199,18 @@
 
     loadInteractionDetails();
 
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-        const submitButton = document.getElementById('submitButton');
+    // Show error message from URL params (redirected back after failed login)
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('error')) {
         const errorMessage = document.getElementById('errorMessage');
+        errorMessage.textContent = params.get('error');
+        errorMessage.classList.add('show');
+    }
 
-        errorMessage.classList.remove('show');
+    document.getElementById('loginForm').addEventListener('submit', () => {
+        const submitButton = document.getElementById('submitButton');
         submitButton.disabled = true;
         submitButton.textContent = 'Signing in...';
-
-        try {
-            const response = await fetch(`/interaction/${uid}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    name: username,
-                    password: password
-                })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-
-                if (data.redirect) {
-                    window.location.href = data.redirect;
-                } else {
-                    window.location.href = '/';
-                }
-            } else {
-                const error = await response.json();
-                errorMessage.textContent = error.error || 'Invalid username or password';
-                errorMessage.classList.add('show');
-            }
-        } catch (err) {
-            errorMessage.textContent = 'An error occurred. Please try again.';
-            errorMessage.classList.add('show');
-        } finally {
-            submitButton.disabled = false;
-            submitButton.textContent = 'Sign In';
-        }
     });
 </script>
 </body>

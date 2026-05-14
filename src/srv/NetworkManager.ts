@@ -84,7 +84,7 @@ export function cspMiddleware(req: Request, res: Response, next: NextFunction) {
         "object-src 'none'",
         "base-uri 'self'",
         "frame-ancestors 'none'",
-        "upgrade-insecure-requests",
+        ...(process.env.NODE_ENV === 'production' ? ["upgrade-insecure-requests"] : []),
     ].join('; ');
 
     res.setHeader('Content-Security-Policy', csp);
@@ -137,7 +137,7 @@ export default class NetworkManager {
             }]
         };
 
-        this.oidcProvider = new oidc.Provider(process.env.OIDC_ISSUER || `http://localhost:${port}`, {
+        this.oidcProvider = new oidc.Provider(process.env.OIDC_ISSUER || `http://localhost:${port}/oidc`, {
             adapter: OidcAdapter,
             jwks: jwks,
             cookies: {
@@ -160,6 +160,30 @@ export default class NetworkManager {
                 url: (ctx, interaction) => {
                     return `/interaction/${interaction.uid}`;
                 }
+            },
+            findAccount: async (ctx, sub, token) => {
+                const user = await (this as any).dataManager.getUserByID(sub);
+                if (!user) return undefined;
+                return {
+                    accountId: sub,
+                    async claims(use, scope) {
+                        const result: Record<string, unknown> = {sub};
+                        if (scope) {
+                            const scopes = scope.split(' ');
+                            if (scopes.includes('profile')) {
+                                result.name = (user as any).name;
+                            }
+                            if (scopes.includes('email') && (user as any).email) {
+                                result.email = (user as any).email;
+                            }
+                        }
+                        return result as any;
+                    }
+                };
+            },
+            ttl: {
+                Interaction: 3600,
+                Session: 86400,
             },
             renderError: (ctx, out, error) => {
                 ctx.status = (error as any)?.status || 500;
@@ -214,9 +238,91 @@ export default class NetworkManager {
             ? path.resolve(process.cwd(), 'dist/srv')
             : path.resolve(process.cwd(), 'src/srv');
         this.expressApp.use('/oidc/static', express.static(oidcStaticPath));
-        this.expressApp.use(express.json());
         this.expressApp.use(cspMiddleware);
         this.expressApp.disable('etag'); // Disable ETag header to prevent caching of responses
+
+        // OIDC client config endpoint (must be before the OIDC provider mount)
+        this.expressApp.get('/api/oidc-client-config', async (req, res) => {
+            try {
+                const host = req.headers.host || `localhost:${this.port}`;
+                const protocol = req.headers['x-forwarded-proto'] || 'http';
+                const redirectUri = `${protocol}://${host}/`;
+                const clientId = 'docpouch-admin-ui';
+                const clientAdapter = new OidcAdapter('Client');
+                const existing = await clientAdapter.find(clientId);
+                let registeredClientId: string | null = existing ? (existing.client_id || existing._id) : null;
+
+                if (!registeredClientId) {
+                    const registrationToken = process.env.OIDC_REGISTRATION_TOKEN;
+                    if (registrationToken) {
+                        try {
+                            const regResponse = await fetch(`http://localhost:${this.port}/oidc/reg`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${registrationToken}`,
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    client_name: 'DocPouch Admin UI',
+                                    redirect_uris: [redirectUri],
+                                    grant_types: ['authorization_code', 'refresh_token'],
+                                    response_types: ['code'],
+                                    token_endpoint_auth_method: 'none',
+                                    application_type: 'web',
+                                }),
+                            });
+                            if (regResponse.ok) {
+                                const data = await regResponse.json();
+                                registeredClientId = data.client_id;
+                                this.logger.info(`Admin UI OIDC client registered: ${registeredClientId}`);
+                            } else {
+                                this.logger.warn(`OIDC registration endpoint failed, falling back to manual client creation`);
+                            }
+                        } catch {
+                            this.logger.warn('OIDC registration call failed, falling back to manual client creation');
+                        }
+                    }
+
+                    if (!registeredClientId) {
+                        try {
+                            const client = new this.oidcProvider.Client({
+                                client_id: clientId,
+                                client_name: 'DocPouch Admin UI',
+                                redirect_uris: [redirectUri],
+                                grant_types: ['authorization_code', 'refresh_token'],
+                                response_types: ['code'],
+                                token_endpoint_auth_method: 'none',
+                                application_type: 'web',
+                            });
+                            await clientAdapter.upsert(client.clientId, client.metadata(), client.expiresAt);
+                            registeredClientId = client.clientId;
+                            this.logger.info(`Admin UI OIDC client created manually: ${registeredClientId}`);
+                        } catch (err: any) {
+                            this.logger.error(`Manual client creation failed: ${err.message}`);
+                            res.status(500).json({error: 'Failed to create OIDC client'});
+                            return;
+                        }
+                    }
+                }
+
+                res.json({
+                    issuer: process.env.OIDC_ISSUER || `${protocol}://${host}/oidc`,
+                    clientId: registeredClientId,
+                    redirectUri,
+                    scope: 'openid profile email offline_access',
+                });
+            } catch (err: any) {
+                this.logger.error(`OIDC client config error: ${err.message}`);
+                res.status(500).json({error: 'Failed to get OIDC configuration'});
+            }
+        });
+
+        // Mount OIDC provider before body parser to avoid upstream parser warning
+        this.expressApp.use("/oidc", this.oidcProvider.callback());
+
+        // Body parser for non-OIDC routes only
+        this.expressApp.use(express.json());
+        this.expressApp.use(express.urlencoded({extended: true}));
 
         // Configure multer for file uploads
         const upload = multer({
@@ -227,14 +333,32 @@ export default class NetworkManager {
         // Serve OIDC login page
         this.expressApp.get('/interaction/:uid', async (req, res) => {
             try {
-                // Verify the interaction exists
-                await this.oidcProvider.interactionDetails(req, res);
+                const interaction = await this.oidcProvider.interactionDetails(req, res);
+
+                // Auto-accept consent for the admin UI (user already authenticated)
+                if (interaction.prompt?.name === 'consent') {
+                    const grant = new this.oidcProvider.Grant({
+                        accountId: interaction.session?.accountId,
+                        clientId: interaction.params?.client_id,
+                    });
+                    if (interaction.prompt.details?.missingOIDCScope) {
+                        grant.addOIDCScope(interaction.prompt.details.missingOIDCScope.join(' '));
+                    }
+                    if (interaction.prompt.details?.missingOIDCClaims) {
+                        grant.addOIDCClaims(interaction.prompt.details.missingOIDCClaims);
+                    }
+                    const grantId = await grant.save();
+                    await this.oidcProvider.interactionFinished(req, res, {consent: {grantId}}, {mergeWithLastSubmission: true});
+                    return;
+                }
+
                 // Try dist first (production), fall back to src (development)
                 const htmlPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/oidc-login.html'))
                     ? path.resolve(process.cwd(), 'dist/srv/oidc-login.html')
                     : path.resolve(process.cwd(), 'src/srv/oidc-login.html');
                 let html = fs.readFileSync(htmlPath, 'utf8');
                 html = html.replace(/__NONCE__/g, res.locals.nonce);
+                html = html.replace(/__UID__/g, req.params.uid);
                 res.type('html').send(html);
             } catch (err) {
                 res.status(400).send('Invalid or expired login session. Please try again.');
@@ -261,35 +385,35 @@ export default class NetworkManager {
         // Handle login form submission
         this.expressApp.post('/interaction/:uid', async (req, res) => {
             try {
-                const {uid, prompt} = await this.oidcProvider.interactionDetails(req, res);
-                const {name, password} = req.body;
+                const interaction = await this.oidcProvider.interactionDetails(req, res);
+                const {uid, prompt} = interaction;
 
-                // Validate user using existing user store
-                const user = await this.dataManager.validateUser(name, password);
-                if (typeof user === 'number') {
-                    res.status(401).json({error: 'Invalid username or password'});
-                    return;
+                if (prompt?.name === 'login') {
+                    const {name, password} = req.body;
+                    const user = await this.dataManager.validateUser(name, password);
+                    if (typeof user === 'number') {
+                        res.redirect(`/interaction/${uid}?error=Invalid+username+or+password`);
+                        return;
+                    }
+                    await this.oidcProvider.interactionFinished(req, res, {login: {accountId: user._id}}, {mergeWithLastSubmission: false});
+                } else if (prompt?.name === 'consent') {
+                    const grant = new this.oidcProvider.Grant({
+                        accountId: interaction.session?.accountId,
+                        clientId: interaction.params?.client_id,
+                    });
+                    if (prompt.details?.missingOIDCScope) {
+                        grant.addOIDCScope(prompt.details.missingOIDCScope.join(' '));
+                    }
+                    if (prompt.details?.missingOIDCClaims) {
+                        grant.addOIDCClaims(prompt.details.missingOIDCClaims);
+                    }
+                    const grantId = await grant.save();
+                    await this.oidcProvider.interactionFinished(req, res, {consent: {grantId}}, {mergeWithLastSubmission: true});
                 }
-
-                // Build the result based on prompt type
-                const result: any = {
-                    login: {accountId: user._id}
-                };
-
-                // Handle consent if needed
-                if (prompt.name === 'consent') {
-                    result.consent = {
-                        granted: true
-                    };
-                }
-
-                await this.oidcProvider.interactionFinished(req, res, result, {mergeWithLastSubmission: false});
             } catch (err) {
-                res.status(500).json({error: 'Login failed. Please try again.'});
+                res.redirect(`/interaction/${req.params.uid}?error=Login+failed.+Please+try+again.`);
             }
         });
-        this.expressApp.use("/oidc", this.oidcProvider.callback());
-
         // Proxy well-known OIDC discovery to the OIDC provider (mounted at /oidc)
         this.expressApp.get('/.well-known/openid-configuration', (req, res) => {
             const options = {
@@ -364,7 +488,12 @@ export default class NetworkManager {
                                     this.logger.info("Creating JWT token");
                                     let token = jwt.sign({id: user._id}, JWTOptions.secret, JWTOptions.settings as jwt.SignOptions);
                                     this.logger.debug("Sending successful response");
-                                    res.json({token: token, isAdmin: user.isAdmin || false, userName: user.name});
+                                    res.json({
+                                        token: token,
+                                        isAdmin: user.isAdmin || false,
+                                        userName: user.name,
+                                        _id: user._id
+                                    });
                                 } else {
                                     res.status(401).json({error: "Invalid user or password"});
                                 }
@@ -379,6 +508,24 @@ export default class NetworkManager {
                 res.status(500).json({error: "Internal server error"});
             }
         })
+
+        this.expressApp.get("/users/whoami", this.authenticate, async (req, res) => {
+            try {
+                const user = await this.dataManager.getUserByID(req.userid);
+                if (user) {
+                    res.json({
+                        _id: user._id,
+                        name: user.name,
+                        isAdmin: user.isAdmin || false,
+                        email: user.email,
+                    });
+                } else {
+                    res.status(404).json({error: 'User not found'});
+                }
+            } catch (err) {
+                res.status(500).json({error: 'Error fetching user info'});
+            }
+        });
 
         this.expressApp.patch("/users/update/:userID", this.authenticate, (req: Request, res: Response) => {
             const validatedObject = this.validator.getValidatedObject("userUpdate", req.body);

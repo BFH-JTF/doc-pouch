@@ -3,7 +3,11 @@ import NeDbWrapper, {type INeDbOptions} from "./NeDbWrapper.js";
 import winston from "winston";
 import fs from "fs";
 import {checkForUpdates} from "./updateChecker.js";
+import {initOidcDatabases} from "./OidcAdapter.js";
 import type {I_CorsOption} from "../types.ts";
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || "*";
 const ALLOWED_HEADERS = process.env.ALLOWED_HEADERS || "Content-Type, Authorization";
@@ -29,7 +33,7 @@ if (!fs.existsSync(dbPath)) {
 }
 
 let winstonLogger = winston.createLogger({
-    level: 'info',
+    level: process.env.LOG_LEVEL || 'info',
     defaultMeta: { service: 'user-service' },
     format: winston.format.combine(
         winston.format.timestamp(),
@@ -56,6 +60,8 @@ let dbOptions: INeDbOptions = {
 }
 
 checkForUpdates(winstonLogger);
+
+initOidcDatabases('./db', MEMORY_ONLY);
 
 const dataManager = new NeDbWrapper(winstonLogger, dbOptions);
 

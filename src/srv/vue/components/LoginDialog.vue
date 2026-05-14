@@ -11,6 +11,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:show': [value: boolean];
   'login-success': [loginInformation: I_LoginResponse];
+  'oidc-login': [];
 }>();
 
 const username = ref('');
@@ -95,6 +96,20 @@ async function handleLogin() {
         >
           Login
         </v-btn>
+      </v-card-actions>
+      <v-divider class="mx-4 my-1">
+        <span class="text-caption text-grey">or</span>
+      </v-divider>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn
+            color="secondary"
+            variant="outlined"
+            @click="emit('oidc-login')"
+        >
+          Login with OIDC
+        </v-btn>
+        <v-spacer></v-spacer>
       </v-card-actions>
     </v-card>
   </v-dialog>

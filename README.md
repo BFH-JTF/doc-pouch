@@ -291,3 +291,13 @@ The DocPouch frontend provides an intuitive interface for managing documents, us
 - **User Management**: Create, view, update, and delete user accounts (admin only)
 - **Document Management**: View, edit, and delete documents with structured content
 - **Document Structure Management**: View document structures with various field types
+
+## Support the Project
+
+If you find DocPouch useful, consider supporting the project:
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/pantek">
+    <img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee/tea&emoji=&slug=pantek&button_colour=40DCA5&font_colour=ffffff&font=Comic&outline_colour=000000&coffee_colour=FFDD00" alt="Buy me a coffee/tea" />
+  </a>
+</p>
