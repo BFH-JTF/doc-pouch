@@ -41,15 +41,8 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
-    <<<<<<<
-    HEAD
     "@babel/preset-env": "^7.29.5",
-    =======
-    "@babel/preset-env": npm
-    i
-    "^7.29.5",
-    >>>>>>>
-    origin/cookie_auth
+    "@babel/preset-env": "^7.29.5",
     "@babel/preset-typescript": "^7.28.5",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
@@ -57,7 +50,6 @@
     "@types/archiver": "^7.0.0",
     "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.19",
-    "@types/dotenv": "^6.1.1",
     "@types/express": "^5.0.6",
     "@types/express-ws": "^3.0.6",
     "@types/jest": "^30.0.0",
