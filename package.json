@@ -41,7 +41,15 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
+    <<<<<<<
+    HEAD
     "@babel/preset-env": "^7.29.5",
+    =======
+    "@babel/preset-env": npm
+    i
+    "^7.29.5",
+    >>>>>>>
+    origin/cookie_auth
     "@babel/preset-typescript": "^7.28.5",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
