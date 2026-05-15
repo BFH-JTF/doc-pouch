@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import DbPouchClient from "docpouch-client";
+import oidcBanner from '../assets/oidc-banner.jpg';
 import type {I_LoginResponse} from "docpouch-client";
 
 const props = defineProps<{
@@ -86,8 +87,7 @@ async function handleLogin() {
           </v-alert>
         </v-container>
       </v-card-text>
-      <v-card-actions>
-        <v-spacer></v-spacer>
+      <v-card-actions class="justify-center">
         <v-btn
           color="primary"
           variant="elevated"
@@ -97,20 +97,13 @@ async function handleLogin() {
           Login
         </v-btn>
       </v-card-actions>
-      <v-divider class="mx-4 my-1">
-        <span class="text-caption text-grey">or</span>
-      </v-divider>
-      <v-card-actions>
-        <v-spacer></v-spacer>
-        <v-btn
-            color="secondary"
-            variant="outlined"
-            @click="emit('oidc-login')"
-        >
-          Login with OIDC
-        </v-btn>
-        <v-spacer></v-spacer>
-      </v-card-actions>
+      <v-divider class="mx-4 my-2"></v-divider>
+      <v-img
+          :src="oidcBanner"
+          class="mx-4 my-2 rounded cursor-pointer"
+          style="cursor: pointer;"
+          @click="emit('oidc-login')"
+      ></v-img>
     </v-card>
   </v-dialog>
 </template>
