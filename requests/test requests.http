@@ -1,0 +1,145 @@
+### Admin Login
+POST {{base-url}}/users/login/
+Content-Type: application/json
+
+{
+  "name": "admin",
+  "password": "adminSecret"
+}
+> {% client.global.set("auth_token", response.body.token); %}
+
+### Create Test User 1
+POST {{base-url}}/users/create
+Content-Type: application/json
+Authorization: Bearer {{auth_token}}
+
+{
+  "name": "Test User 1",
+  "password": "testPassword123",
+  "email": "testuser1@example.com",
+  "department": "Testing",
+  "group": "QA Team",
+  "isAdmin": false
+}
+
+### Create Test User 2
+POST {{base-url}}/users/create
+Content-Type: application/json
+Authorization: Bearer {{auth_token}}
+
+{
+  "name": "Test User 2",
+  "password": "testPassword123",
+  "email": "testuser2@example.com",
+  "department": "Testing",
+  "group": "Marketing Team",
+  "isAdmin": false
+}
+
+### Login as Test User 1
+POST {{base-url}}/users/login/
+Content-Type: application/json
+
+{
+  "name": "Test User 1",
+  "password": "testPassword123"
+}
+> {% client.global.set("user1_token", response.body.token); %}
+
+### Create Document as Test User 1 (shared with department only)
+POST {{base-url}}/docs/create
+Content-Type: application/json
+Authorization: Bearer {{user1_token}}
+
+{
+  "title": "Test Document 1",
+  "type": 0,
+  "subType": 0,
+  "shareWithGroup": false,
+  "shareWithDepartment": true,
+  "content": {
+    "text": "This is a test document created by Test User 1, shared with department"
+  }
+}
+
+> {% client.global.set("doc1_id", response.body._id); %}
+
+### Login as Test User 2
+POST {{base-url}}/users/login/
+Content-Type: application/json
+
+{
+  "name": "Test User 2",
+  "password": "testPassword123"
+}
+> {% client.global.set("user2_token", response.body.token); %}
+
+### Create Document as Test User 2 (not shared)
+POST {{base-url}}/docs/create
+Content-Type: application/json
+Authorization: Bearer {{user2_token}}
+
+{
+  "title": "Test Document 2",
+  "type": 0,
+  "subType": 0,
+  "shareWithGroup": true,
+  "shareWithDepartment": false,
+  "content": {
+    "text": "This is a test document created by Test User 2, not shared with department"
+  }
+}
+
+> {% client.global.set("doc2_id", response.body._id); %}
+
+### Test User 1 - List Documents
+GET {{base-url}}/docs/list
+Authorization: Bearer {{user1_token}}
+
+### Test User 2 - List Documents
+GET {{base-url}}/docs/list
+Authorization: Bearer {{user2_token}}
+
+### Test User 1 - Try to fetch Document 1 (should succeed)
+POST {{base-url}}/docs/fetch
+Content-Type: application/json
+Authorization: Bearer {{user1_token}}
+
+[
+  {
+    "_id": "{{doc1_id}}"
+  }
+]
+
+### Test User 1 - Try to fetch Document 2 (should fail)
+POST {{base-url}}/docs/fetch
+Content-Type: application/json
+Authorization: Bearer {{user1_token}}
+
+[
+  {
+    "_id": "{{doc2_id}}"
+  }
+]
+
+### Test User 2 - Try to fetch Document 1 (should succeed - shared via department)
+POST {{base-url}}/docs/fetch
+Content-Type: application/json
+Authorization: Bearer {{user2_token}}
+
+[
+  {
+    "_id": "{{doc1_id}}"
+  }
+]
+
+### Test User 2 - Try to fetch Document 2 (should succeed - owner)
+POST {{base-url}}/docs/fetch
+Content-Type: application/json
+Authorization: Bearer {{user2_token}}
+
+[
+  {
+    "_id": "{{doc2_id}}"
+  }
+]

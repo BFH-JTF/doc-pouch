@@ -132,3 +132,15 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
+# IDE / editor
+.idea/
+.claude/
+.42c/
+
+# Data / temp
+db/
+server.err
+
+# Backups
+*.backup
+
