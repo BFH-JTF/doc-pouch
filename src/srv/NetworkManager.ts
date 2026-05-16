@@ -13,7 +13,7 @@ import * as http from "node:http";
 import * as os from "node:os";
 import fs from "fs";
 import multer from "multer";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import AdmZip from "adm-zip";
 import {JWTOptions} from "./webTokenStuff.js";
 import {getCachedUpdateResult} from "./updateChecker.js";
@@ -807,7 +807,7 @@ export default class NetworkManager {
 
                     const zipFilename = `docpouch-database-${Date.now()}.zip`;
                     const output = fs.createWriteStream(zipFilename);
-                    const archive = archiver('zip', {
+                    const archive = new ZipArchive({
                         zlib: {level: 9}
                     });
 
