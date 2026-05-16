@@ -1,3 +1,23 @@
+# [1.8.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.7.1...v1.8.0) (2026-05-16)
+
+
+### Bug Fixes
+
+* add type assertions for req.params and include p field in JWK export ([1d52279](https://github.com/BFH-JTF/doc-pouch/commit/1d52279c048be588f56b762c4ebe9e4c9db96e1e))
+* correcting package.json ([0455bf4](https://github.com/BFH-JTF/doc-pouch/commit/0455bf4f8338011f376fb1a9f4427b846293a545))
+* correcting package.json ([dddf4c3](https://github.com/BFH-JTF/doc-pouch/commit/dddf4c343f70b19ea06c74c96f2cfd83eb4de148))
+* persist OIDC state, fix Docker build, and improve OIDC login page ([79e811d](https://github.com/BFH-JTF/doc-pouch/commit/79e811d5ec80598dc0b91b93e015a2ca0502be67))
+* remove unused [@types](https://github.com/types) dependencies and fix archiver import ([5fc1c31](https://github.com/BFH-JTF/doc-pouch/commit/5fc1c31c4012cbf74b1d73aee2c5031244cdf401))
+* updating dependencies and updating package.json ([b206c42](https://github.com/BFH-JTF/doc-pouch/commit/b206c4291602e2b0f448750c17692d566c4775a9))
+
+
+### Features
+
+* add OIDC provider support with NeDB adapter and clean up legacy type components ([ed5aa48](https://github.com/BFH-JTF/doc-pouch/commit/ed5aa483f5b50a8bd2e0667133c544322e3fc7e5))
+* implement OIDC authentication provider with JWT fallback ([5c02139](https://github.com/BFH-JTF/doc-pouch/commit/5c02139fe46a042be1b4bd897accb612a0bb4e0f))
+* replace OIDC button with clickable banner image in login dialog ([4219a41](https://github.com/BFH-JTF/doc-pouch/commit/4219a41894acff097aa63bf9ec500c6013f658f0))
+* replace OIDC button with clickable banner image in login dialog ([24d1bd8](https://github.com/BFH-JTF/doc-pouch/commit/24d1bd8249d8e219737acf18502abd663bb9296a))
+
 ## [1.7.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.7.0...v1.7.1) (2026-05-03)
 
 
