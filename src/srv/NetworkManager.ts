@@ -138,6 +138,7 @@ export default class NetworkManager {
         };
 
         this.oidcProvider = new oidc.Provider(process.env.OIDC_ISSUER || `http://localhost:${port}/oidc`, {
+            proxy: true,
             adapter: OidcAdapter,
             jwks: jwks,
             cookies: {
@@ -421,7 +422,7 @@ export default class NetworkManager {
                 port: this.port,
                 path: '/oidc/.well-known/openid-configuration',
                 method: 'GET',
-                headers: {...req.headers, host: `localhost:${this.port}`}
+                headers: req.headers
             };
             const proxyReq = http.request(options, (proxyRes) => {
                 res.status(proxyRes.statusCode || 500);

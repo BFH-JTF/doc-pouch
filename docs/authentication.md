@@ -224,12 +224,17 @@ curl http://localhost:3030/oidc/jwks
 
 ## Scopes Reference
 
-| Scope | Description |
-|-------|-------------|
-| `openid` | OpenID Connect authentication (required for OIDC) |
-| `profile` | Access to user profile (name, etc.) |
-| `email` | Access to user email |
-| `offline_access` | Issue refresh tokens |
+**The following are the only scopes supported by docPouch.** No other scopes are accepted.
+
+| Scope            | Description                                       |
+|------------------|---------------------------------------------------|
+| `openid`         | OpenID Connect authentication (required for OIDC) |
+| `profile`        | Include `name` in the user info claims            |
+| `email`          | Include `email` in the user info claims           |
+| `offline_access` | Issue refresh tokens                              |
+
+The `sub` claim is always included in user info responses regardless of scope. The `profile` and `email` scopes control
+whether `name` and `email` are included in the `/oidc/me` user info endpoint response.
 
 ---
 
