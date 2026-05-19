@@ -475,7 +475,13 @@ function handleUserRemoved(userID: string) {
       });
 }
 
-function handleLogout() {
+async function handleLogout() {
+  // Destroy OIDC server session to prevent auto-login on next OIDC attempt
+  try {
+    await fetch('/oidc/logout', {method: 'GET', credentials: 'include'});
+  } catch (e) {
+    console.error('Failed to destroy OIDC session:', e);
+  }
   apiClient.logout();
   authToken.value = null;
   localStorage.removeItem('authToken');

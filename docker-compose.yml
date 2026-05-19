@@ -1,6 +1,6 @@
 services:
   docPouch:
-    image: ghcr.io/bfh-jtf/doc-pouch:latest
+    image: docpouch:latest
     ports:
       - "3030:3030"
     volumes:

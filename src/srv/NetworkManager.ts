@@ -138,7 +138,6 @@ export default class NetworkManager {
         };
 
         this.oidcProvider = new oidc.Provider(process.env.OIDC_ISSUER || `http://localhost:${port}/oidc`, {
-            proxy: true,
             adapter: OidcAdapter,
             jwks: jwks,
             cookies: {
@@ -251,58 +250,40 @@ export default class NetworkManager {
                 const clientId = 'docpouch-admin-ui';
                 const clientAdapter = new OidcAdapter('Client');
                 const existing = await clientAdapter.find(clientId);
-                let registeredClientId: string | null = existing ? (existing.client_id || existing._id) : null;
 
-                if (!registeredClientId) {
-                    const registrationToken = process.env.OIDC_REGISTRATION_TOKEN;
-                    if (registrationToken) {
-                        try {
-                            const regResponse = await fetch(`http://localhost:${this.port}/oidc/reg`, {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${registrationToken}`,
-                                    'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({
-                                    client_name: 'DocPouch Admin UI',
-                                    redirect_uris: [redirectUri],
-                                    grant_types: ['authorization_code', 'refresh_token'],
-                                    response_types: ['code'],
-                                    token_endpoint_auth_method: 'none',
-                                    application_type: 'web',
-                                }),
-                            });
-                            if (regResponse.ok) {
-                                const data = await regResponse.json();
-                                registeredClientId = data.client_id;
-                                this.logger.info(`Admin UI OIDC client registered: ${registeredClientId}`);
-                            } else {
-                                this.logger.warn(`OIDC registration endpoint failed, falling back to manual client creation`);
-                            }
-                        } catch {
-                            this.logger.warn('OIDC registration call failed, falling back to manual client creation');
-                        }
+                let registeredClientId: string | null = null;
+
+                if (existing) {
+                    registeredClientId = (existing.client_id || existing._id || clientId) as string;
+                    // Update redirect URI if it has changed
+                    const existingUris = existing.redirect_uris || [];
+                    if (!existingUris.includes(redirectUri)) {
+                        const updatedUris = [...existingUris, redirectUri];
+                        await clientAdapter.upsert(registeredClientId, {
+                            ...existing,
+                            redirect_uris: updatedUris,
+                        }, existing.expiresAt);
+                        this.logger.info(`Updated OIDC client redirect URIs: ${JSON.stringify(updatedUris)}`);
                     }
-
-                    if (!registeredClientId) {
-                        try {
-                            const client = new this.oidcProvider.Client({
-                                client_id: clientId,
-                                client_name: 'DocPouch Admin UI',
-                                redirect_uris: [redirectUri],
-                                grant_types: ['authorization_code', 'refresh_token'],
-                                response_types: ['code'],
-                                token_endpoint_auth_method: 'none',
-                                application_type: 'web',
-                            });
-                            await clientAdapter.upsert(client.clientId, client.metadata(), client.expiresAt);
-                            registeredClientId = client.clientId;
-                            this.logger.info(`Admin UI OIDC client created manually: ${registeredClientId}`);
-                        } catch (err: any) {
-                            this.logger.error(`Manual client creation failed: ${err.message}`);
-                            res.status(500).json({error: 'Failed to create OIDC client'});
-                            return;
-                        }
+                } else {
+                    // Create client with fixed ID (skip dynamic registration for admin UI)
+                    try {
+                        const client = new this.oidcProvider.Client({
+                            client_id: clientId,
+                            client_name: 'DocPouch Admin UI',
+                            redirect_uris: [redirectUri],
+                            grant_types: ['authorization_code', 'refresh_token'],
+                            response_types: ['code'],
+                            token_endpoint_auth_method: 'none',
+                            application_type: 'web',
+                        });
+                        await clientAdapter.upsert(client.clientId, client.metadata(), client.expiresAt);
+                        registeredClientId = client.clientId;
+                        this.logger.info(`Admin UI OIDC client created: ${registeredClientId}`);
+                    } catch (err: any) {
+                        this.logger.error(`Client creation failed: ${err.message}`);
+                        res.status(500).json({error: 'Failed to create OIDC client'});
+                        return;
                     }
                 }
 
@@ -315,6 +296,44 @@ export default class NetworkManager {
             } catch (err: any) {
                 this.logger.error(`OIDC client config error: ${err.message}`);
                 res.status(500).json({error: 'Failed to get OIDC configuration'});
+            }
+        });
+
+        // OIDC logout endpoint (must be before the OIDC provider mount to intercept /oidc/logout)
+        this.expressApp.get('/oidc/logout', async (req, res) => {
+            try {
+                this.logger.info(`OIDC logout request received`);
+                this.logger.info(`Request headers cookie: ${req.headers.cookie || 'none'}`);
+
+                // Create a Koa-like context that oidc-provider can work with
+                const ctx = this.oidcProvider.createContext(req, res);
+                const session = await this.oidcProvider.Session.get(ctx);
+
+                this.logger.info(`Session found: ${!!session}, accountId: ${session?.accountId || 'none'}`);
+
+                if (session && session.accountId) {
+                    this.logger.info(`Destroying session with ID: ${session.id}`);
+                    await session.destroy();
+
+                    // Clear cookies - try multiple paths to ensure they're cleared
+                    const cookieName = this.oidcProvider.cookieName('session');
+                    const expires = new Date(0);
+                    const cookieHeaders = [
+                        `${cookieName}=; Path=/; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
+                        `${cookieName}.sig=; Path=/; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
+                        `${cookieName}=; Path=/oidc; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
+                        `${cookieName}.sig=; Path=/oidc; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
+                    ];
+
+                    res.setHeader('Set-Cookie', cookieHeaders);
+                    this.logger.info(`OIDC session destroyed, cleared cookies: ${cookieName}`);
+                } else {
+                    this.logger.info('OIDC logout: no active session found');
+                }
+                res.status(200).json({message: 'Logged out'});
+            } catch (err) {
+                this.logger.error('OIDC logout error:', (err as Error).message);
+                res.status(200).json({message: 'Logged out'});
             }
         });
 
