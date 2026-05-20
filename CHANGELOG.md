@@ -1,3 +1,11 @@
+## [1.8.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.8.0...v1.8.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* add proxy: true to OIDC Provider for correct URL generation behind reverse proxy ([4fadf98](https://github.com/BFH-JTF/doc-pouch/commit/4fadf9806a935bc769270404224457868b885587))
+* destroy OIDC session on logout to prevent auto-login ([349ed58](https://github.com/BFH-JTF/doc-pouch/commit/349ed588117c1f5db5a91bc4b6cffc9899bd2446))
+
 # [1.8.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.7.1...v1.8.0) (2026-05-16)
 
 
