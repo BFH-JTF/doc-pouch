@@ -106,6 +106,7 @@ export default class NetworkManager {
         this.corsOptions = corsOptions;
         this.port = port;
         this.expressApp = express();
+        this.expressApp.set('trust proxy', true);
         this.dataManager = dataManager;
         this.logger = logger;
         this.validator = new SchemaValidator(logger);
