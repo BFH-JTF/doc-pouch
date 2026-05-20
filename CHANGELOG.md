@@ -1,3 +1,10 @@
+## [1.8.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.8.1...v1.8.2) (2026-05-20)
+
+
+### Bug Fixes
+
+* enable trust proxy for OIDC behind reverse proxy ([8d200c1](https://github.com/BFH-JTF/doc-pouch/commit/8d200c19fb86b3a90b89af04c7cc340205a2bcfc))
+
 ## [1.8.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.8.0...v1.8.1) (2026-05-20)
 
 
