@@ -275,6 +275,107 @@ in the `docpouch_openAPI.yaml` file.
 
 > **Note**: API endpoints use standard HTTP response codes: `201` (Created), `204` (No Content), `403` (Forbidden), etc.
 
+## OpenID Connect (OIDC)
+
+DocPouch supports OIDC authentication. The `docpouch-client` library handles the entire flow automatically.
+
+### Setup
+
+**1. Register your client** (requires `OIDC_REGISTRATION_TOKEN` from admin):
+
+```ts
+import DbPouchClient from 'docpouch-client';
+
+const client = new DbPouchClient('http://localhost:3030', 3030);
+
+await client.registerOidcClient({
+  client_name: 'My App',
+  redirect_uris: ['http://localhost:8080/callback'],
+  grant_types: ['authorization_code'],
+  response_types: ['code'],
+  token_endpoint_auth_method: 'client_secret_basic',
+  application_type: 'web',
+}, 'YOUR_REGISTRATION_TOKEN');
+```
+
+**2. Fetch OIDC config and initiate login:**
+
+```ts
+const config = await fetch('/api/oidc-client-config').then(r => r.json());
+// Returns: { issuer, clientId, redirectUri, scope }
+client.setOidcConfig(config);
+
+// Triggers browser redirect to DocPouch login page
+await client.loginWithOidc(config);
+```
+
+**3. Handle the callback** (on your redirect URI page):
+
+```ts
+const handled = await client.handleOidcCallback();
+// Returns true if code+state present, exchanges for tokens
+// Stores access_token, refresh_token, id_token in localStorage
+```
+
+**4. Restore session on page reload:**
+
+```ts
+if (client.restoreOidcSession()) {
+  const token = client.getToken();
+  // token is valid, proceed with authenticated requests
+}
+```
+
+**5. Use for API calls (automatic token attachment and refresh):**
+
+```ts
+// All client methods automatically:
+// - Call ensureValidOidcToken() before auth-required requests
+// - Refresh token via /oidc/token if expired
+// - Attach Authorization: Bearer {token} header
+const docs = await client.listDocuments();
+const users = await client.listUsers();
+```
+
+**6. Logout:**
+
+```ts
+await client.logout();
+// Clears tokens, disconnects WebSocket
+// Also destroy server session:
+await fetch('/oidc/logout', { credentials: 'include' });
+```
+
+### Key Details
+
+- **PKCE**: Handled automatically (64-char verifier → SHA-256 → base64url S256 challenge)
+- **Token refresh**: Automatic when `Date.now() >= tokenExpiry - 60s`
+- **Auth method**: `client.getAuthMethod()` returns `'jwt' | 'oidc' | 'none'`
+- **Check auth**: `client.isAuthenticated()` checks token validity based on method
+- **Supported scopes**: `openid`, `profile`, `email`, `offline_access`
+- **Discovery**: `GET /.well-known/openid-configuration` and `GET /oidc/jwks`
+
+### Complete Example
+
+```ts
+import DbPouchClient from 'docpouch-client';
+
+const client = new DbPouchClient('http://localhost:3030', 3030);
+
+// On app init
+const config = await fetch('/api/oidc-client-config').then(r => r.json());
+client.setOidcConfig(config);
+
+// Try to restore session or redirect to login
+if (!client.restoreOidcSession()) {
+  await client.loginWithOidc(config);
+}
+
+// Once authenticated
+const token = client.getToken();
+const docs = await client.listDocuments();
+```
+
 ## Real-Time Updates
 
 DocPouch supports WebSocket-based real-time updates using Socket.io. Events are triggered for documents, users,
