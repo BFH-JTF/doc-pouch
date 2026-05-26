@@ -143,8 +143,8 @@ export default class NetworkManager {
             jwks: jwks,
             cookies: {
                 keys: [process.env.OIDC_COOKIE_KEY || 'docpouch-cookie-secret-change-in-production'],
-                long: {secure: process.env.NODE_ENV === 'production', httpOnly: true, sameSite: 'lax'},
-                short: {secure: process.env.NODE_ENV === 'production', httpOnly: true, sameSite: 'lax'}
+                long: {secure: process.env.OIDC_COOKIE_SECURE === 'true', httpOnly: true, sameSite: 'lax'},
+                short: {secure: process.env.OIDC_COOKIE_SECURE === 'true', httpOnly: true, sameSite: 'lax'}
             },
             features: {
                 devInteractions: {enabled: false},

@@ -186,6 +186,15 @@ or in a `.env` file when running locally.
 | `ALLOWED_ORIGINS` | Comma-separated list of allowed origins (CORS). | `*` (all origins allowed)     |
 | `ALLOWED_HEADERS` | Comma-separated list of allowed headers.        | `Content-Type, Authorization` |
 
+#### OIDC Configuration
+
+| Variable                  | Description                                                                                                         | Default                                       |
+|---------------------------|---------------------------------------------------------------------------------------------------------------------|-----------------------------------------------|
+| `OIDC_ISSUER`             | Base URL of the OIDC provider.                                                                                      | `http://localhost:3030`                       |
+| `OIDC_REGISTRATION_TOKEN` | Token required for dynamic OIDC client registration.                                                                | (none — must be set for OIDC use)             |
+| `OIDC_COOKIE_KEY`         | Secret key used to encrypt/sign OIDC session cookies. **Change in production!**                                     | `docpouch-cookie-secret-change-in-production` |
+| `OIDC_COOKIE_SECURE`      | Set to `true` when running the server directly with HTTPS. Leave unset when behind a TLS-terminating reverse proxy. | `false`                                       |
+
 #### Example Configuration
 
 **Using Docker Compose:**
