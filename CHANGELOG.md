@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.8.2...v1.9.0) (2026-05-26)
+
+
+### Features
+
+* add OIDC cookie security configuration and update dependencies ([c2f4384](https://github.com/BFH-JTF/doc-pouch/commit/c2f438439b03fee526cc27936339d0b03b448c18))
+
 ## [1.8.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.8.1...v1.8.2) (2026-05-20)
 
 
