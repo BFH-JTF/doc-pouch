@@ -240,11 +240,12 @@ whether `name` and `email` are included in the `/oidc/me` user info endpoint res
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `OIDC_REGISTRATION_TOKEN` | Token for client registration | (required) |
-| `OIDC_ISSUER` | Base URL of the OIDC provider | `http://localhost:3030` |
-| `OIDC_COOKIE_KEY` | Secret for session cookies | `docpouch-cookie-secret` |
+| Variable                  | Description                                                                        | Default                  |
+|---------------------------|------------------------------------------------------------------------------------|--------------------------|
+| `OIDC_REGISTRATION_TOKEN` | Token for client registration                                                      | (required)               |
+| `OIDC_ISSUER`             | Base URL of the OIDC provider                                                      | `http://localhost:3030`  |
+| `OIDC_COOKIE_KEY`         | Secret for session cookies                                                         | `docpouch-cookie-secret` |
+| `OIDC_COOKIE_SECURE`      | Set to `true` when running directly with HTTPS; leave unset behind a reverse proxy | `false`                  |
 
 Copy `.env.example` to `.env` and configure these values.
 
