@@ -1,3 +1,10 @@
+## [1.9.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.9.0...v1.9.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* enforce secure OIDC cookie settings ([c2d75a5](https://github.com/BFH-JTF/doc-pouch/commit/c2d75a52e3581c0b0716731c26abfcb1d3cfb88e))
+
 # [1.9.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.8.2...v1.9.0) (2026-05-26)
 
 
