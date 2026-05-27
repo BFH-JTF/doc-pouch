@@ -191,9 +191,11 @@ export default class NetworkManager {
                 ctx.body = {
                     error: (error as any)?.message || 'Unknown error',
                     error_description: (error as any)?.description || 'An error occurred'
-                };
+                }
             }
         });
+
+        this.oidcProvider.proxy = true;
 
         this.webServer = this.expressApp.listen(this.port, () => {
             const networkInterfaces = os.networkInterfaces();
