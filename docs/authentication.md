@@ -270,5 +270,46 @@ Copy `.env.example` to `.env` and configure these values.
 - JWT tokens are stateless; you'll need to re-login when they expire
 - Consider implementing a refresh mechanism in your client
 
+## Logout
+
+### JWT Logout (Client-Side Only)
+For JWT authentication, no server-side logout is needed:
+```bash
+await client.logout();
+# Only clears localStorage, no redirect needed
+```
+
+### OIDC Logout (Server-Side)
+For OIDC authentication, redirect to the `/end_session` endpoint:
+```bash
+GET /oidc/end_session?
+  post_logout_redirect_uri=http://localhost:8080/&
+  id_token_hint=eyJhbGci...
+```
+
+**Parameters:**
+- `post_logout_redirect_uri`: Where to redirect after logout (must be in client's `post_logout_redirect_uris`)
+- `id_token_hint`: Optional ID token (for logout confirmation)
+
+**Response:**
+- On success: Redirect to `post_logout_redirect_uri`
+- On error: Redirect to `post_logout_redirect_uri?error=...`
+
+**Example (JavaScript):**
+```javascript
+// Get OIDC config
+const config = await fetch('/api/oidc-client-config').then(r => r.json());
+
+// Get current ID token (from storage)
+const idToken = localStorage.getItem('id_token');
+
+// Redirect to logout
+const logoutUrl = `${config.issuer}/end_session?post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
+if (idToken) {
+    logoutUrl += `&id_token_hint=${idToken}`;
+}
+window.location.href = logoutUrl;
+```
+
 ### CORS errors
 - Ensure your DocPouch server allows your app's origin in `ALLOWED_ORIGINS`

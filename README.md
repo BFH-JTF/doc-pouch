@@ -348,11 +348,28 @@ const users = await client.listUsers();
 
 **6. Logout:**
 
+For **JWT authentication**, use:
 ```ts
 await client.logout();
 // Clears tokens, disconnects WebSocket
-// Also destroy server session:
-await fetch('/oidc/logout', { credentials: 'include' });
+// No server-side session to destroy
+```
+
+For **OIDC authentication**, use:
+```ts
+// Redirect to OIDC end_session endpoint
+const config = await fetch('/api/oidc-client-config').then(r => r.json());
+const logoutUrl = `${config.issuer}/end_session?post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
+window.location.href = logoutUrl;
+// After logout, user is redirected back to post_logout_redirect_uri
+// Client should detect logout and show login dialog
+```
+
+Or use the docpouch-client library's logout method which handles both:
+```ts
+await client.logout();
+// For OIDC: automatically handles server session destruction
+// For JWT: only client-side cleanup
 ```
 
 ### Key Details

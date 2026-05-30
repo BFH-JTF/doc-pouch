@@ -1289,6 +1289,13 @@ components:
           type: string
           format: uri
           description: "URL of the client's terms of service"
+        post_logout_redirect_uris:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: "List of allowed post-logout redirect URIs"
+          example: ["http://localhost:8080/"]
       required:
         - client_name
         - redirect_uris

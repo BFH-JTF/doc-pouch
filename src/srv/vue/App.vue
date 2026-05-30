@@ -476,12 +476,8 @@ function handleUserRemoved(userID: string) {
 }
 
 async function handleLogout() {
-  // Destroy OIDC server session to prevent auto-login on next OIDC attempt
-  try {
-    await fetch('/oidc/logout', {method: 'GET', credentials: 'include'});
-  } catch (e) {
-    console.error('Failed to destroy OIDC session:', e);
-  }
+  // JWT logout: only client-side cleanup
+  // OIDC logout handled by /end_session (no server call needed for JWT)
   apiClient.logout();
   authToken.value = null;
   localStorage.removeItem('authToken');

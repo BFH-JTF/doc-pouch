@@ -148,6 +148,10 @@ export default class NetworkManager {
             },
             features: {
                 devInteractions: {enabled: false},
+                rpInitiatedLogout: {enabled: true},
+                revocation: {enabled: true},
+                backchannelLogout: {enabled: true},
+                pushedAuthorizationRequests: {enabled: true},
                 registration: {
                     enabled: true,
                     initialAccessToken: process.env.OIDC_REGISTRATION_TOKEN,
@@ -260,13 +264,17 @@ export default class NetworkManager {
                     registeredClientId = (existing.client_id || existing._id || clientId) as string;
                     // Update redirect URI if it has changed
                     const existingUris = existing.redirect_uris || [];
+                    const existingPostLogoutUris = existing.post_logout_redirect_uris || [];
                     if (!existingUris.includes(redirectUri)) {
                         const updatedUris = [...existingUris, redirectUri];
+                        const updatedPostLogoutUris = [...existingPostLogoutUris, redirectUri];
                         await clientAdapter.upsert(registeredClientId, {
                             ...existing,
                             redirect_uris: updatedUris,
+                            post_logout_redirect_uris: updatedPostLogoutUris,
                         }, existing.expiresAt);
                         this.logger.info(`Updated OIDC client redirect URIs: ${JSON.stringify(updatedUris)}`);
+                        this.logger.info(`Updated OIDC client post-logout redirect URIs: ${JSON.stringify(updatedPostLogoutUris)}`);
                     }
                 } else {
                     // Create client with fixed ID (skip dynamic registration for admin UI)
@@ -275,6 +283,7 @@ export default class NetworkManager {
                             client_id: clientId,
                             client_name: 'DocPouch Admin UI',
                             redirect_uris: [redirectUri],
+                            post_logout_redirect_uris: [redirectUri],
                             grant_types: ['authorization_code', 'refresh_token'],
                             response_types: ['code'],
                             token_endpoint_auth_method: 'none',
@@ -294,49 +303,12 @@ export default class NetworkManager {
                     issuer: process.env.OIDC_ISSUER || `${protocol}://${host}/oidc`,
                     clientId: registeredClientId,
                     redirectUri,
+                    postLogoutRedirectUri: redirectUri,
                     scope: 'openid profile email offline_access',
                 });
             } catch (err: any) {
                 this.logger.error(`OIDC client config error: ${err.message}`);
                 res.status(500).json({error: 'Failed to get OIDC configuration'});
-            }
-        });
-
-        // OIDC logout endpoint (must be before the OIDC provider mount to intercept /oidc/logout)
-        this.expressApp.get('/oidc/logout', async (req, res) => {
-            try {
-                this.logger.info(`OIDC logout request received`);
-                this.logger.info(`Request headers cookie: ${req.headers.cookie || 'none'}`);
-
-                // Create a Koa-like context that oidc-provider can work with
-                const ctx = this.oidcProvider.createContext(req, res);
-                const session = await this.oidcProvider.Session.get(ctx);
-
-                this.logger.info(`Session found: ${!!session}, accountId: ${session?.accountId || 'none'}`);
-
-                if (session && session.accountId) {
-                    this.logger.info(`Destroying session with ID: ${session.id}`);
-                    await session.destroy();
-
-                    // Clear cookies - try multiple paths to ensure they're cleared
-                    const cookieName = this.oidcProvider.cookieName('session');
-                    const expires = new Date(0);
-                    const cookieHeaders = [
-                        `${cookieName}=; Path=/; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
-                        `${cookieName}.sig=; Path=/; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
-                        `${cookieName}=; Path=/oidc; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
-                        `${cookieName}.sig=; Path=/oidc; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
-                    ];
-
-                    res.setHeader('Set-Cookie', cookieHeaders);
-                    this.logger.info(`OIDC session destroyed, cleared cookies: ${cookieName}`);
-                } else {
-                    this.logger.info('OIDC logout: no active session found');
-                }
-                res.status(200).json({message: 'Logged out'});
-            } catch (err) {
-                this.logger.error('OIDC logout error:', (err as Error).message);
-                res.status(200).json({message: 'Logged out'});
             }
         });
 
