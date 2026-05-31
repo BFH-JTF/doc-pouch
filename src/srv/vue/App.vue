@@ -37,6 +37,7 @@ interface I_OidcClientConfig {
   issuer: string;
   clientId: string;
   redirectUri: string;
+  postLogoutRedirectUri?: string;
   scope: string;
 }
 
@@ -476,9 +477,12 @@ function handleUserRemoved(userID: string) {
 }
 
 async function handleLogout() {
-  // JWT logout: only client-side cleanup
-  // OIDC logout handled by /end_session (no server call needed for JWT)
-  apiClient.logout();
+  // Use the client's logout method which handles both JWT and OIDC
+  // For OIDC: client will redirect to /end_session with post_logout_redirect_uri
+  // For JWT: client only clears localStorage (no server call)
+  apiClient.logout({
+    redirectUri: oidcConfig.value?.postLogoutRedirectUri || oidcConfig.value?.redirectUri || window.location.origin
+  });
   authToken.value = null;
   localStorage.removeItem('authToken');
   localStorage.removeItem('isAdmin');
