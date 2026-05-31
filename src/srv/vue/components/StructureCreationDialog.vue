@@ -93,7 +93,7 @@
                           <v-text-field
                               v-model="field.name"
                               class="mr-2"
-                              density="compact"
+                              density="comfortable"
                               hide-details
                               label="Field Name"
                               variant="outlined"
@@ -106,7 +106,7 @@
                               <v-select
                                   v-model="field.type"
                                   :items="fieldTypes"
-                                  density="compact"
+                                  density="comfortable"
                                   hide-details
                                   label="Type"
                                   variant="outlined"
@@ -120,7 +120,7 @@
                                   v-model="field.items"
                                   :items="props.structureList"
                                   clearable
-                                  density="compact"
+                                  density="comfortable"
                                   hide-details
                                   item-title="name"
                                   item-value="_id"
@@ -132,7 +132,7 @@
                                   v-model="field.items"
                                   :items="primitiveTypes"
                                   clearable
-                                  density="compact"
+                                  density="comfortable"
                                   hide-details
                                   label="Array Item Type"
                                   variant="outlined"
@@ -282,20 +282,41 @@ watch(() => props.show, (newVal) => {
 }
 
 .structure-field-item {
-  min-height: 96px;
-  padding: 8px 16px;
+  min-height: 160px;
+  padding: 16px 16px;
 }
 
 .structure-field-title {
-  margin-bottom: 8px;
+  margin-bottom: 20px;
+  padding-top: 16px;
 }
 
 .structure-field-subtitle {
-  padding-left: 40px; /* Account for prepend avatar */
+  padding-left: 40px;
+  min-height: 80px;
+  padding-top: 8px;
 }
 
 .v-text-field, .v-select {
-  margin-top: 4px;
-  margin-bottom: 4px;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.v-text-field :deep(.v-label), .v-select :deep(.v-label) {
+  top: 16px !important;
+  line-height: 1.2 !important;
+}
+
+.v-text-field :deep(.v-input__control), .v-select :deep(.v-input__control) {
+  min-height: 48px;
+}
+
+.v-text-field :deep(.v-field__input), .v-select :deep(.v-field__input) {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+.v-text-field :deep(.v-label--floating), .v-select :deep(.v-label--floating) {
+  transform: translateY(-24px) scale(0.85) !important;
 }
 </style>

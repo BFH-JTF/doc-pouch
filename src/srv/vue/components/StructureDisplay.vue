@@ -26,6 +26,16 @@ const isDuplicateTypeSubtype = computed(() => {
   );
 });
 
+const formValid = computed(() => {
+  if (!editableStructure.value) {
+    return false;
+  }
+  if (isDuplicateTypeSubtype.value) {
+    return false;
+  }
+  return true;
+});
+
 const editableStructure = ref<I_DataStructure | undefined>(undefined);
 
 watch(() => props.displayStructure, (newStructure) => {
@@ -383,12 +393,12 @@ watch(treeItems, (newItems) => {
                           :icon="typeIcons[field.type]?.icon || typeIcons.default.icon"></v-icon>
                 </template>
 
-                <v-list-item-title>
+                <v-list-item-title class="structure-field-title">
                   <v-text-field
                       v-model="field.name"
                       :readonly="!props.isAdmin"
                       class="mr-2"
-                      density="compact"
+                      density="comfortable"
                       hide-details
                       label="Field Name"
                       variant="outlined"
@@ -403,7 +413,7 @@ watch(treeItems, (newItems) => {
                           v-model="field.type"
                           :items="fieldTypes"
                           :readonly="!props.isAdmin"
-                          density="compact"
+                          density="comfortable"
                           hide-details
                           label="Type"
                           variant="outlined"
@@ -541,5 +551,34 @@ watch(treeItems, (newItems) => {
 
 .edit-field {
   font-size: 14px;
+}
+
+/* Structure Fields Layout Fixes */
+.structure-field-title {
+  margin-bottom: 20px;
+  padding-top: 16px;
+}
+
+.v-text-field, .v-select {
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.v-text-field :deep(.v-label), .v-select :deep(.v-label) {
+  top: 16px !important;
+  line-height: 1.2 !important;
+}
+
+.v-text-field :deep(.v-input__control), .v-select :deep(.v-input__control) {
+  min-height: 48px;
+}
+
+.v-text-field :deep(.v-field__input), .v-select :deep(.v-field__input) {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+.v-text-field :deep(.v-label--floating), .v-select :deep(.v-label--floating) {
+  transform: translateY(-24px) scale(0.85) !important;
 }
 </style>
