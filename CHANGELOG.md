@@ -1,3 +1,12 @@
+# [1.10.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.9.2...v1.10.0) (2026-05-31)
+
+
+### Features
+
+* enhance OIDC logout flow with custom confirmation and success pages ([a8049fa](https://github.com/BFH-JTF/doc-pouch/commit/a8049fa67a6415a952e79ed9ab0d3dcc434077fc))
+* Implement OIDC logout with automatic redirect to client home page ([9109fcd](https://github.com/BFH-JTF/doc-pouch/commit/9109fcd141de9eaab2e5036f6c43083d8c0ae974))
+* Implement OIDC-compliant logout with automatic redirect after logout ([bcd156d](https://github.com/BFH-JTF/doc-pouch/commit/bcd156d170ff14b4706fee848446811ba1eccaed))
+
 ## [1.9.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.9.1...v1.9.2) (2026-05-27)
 
 
