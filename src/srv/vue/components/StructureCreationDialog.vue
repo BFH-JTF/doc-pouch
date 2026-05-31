@@ -80,16 +80,16 @@
                     No fields defined. Click "Add Field" to add a field to this structure.
                   </div>
 
-                  <v-list v-else lines="two">
+                  <v-list v-else class="structure-fields-list" lines="two">
                     <template v-for="(field, index) in newStructure.fields" :key="index">
-                      <v-list-item>
+                      <v-list-item class="structure-field-item">
                         <template v-slot:prepend>
                           <v-avatar color="primary" size="32">
                             <v-icon icon="mdi-table-column"></v-icon>
                           </v-avatar>
                         </template>
 
-                        <v-list-item-title>
+                        <v-list-item-title class="structure-field-title">
                           <v-text-field
                               v-model="field.name"
                               class="mr-2"
@@ -100,8 +100,8 @@
                           ></v-text-field>
                         </v-list-item-title>
 
-                        <v-list-item-subtitle>
-                          <v-row class="align-center mt-1" no-gutters>
+                        <v-list-item-subtitle class="structure-field-subtitle">
+                          <v-row class="align-center" no-gutters>
                             <v-col cols="4">
                               <v-select
                                   v-model="field.type"
@@ -139,7 +139,7 @@
                               ></v-select>
                             </v-col>
 
-                            <v-col class="pl-2" cols="2">
+                            <v-col class="pl-2 text-right" cols="2">
                               <v-btn
                                   color="error"
                                   icon="mdi-delete"
@@ -277,7 +277,25 @@ watch(() => props.show, (newVal) => {
 </script>
 
 <style scoped>
-.v-list-item {
-  min-height: 80px;
+.structure-fields-list {
+  padding: 8px 0;
+}
+
+.structure-field-item {
+  min-height: 96px;
+  padding: 8px 16px;
+}
+
+.structure-field-title {
+  margin-bottom: 8px;
+}
+
+.structure-field-subtitle {
+  padding-left: 40px; /* Account for prepend avatar */
+}
+
+.v-text-field, .v-select {
+  margin-top: 4px;
+  margin-bottom: 4px;
 }
 </style>
