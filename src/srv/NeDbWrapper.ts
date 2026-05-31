@@ -559,6 +559,21 @@ export default class NeDbWrapper {
         })
     }
 
+    async getAdminUserID(): Promise<string> {
+        return new Promise((resolve, reject) => {
+            this.users.query({name: "admin"})
+                .then((result) => {
+                    if (result.length > 0)
+                        resolve((result[0] as I_UserEntry)._id);
+                    else
+                        reject("Admin user not found");
+                })
+                .catch((error) => {
+                    reject(error);
+                });
+        })
+    }
+
     // Document methods with access control
 
     getAllDocuments(requestingUserID: string): Promise<I_DocumentEntry[]> {
@@ -608,25 +623,51 @@ export default class NeDbWrapper {
         });
     }
 
-    createDocument(document: I_DocumentCreation, requestingUserID: string): Promise<I_DocumentEntry> {
+    createDocument(document: I_DocumentCreation, requestingUserID: string, anonymous: boolean = false): Promise<I_DocumentEntry> {
+        this.logger.debug(`Creating document with anonymous flag: ${anonymous}`);
         return new Promise((resolve, reject) => {
-            // Set the owner to the requesting user
-            let newDocument: I_DocumentCreationOwned = {
-                content: document.content,
-                description: document.description,
-                owner: requestingUserID,
-                subType: document.subType,
-                title: document.title,
-                type: document.type,
-                shareWithGroup: document.shareWithGroup,
-                shareWithDepartment: document.shareWithDepartment,
-                public: document.public
+            // Determine the owner for the document
+            let ownerId = requestingUserID;
+            
+            // If the document should be anonymous, reassign ownership to the admin user
+            if (anonymous) {
+                this.logger.debug("Reassigning document ownership to admin user");
+                this.getAdminUserID().then((adminUserId) => {
+                    this.logger.debug(`Got admin user ID: ${adminUserId}`);
+                    ownerId = adminUserId;
+                    this.createDocumentWithOwner(document, ownerId, resolve, reject);
+                }).catch((error) => {
+                    this.logger.error("Failed to get admin user:", error);
+                    reject(new Error("Failed to get admin user: " + error));
+                });
+            } else {
+                this.createDocumentWithOwner(document, ownerId, resolve, reject);
             }
+        });
+    }
 
-            this.documents.add(newDocument).then((savedDocument) => {
-                this.logger.info("Created new document: " + JSON.stringify(savedDocument));
-                resolve(savedDocument as I_DocumentEntry);
-            }).catch(reject);
+    private createDocumentWithOwner(document: I_DocumentCreation, ownerId: string, resolve: (value: I_DocumentEntry | PromiseLike<I_DocumentEntry>) => void, reject: (reason?: any) => void): void {
+        this.logger.debug(`Creating document with owner ID: ${ownerId}`);
+        // Set the owner to the specified user
+        let newDocument: I_DocumentCreationOwned = {
+            content: document.content,
+            description: document.description,
+            owner: ownerId,
+            subType: document.subType,
+            title: document.title,
+            type: document.type,
+            shareWithGroup: document.shareWithGroup,
+            shareWithDepartment: document.shareWithDepartment,
+            public: document.public
+        }
+
+        this.documents.add(newDocument).then((savedDocument) => {
+            this.logger.debug(`Document created successfully: ${JSON.stringify(savedDocument)}`);
+            this.logger.info("Created new document: " + JSON.stringify(savedDocument));
+            resolve(savedDocument as I_DocumentEntry);
+        }).catch((error) => {
+            this.logger.error("Failed to create document:", error);
+            reject(error);
         });
     }
 

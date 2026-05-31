@@ -46,6 +46,7 @@ export default class SchemaValidator {
             shareWithGroup: boolean().required(),
             shareWithDepartment: boolean().required(),
             public: boolean().required(),
+            anonymous: boolean().optional(),
             content: mixed()
                 .test(
                     'is-array-or-object',
@@ -117,7 +118,7 @@ export default class SchemaValidator {
                 res = this.userUpdateSchema.validateSync(userInput, { abortEarly: false, stripUnknown: true });
                 break;
             case "documentCreation":
-                res = this.documentCreationSchema.validateSync(userInput, { abortEarly: false, stripUnknown: true });
+                res = this.documentCreationSchema.validateSync(userInput, { abortEarly: false, stripUnknown: false });
                 break;
             case "documentUpdate":
                 res = this.documentUpdateSchema.validateSync(userInput, { abortEarly: false, stripUnknown: true });
