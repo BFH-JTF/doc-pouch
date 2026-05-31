@@ -38,6 +38,10 @@ curl -X POST http://localhost:3030/users/login \
 # Use token for API calls
 curl http://localhost:3030/docs/list \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Get information about the current user
+curl http://localhost:3030/users/whoami \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
 ### For JavaScript apps
@@ -58,6 +62,12 @@ localStorage.setItem('authToken', token);
 const apiResponse = await fetch('http://localhost:3030/docs/list', {
     headers: { 'Authorization': `Bearer ${token}` }
 });
+
+// Get information about the current user
+const userResponse = await fetch('http://localhost:3030/users/whoami', {
+    headers: { 'Authorization': `Bearer ${token}` }
+});
+const userInfo = await userResponse.json();
 ```
 
 ### Pros/Cons
@@ -240,12 +250,12 @@ whether `name` and `email` are included in the `/oidc/me` user info endpoint res
 
 ## Environment Variables
 
-| Variable                  | Description                                                                        | Default                  |
-|---------------------------|------------------------------------------------------------------------------------|--------------------------|
-| `OIDC_REGISTRATION_TOKEN` | Token for client registration                                                      | (required)               |
-| `OIDC_ISSUER`             | Base URL of the OIDC provider                                                      | `http://localhost:3030`  |
-| `OIDC_COOKIE_KEY`         | Secret for session cookies                                                         | `docpouch-cookie-secret` |
-| `OIDC_COOKIE_SECURE`      | Set to `true` when running directly with HTTPS; leave unset behind a reverse proxy | `false`                  |
+| Variable                  | Description                                                                        | Default                                       |
+|---------------------------|------------------------------------------------------------------------------------|-----------------------------------------------|
+| `OIDC_REGISTRATION_TOKEN` | Token for client registration                                                      | (required)                                    |
+| `OIDC_ISSUER`             | Base URL of the OIDC provider                                                      | `http://localhost:3030`                       |
+| `OIDC_COOKIE_KEY`         | Secret for session cookies                                                         | `docpouch-cookie-secret-change-in-production` |
+| `OIDC_COOKIE_SECURE`      | Set to `true` when running directly with HTTPS; leave unset behind a reverse proxy | `false`                                       |
 
 Copy `.env.example` to `.env` and configure these values.
 
@@ -269,6 +279,47 @@ Copy `.env.example` to `.env` and configure these values.
 ### JWT: Token expired
 - JWT tokens are stateless; you'll need to re-login when they expire
 - Consider implementing a refresh mechanism in your client
+
+## Logout
+
+### JWT Logout (Client-Side Only)
+For JWT authentication, no server-side logout is needed:
+```bash
+await client.logout();
+# Only clears localStorage, no redirect needed
+```
+
+### OIDC Logout (Server-Side)
+For OIDC authentication, redirect to the `/end_session` endpoint:
+```bash
+GET /oidc/end_session?
+  post_logout_redirect_uri=http://localhost:8080/&
+  id_token_hint=eyJhbGci...
+```
+
+**Parameters:**
+- `post_logout_redirect_uri`: Where to redirect after logout (must be in client's `post_logout_redirect_uris`)
+- `id_token_hint`: Optional ID token (for logout confirmation)
+
+**Response:**
+- On success: Redirect to `post_logout_redirect_uri`
+- On error: Redirect to `post_logout_redirect_uri?error=...`
+
+**Example (JavaScript):**
+```javascript
+// Get OIDC config
+const config = await fetch('/api/oidc-client-config').then(r => r.json());
+
+// Get current ID token (from storage)
+const idToken = localStorage.getItem('id_token');
+
+// Redirect to logout
+const logoutUrl = `${config.issuer}/end_session?post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
+if (idToken) {
+    logoutUrl += `&id_token_hint=${idToken}`;
+}
+window.location.href = logoutUrl;
+```
 
 ### CORS errors
 - Ensure your DocPouch server allows your app's origin in `ALLOWED_ORIGINS`

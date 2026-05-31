@@ -67,6 +67,9 @@ These are the events that the server emits to clients:
 | `removedStructure`      | Notifies about structure deletion          | `{ removedID: string }`                                | Structure deletion     | All clients        |
 | `databaseInconsistency` | Notifies admin about data integrity issues | `{ faultyDocuments: [...] }`                           | Admin connection       | Admin only         |
 
+Note: The `newType`, `changedType`, and `removedType` events are deprecated and no longer used. The "types" collection
+is maintained only for backward compatibility.
+
 ### Example: Handling Events with DocPouch Client
 
 ```javascript
@@ -92,13 +95,7 @@ function handleNetworkEvent(event, data) {
             console.log('New user created:', data.newUser);
             break;
 
-        case "newType":
-            console.log('New document type created:', data.newType);
-            break;
-
-        case "removedType":
-            console.log('Document type removed:', data.removedID);
-            break;
+        // Note: "types" collection is deprecated and no longer used
     }
 }
 ```
