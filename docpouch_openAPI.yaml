@@ -637,6 +637,124 @@ paths:
                       type: object
                       description: "JSON Web Key"
 
+  /oidc/end_session:
+    get:
+      summary: OIDC End Session endpoint
+      description: "Destroys the user's OIDC session and redirects to the post-logout redirect URI. This is the standard OIDC logout endpoint."
+      tags:
+        - openid connect
+      parameters:
+        - in: query
+          name: post_logout_redirect_uri
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: "URI to redirect the user after logout. Must be registered in the client's post_logout_redirect_uris."
+        - in: query
+          name: id_token_hint
+          required: false
+          schema:
+            type: string
+          description: "ID token previously issued to the client. Used to verify the user's identity."
+      responses:
+        302:
+          description: "Redirect to post_logout_redirect_uri"
+        400:
+          description: "Invalid or missing parameters"
+
+  /oidc/revocation:
+    post:
+      summary: OIDC Token Revocation endpoint
+      description: "Revokes an access or refresh token, rendering it unusable. Clients can call this to explicitly invalidate tokens."
+      tags:
+        - openid connect
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: "The token to be revoked"
+                token_type_hint:
+                  type: string
+                  enum: [access_token, refresh_token]
+                  description: "Type of token to be revoked (optional but recommended)"
+              required:
+                - token
+      responses:
+        200:
+          description: "Token successfully revoked"
+        401:
+          description: "Invalid or missing client credentials"
+        400:
+          description: "Invalid token or parameters"
+
+  /oidc/par:
+    post:
+      summary: OIDC Pushed Authentication Request (PAR) endpoint
+      description: "Pushes an authorization request to the server and receives a unique request URI. Used for improved security and pre-authorization."
+      tags:
+        - openid connect
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                response_type:
+                  type: string
+                  enum: [code]
+                  description: "OAuth response type"
+                client_id:
+                  type: string
+                  description: "Client identifier"
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: "Redirect URI"
+                scope:
+                  type: string
+                  description: "OAuth scope"
+                state:
+                  type: string
+                  description: "Opaque value for CSRF protection"
+                code_challenge:
+                  type: string
+                  description: "PKCE code challenge"
+                code_challenge_method:
+                  type: string
+                  enum: [S256, plain]
+                  description: "PKCE code challenge method"
+              required:
+                - response_type
+                - client_id
+                - redirect_uri
+                - scope
+                - state
+                - code_challenge
+                - code_challenge_method
+      responses:
+        200:
+          description: "Authorization request created"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_uri:
+                    type: string
+                    description: "URI to be used in the authorization request"
+                  expires_in:
+                    type: integer
+                    description: "Seconds until request_uri expires"
+        400:
+          description: "Invalid authorization request parameters"
+
   /oidc/reg:
     post:
       summary: Register a new OIDC client (dynamic registration)
@@ -1289,6 +1407,13 @@ components:
           type: string
           format: uri
           description: "URL of the client's terms of service"
+        post_logout_redirect_uris:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: "List of allowed post-logout redirect URIs"
+          example: ["http://localhost:8080/"]
       required:
         - client_name
         - redirect_uris

@@ -26,23 +26,23 @@
     "archiver": "^8.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
-    "docpouch-client": "1.0.4",
+    "docpouch-client": "1.0.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "9.0.3",
     "multer": "2.1.1",
-    "oidc-provider": "^9.8.3",
-    "semver": "^7.8.0",
+    "oidc-provider": "^9.8.4",
+    "semver": "^7.8.1",
     "socket.io": "^4.8.3",
-    "vue": "^3.5.34",
-    "vuetify": "^4.0.7",
+    "vue": "^3.5.35",
+    "vuetify": "^4.0.8",
     "winston": "^3.19.0",
     "yup": "^1.7.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.0",
-    "@babel/preset-env": "^7.29.5",
-    "@babel/preset-typescript": "^7.28.5",
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@types/adm-zip": "^0.5.8",
@@ -66,7 +66,7 @@
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.9",
     "typescript": "^6.0.3",
-    "vite": "^8.0.13",
-    "vue-tsc": "^3.2.9"
+    "vite": "^8.0.14",
+    "vue-tsc": "^3.3.3"
   }
 }

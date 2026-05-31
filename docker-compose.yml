@@ -1,10 +1,18 @@
 services:
-  docPouch:
+  docpouch:
+#    image: ghcr.io/bfh-jtf/doc-pouch:latest
     image: docpouch:latest
-    ports:
-      - "3030:3030"
+    labels:
+      - caddy=docpouch.pantek.app
+      - caddy.reverse_proxy="{{upstreams 3030}}"
+      - caddy.header.X-Forwarded-Proto=https
     volumes:
       - "./db:/app/db"
       - "./log:/app/log"
     env_file: ./.env
+    networks:
+      - server
     restart: unless-stopped
+networks:
+  server:
+    external: true

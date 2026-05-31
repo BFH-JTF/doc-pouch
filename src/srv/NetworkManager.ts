@@ -138,16 +138,195 @@ export default class NetworkManager {
             }]
         };
 
-        this.oidcProvider = new oidc.Provider(process.env.OIDC_ISSUER || `http://localhost:${port}/oidc`, {
+        // Determine the correct issuer based on environment
+        const issuer = process.env.OIDC_ISSUER || `http://localhost:${port}/oidc`;
+        this.logger.info(`Initializing OIDC provider with issuer: ${issuer}`);
+
+        this.oidcProvider = new oidc.Provider(issuer, {
             adapter: OidcAdapter,
             jwks: jwks,
             cookies: {
                 keys: [process.env.OIDC_COOKIE_KEY || 'docpouch-cookie-secret-change-in-production'],
-                long: {secure: true, httpOnly: true, sameSite: 'lax'},
-                short: {secure: true, httpOnly: true, sameSite: 'lax'}
+                long: {
+                    secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+                    httpOnly: true,
+                    sameSite: 'lax'
+                },
+                short: {
+                    secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+                    httpOnly: true,
+                    sameSite: 'lax'
+                }
             },
             features: {
                 devInteractions: {enabled: false},
+                rpInitiatedLogout: {
+                    enabled: true,
+                    // Custom logout confirmation page
+                    logoutSource: async function renderLogoutPage(ctx: any, form: string) {
+                        // Use the existing OIDC login page as a template
+                        const htmlPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/oidc-login.html'))
+                            ? path.resolve(process.cwd(), 'dist/srv/oidc-login.html')
+                            : path.resolve(process.cwd(), 'src/srv/oidc-login.html');
+                        let html = fs.readFileSync(htmlPath, 'utf8');
+
+                        // Customize for logout confirmation
+                        html = html.replace('<title>DocPouch - Login</title>', '<title>DocPouch - Logout</title>');
+                        html = html.replace(/__NONCE__/g, ctx.res.locals?.nonce || '');
+
+                        // Create logout-specific content
+                        const logoutForm = `
+                          <div class="logo">
+                            <img alt="DocPouch" class="logo-img" src="/oidc/static/docPouch.png">
+                            <h1>DocPouch</h1>
+                            <p>Sign out confirmation</p>
+                          </div>
+                          
+                          <div class="info">
+                            Do you want to sign out from DocPouch?
+                          </div>
+                          
+                          ${form}
+                          
+                          <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="submit" form="op.logoutForm" value="yes" name="logout" 
+                                    style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; flex: 1;">
+                              Yes, sign me out
+                            </button>
+                            <button type="submit" form="op.logoutForm" value="no" name="logout"
+                                    style="background: #f5f5f5; color: #333; border: 2px solid #e0e0e0; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; flex: 1;">
+                              No, stay signed in
+                            </button>
+                          </div>
+                        `;
+
+                        // Replace the login form with our logout confirmation
+                        const loginFormRegex = /<div class="login-container">[\s\S]*?<form id="loginForm"[\s\S]*?<\/form>[\s\S]*?<\/div>/;
+                        html = html.replace(loginFormRegex,
+                            `<div class="login-container">${logoutForm}</div>`);
+
+                        ctx.body = html;
+                    },
+
+                    // Custom post-logout success page
+                    postLogoutSuccessSource: async function renderLogoutSuccessPage(ctx: any) {
+                        const display = ctx.oidc.client?.clientName || ctx.oidc.client?.clientId;
+
+                        ctx.body = `<!DOCTYPE html>
+                          <html lang="en">
+                          <head>
+                            <meta charset="UTF-8">
+                            <meta content="width=device-width, initial-scale=1.0" name="viewport">
+                            <title>DocPouch - Logout Success</title>
+                            <style nonce="${ctx.res.locals?.nonce || ''}">
+                              * {
+                                margin: 0;
+                                padding: 0;
+                                box-sizing: border-box;
+                              }
+                              
+                              body {
+                                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                min-height: 100vh;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                padding: 20px;
+                              }
+                              
+                              .login-container {
+                                background: white;
+                                border-radius: 12px;
+                                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                                padding: 40px;
+                                max-width: 400px;
+                                width: 100%;
+                                text-align: center;
+                              }
+                              
+                              .logo {
+                                text-align: center;
+                                margin-bottom: 30px;
+                              }
+                              
+                              .logo-img {
+                                width: 80px;
+                                height: 80px;
+                                margin-bottom: 12px;
+                              }
+                              
+                              .logo h1 {
+                                color: #667eea;
+                                font-size: 32px;
+                                margin-bottom: 8px;
+                              }
+                              
+                              .success-message {
+                                background: #e8f5e9;
+                                color: #2e7d32;
+                                padding: 16px;
+                                border-radius: 8px;
+                                margin: 20px 0;
+                                font-size: 16px;
+                              }
+                              
+                              .info {
+                                background: #e3f2fd;
+                                color: #1976d2;
+                                padding: 12px;
+                                border-radius: 8px;
+                                margin-top: 20px;
+                                font-size: 14px;
+                              }
+                              
+                              button {
+                                width: 100%;
+                                padding: 14px;
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                color: white;
+                                border: none;
+                                border-radius: 8px;
+                                font-size: 16px;
+                                font-weight: 600;
+                                cursor: pointer;
+                                transition: transform 0.2s, box-shadow 0.2s;
+                                margin-top: 20px;
+                              }
+                              
+                              button:hover {
+                                transform: translateY(-2px);
+                                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+                              }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="login-container">
+                              <div class="logo">
+                                <img alt="DocPouch" class="logo-img" src="/oidc/static/docPouch.png">
+                                <h1>DocPouch</h1>
+                                <p>Sign out successful</p>
+                              </div>
+                              
+                              <div class="success-message">
+                                Your sign-out ${display ? `with ${display}` : ''} was successful.
+                              </div>
+                              
+                              <div class="info">
+                                You have been successfully signed out of DocPouch.
+                              </div>
+                              
+                              <button onclick="window.location.href='/'">
+                                Return to Application
+                              </button>
+                            </div>
+                          </body>
+                          </html>`;
+                    }
+                },
+                revocation: {enabled: true},
+                backchannelLogout: {enabled: true},
+                pushedAuthorizationRequests: {enabled: true},
                 registration: {
                     enabled: true,
                     initialAccessToken: process.env.OIDC_REGISTRATION_TOKEN,
@@ -156,6 +335,31 @@ export default class NetworkManager {
                         return crypto.randomBytes(64).toString('base64url');
                     }
                 }
+            },
+            // Additional configuration for proper logout handling
+            clients: [
+                {
+                    client_id: 'docpouch-admin-ui',
+                    client_name: 'DocPouch Admin UI',
+                    redirect_uris: [process.env.OIDC_REDIRECT_URI || `${issuer.replace('/oidc', '')}/`],
+                    post_logout_redirect_uris: [process.env.OIDC_POST_LOGOUT_REDIRECT_URI || process.env.OIDC_REDIRECT_URI || `${issuer.replace('/oidc', '')}/`],
+                    grant_types: ['authorization_code', 'refresh_token'],
+                    response_types: ['code'],
+                    token_endpoint_auth_method: 'none',
+                    application_type: 'web',
+                }
+            ],
+            // Add specific configuration for end_session endpoint
+            routes: {
+                authorization: '/auth',
+                token: '/token',
+                userinfo: '/userinfo',
+                jwks: '/jwks',
+                revocation: '/revocation',
+                registration: '/reg',
+                end_session: '/end_session',  // Explicitly define the end_session route
+                introspection: '/introspection',
+                pushed_authorization_request: '/par'
             },
             interactions: {
                 url: (ctx, interaction) => {
@@ -196,6 +400,10 @@ export default class NetworkManager {
         });
 
         this.oidcProvider.proxy = true;
+
+        // Configure trusted headers for proxy
+        this.oidcProvider.app.proxy = true;
+        this.oidcProvider.app.keys = [process.env.OIDC_COOKIE_KEY || 'docpouch-cookie-secret-change-in-production'];
 
         this.webServer = this.expressApp.listen(this.port, () => {
             const networkInterfaces = os.networkInterfaces();
@@ -248,7 +456,7 @@ export default class NetworkManager {
         this.expressApp.get('/api/oidc-client-config', async (req, res) => {
             try {
                 const host = req.headers.host || `localhost:${this.port}`;
-                const protocol = req.headers['x-forwarded-proto'] || 'http';
+                const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
                 const redirectUri = `${protocol}://${host}/`;
                 const clientId = 'docpouch-admin-ui';
                 const clientAdapter = new OidcAdapter('Client');
@@ -260,13 +468,17 @@ export default class NetworkManager {
                     registeredClientId = (existing.client_id || existing._id || clientId) as string;
                     // Update redirect URI if it has changed
                     const existingUris = existing.redirect_uris || [];
+                    const existingPostLogoutUris = existing.post_logout_redirect_uris || [];
                     if (!existingUris.includes(redirectUri)) {
                         const updatedUris = [...existingUris, redirectUri];
+                        const updatedPostLogoutUris = [...existingPostLogoutUris, redirectUri];
                         await clientAdapter.upsert(registeredClientId, {
                             ...existing,
                             redirect_uris: updatedUris,
+                            post_logout_redirect_uris: updatedPostLogoutUris,
                         }, existing.expiresAt);
                         this.logger.info(`Updated OIDC client redirect URIs: ${JSON.stringify(updatedUris)}`);
+                        this.logger.info(`Updated OIDC client post-logout redirect URIs: ${JSON.stringify(updatedPostLogoutUris)}`);
                     }
                 } else {
                     // Create client with fixed ID (skip dynamic registration for admin UI)
@@ -275,6 +487,7 @@ export default class NetworkManager {
                             client_id: clientId,
                             client_name: 'DocPouch Admin UI',
                             redirect_uris: [redirectUri],
+                            post_logout_redirect_uris: [redirectUri],
                             grant_types: ['authorization_code', 'refresh_token'],
                             response_types: ['code'],
                             token_endpoint_auth_method: 'none',
@@ -294,6 +507,7 @@ export default class NetworkManager {
                     issuer: process.env.OIDC_ISSUER || `${protocol}://${host}/oidc`,
                     clientId: registeredClientId,
                     redirectUri,
+                    postLogoutRedirectUri: redirectUri,
                     scope: 'openid profile email offline_access',
                 });
             } catch (err: any) {
@@ -302,46 +516,39 @@ export default class NetworkManager {
             }
         });
 
-        // OIDC logout endpoint (must be before the OIDC provider mount to intercept /oidc/logout)
-        this.expressApp.get('/oidc/logout', async (req, res) => {
-            try {
-                this.logger.info(`OIDC logout request received`);
-                this.logger.info(`Request headers cookie: ${req.headers.cookie || 'none'}`);
-
-                // Create a Koa-like context that oidc-provider can work with
-                const ctx = this.oidcProvider.createContext(req, res);
-                const session = await this.oidcProvider.Session.get(ctx);
-
-                this.logger.info(`Session found: ${!!session}, accountId: ${session?.accountId || 'none'}`);
-
-                if (session && session.accountId) {
-                    this.logger.info(`Destroying session with ID: ${session.id}`);
-                    await session.destroy();
-
-                    // Clear cookies - try multiple paths to ensure they're cleared
-                    const cookieName = this.oidcProvider.cookieName('session');
-                    const expires = new Date(0);
-                    const cookieHeaders = [
-                        `${cookieName}=; Path=/; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
-                        `${cookieName}.sig=; Path=/; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
-                        `${cookieName}=; Path=/oidc; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
-                        `${cookieName}.sig=; Path=/oidc; Expires=${expires.toUTCString()}; HttpOnly; SameSite=Lax`,
-                    ];
-
-                    res.setHeader('Set-Cookie', cookieHeaders);
-                    this.logger.info(`OIDC session destroyed, cleared cookies: ${cookieName}`);
-                } else {
-                    this.logger.info('OIDC logout: no active session found');
-                }
-                res.status(200).json({message: 'Logged out'});
-            } catch (err) {
-                this.logger.error('OIDC logout error:', (err as Error).message);
-                res.status(200).json({message: 'Logged out'});
+        // Error handling middleware for the app
+        this.expressApp.use((err: any, req: Request, res: Response, next: NextFunction) => {
+            this.logger.error(`Express error: ${err.message}`, err);
+            if (res.headersSent) {
+                return next(err);
             }
+            res.status(500).json({error: 'Internal server error', message: err.message});
+        });
+
+        // Error handling middleware for the app
+        this.expressApp.use((err: any, req: Request, res: Response, next: NextFunction) => {
+            this.logger.error(`Express error: ${err.message}`, err);
+            if (res.headersSent) {
+                return next(err);
+            }
+            res.status(500).json({error: 'Internal server error', message: err.message});
         });
 
         // Mount OIDC provider before body parser to avoid upstream parser warning
-        this.expressApp.use("/oidc", this.oidcProvider.callback());
+        this.expressApp.use("/oidc", (req: Request, res: Response, next: NextFunction) => {
+            this.logger.debug(`OIDC request: ${req.method} ${req.originalUrl}`);
+            // Add error handling middleware for OIDC requests
+            this.oidcProvider.callback()(req, res, (err: any) => {
+                if (err) {
+                    this.logger.error(`OIDC request error: ${err.message}`, err);
+                    // Pass the error to the next error handling middleware
+                    next(err);
+                } else {
+                    // If no error, continue with normal processing
+                    next();
+                }
+            });
+        });
 
         // Body parser for non-OIDC routes only
         this.expressApp.use(express.json());
@@ -1006,7 +1213,8 @@ export default class NetworkManager {
                 req.path.startsWith('/types') ||
                 req.path.startsWith('/structures') ||
                 req.path.startsWith('/database') ||
-                req.path.startsWith('/.well-known')) {
+                req.path.startsWith('/.well-known') ||
+                req.path.startsWith('/oidc')) {
                 return next();
             }
 

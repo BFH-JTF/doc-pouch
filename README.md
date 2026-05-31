@@ -261,6 +261,7 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 ### User Management
 - `POST /users/login` - Authenticate a user and receive a JWT token
 - `GET /users/list` - List user information (all users for admins, own info for regular users)
+- `GET /users/whoami` - Get information about the current authenticated user
 - `POST /users/create` - Create a new user (admin only)
 - `PATCH /users/update/{userID}` - Update user information
 - `DELETE /users/remove/{userID}` - Remove a user and all their documents (admin only)
@@ -279,10 +280,24 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 - `PATCH /structures/update/{structureID}` - Update an existing data structure (admin only)
 - `DELETE /structures/remove/{structureID}` - Remove a data structure (admin only)
 
-All API endpoints (except login) require authentication using JWT tokens. You can find an OpenAPI specification
-in the `docpouch_openAPI.yaml` file.
+### Database Management
 
-> **Note**: API endpoints use standard HTTP response codes: `201` (Created), `204` (No Content), `403` (Forbidden), etc.
+- `GET /database/export` - Export database (admin only)
+    - Query parameters:
+        - `scope`: Export scope - `all` (default), `users`, `documents`, or `structures`
+        - `format`: Export format - `zip` (default) or `json`
+    - Example: `GET /database/export?scope=users&format=json`
+- `POST /database/import` - Import database (admin only)
+    - Form data:
+        - `file`: The file to import (JSON or ZIP)
+    - Body parameters:
+        - `scope`: Import scope - `all` (default), `users`, `documents`, or `structures`
+        - `mode`: Import mode - `replace` (default), `add`, or `skip`
+
+All API endpoints (except login) require authentication using either JWT tokens or OIDC tokens. You can find an OpenAPI
+specification in the `docpouch_openAPI.yaml` file.
+
+> **Note**: API endpoints use standard HTTP response codes: `200` (OK), `204` (No Content), `403` (Forbidden), etc.
 
 ## OpenID Connect (OIDC)
 
@@ -348,11 +363,28 @@ const users = await client.listUsers();
 
 **6. Logout:**
 
+For **JWT authentication**, use:
 ```ts
 await client.logout();
 // Clears tokens, disconnects WebSocket
-// Also destroy server session:
-await fetch('/oidc/logout', { credentials: 'include' });
+// No server-side session to destroy
+```
+
+For **OIDC authentication**, use:
+```ts
+// Redirect to OIDC end_session endpoint
+const config = await fetch('/api/oidc-client-config').then(r => r.json());
+const logoutUrl = `${config.issuer}/end_session?post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
+window.location.href = logoutUrl;
+// After logout, user is redirected back to post_logout_redirect_uri
+// Client should detect logout and show login dialog
+```
+
+Or use the docpouch-client library's logout method which handles both:
+```ts
+await client.logout();
+// For OIDC: automatically handles server session destruction
+// For JWT: only client-side cleanup
 ```
 
 ### Key Details
