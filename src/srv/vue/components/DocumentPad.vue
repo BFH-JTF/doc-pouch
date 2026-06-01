@@ -27,6 +27,10 @@ const structureFilter = ref('');
 const showDeleteConfirmDialog = ref(false);
 const documentToDelete = ref<string | null>(null);
 
+// Multi-select functionality
+const selectedDocuments = ref<Set<string>>(new Set());
+const isSelectMode = ref(false);
+
 // Create a map of user IDs to usernames
 const userMap = computed(() => {
   const map = new Map();
@@ -43,14 +47,23 @@ const getUsernameFromID = (userID: string): string => {
 };
 
 const confirmDelete = () => {
-  if (selectedDocumentID.value) {
+  if (isSelectMode.value && selectedDocuments.value.size > 0) {
+    // Multi-delete confirmation
+    showDeleteConfirmDialog.value = true;
+  } else if (selectedDocumentID.value) {
+    // Single document delete
     documentToDelete.value = selectedDocumentID.value;
     showDeleteConfirmDialog.value = true;
   }
 };
 
 const executeDelete = () => {
-  if (documentToDelete.value) {
+  if (isSelectMode.value && selectedDocuments.value.size > 0) {
+    // Multi-delete
+    removeSelectedDocuments();
+    showDeleteConfirmDialog.value = false;
+  } else if (documentToDelete.value) {
+    // Single document delete
     emit('documentRemoved', documentToDelete.value);
     selectedDocumentID.value = null;
     showDeleteConfirmDialog.value = false;
@@ -165,11 +178,40 @@ const selectedDocumentID = ref<string | null>(null);
 const showCreateDocumentDialog = ref(false);
 const showSuccessSnackbar = ref(false);
 
+const toggleDocumentSelection = (documentID: string) => {
+  if (selectedDocuments.value.has(documentID)) {
+    selectedDocuments.value.delete(documentID);
+  } else {
+    selectedDocuments.value.add(documentID);
+  }
+};
+
 const selectDocument = (documentID: string | undefined) => {
   if (documentID !== undefined) {
-    selectedDocumentID.value = documentID;
-    emit('documentSelected', documentID);
+    // If in select mode, toggle selection instead of opening document
+    if (isSelectMode.value) {
+      toggleDocumentSelection(documentID);
+    } else {
+      selectedDocumentID.value = documentID;
+      emit('documentSelected', documentID);
+    }
   }
+};
+
+const toggleSelectMode = () => {
+  isSelectMode.value = !isSelectMode.value;
+  // Clear selections when exiting select mode
+  if (!isSelectMode.value) {
+    selectedDocuments.value.clear();
+  }
+};
+
+const removeSelectedDocuments = () => {
+  selectedDocuments.value.forEach(documentID => {
+    emit('documentRemoved', documentID);
+  });
+  selectedDocuments.value.clear();
+  selectedDocumentID.value = null;
 };
 
 const addNewDocument = () => {
@@ -348,8 +390,18 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
           :active="selectedDocumentID !== null && selectedDocumentID === document.id"
           @click="selectDocument(document.id)"
           class="document-list-item"
+          :class="{ 'selected-item': selectedDocuments.has(document.id) }"
         >
           <template v-slot:prepend>
+            <!-- Checkbox for multi-select mode -->
+            <v-checkbox
+                v-if="isSelectMode"
+                :model-value="selectedDocuments.has(document.id)"
+                class="mr-2"
+                hide-details
+                @click.stop="toggleDocumentSelection(document.id)"
+            ></v-checkbox>
+
             <v-avatar size="32" color="primary">
               <v-icon icon="mdi-file-document"></v-icon>
             </v-avatar>
@@ -405,7 +457,56 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
     </div>
 
     <div class="d-flex justify-end mt-3">
-      <v-btn color="error" prepend-icon="mdi-delete" @click="confirmDelete" :disabled="!selectedDocumentID">Remove</v-btn>
+      <!-- Multi-select controls -->
+      <v-btn
+          v-if="isSelectMode"
+          class="mr-2"
+          color="primary"
+          variant="text"
+          @click="toggleSelectMode"
+      >
+        Cancel
+      </v-btn>
+
+      <v-btn
+          v-if="isSelectMode && selectedDocuments.size > 0"
+          class="mr-2"
+          color="error"
+          prepend-icon="mdi-delete"
+          @click="showDeleteConfirmDialog = true"
+      >
+        Remove {{ selectedDocuments.size }} Document(s)
+      </v-btn>
+
+      <v-btn
+          v-if="isSelectMode"
+          color="primary"
+          prepend-icon="mdi-select-multiple"
+          @click="toggleSelectMode"
+      >
+        Select Mode
+      </v-btn>
+
+      <!-- Standard controls -->
+      <v-btn
+          v-if="!isSelectMode"
+          class="mr-2"
+          color="primary"
+          prepend-icon="mdi-select-multiple"
+          @click="toggleSelectMode"
+      >
+        Select Multiple
+      </v-btn>
+
+      <v-btn
+          v-if="!isSelectMode"
+          :disabled="!selectedDocumentID"
+          color="error"
+          prepend-icon="mdi-delete"
+          @click="confirmDelete"
+      >
+        Remove
+      </v-btn>
     </div>
   </div>
 
@@ -432,7 +533,13 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
     <v-card>
       <v-card-title class="text-h5">Confirm Deletion</v-card-title>
       <v-card-text>
-        Deleting a document permanently removes all its content and cannot be undone. Associated data will be lost.
+        <div v-if="isSelectMode && selectedDocuments.size > 0">
+          Are you sure you want to delete {{ selectedDocuments.size }} selected document(s)?
+          This action permanently removes all content and cannot be undone. Associated data will be lost.
+        </div>
+        <div v-else>
+          Deleting a document permanently removes all its content and cannot be undone. Associated data will be lost.
+        </div>
       </v-card-text>
       <v-card-actions>
         <v-spacer></v-spacer>
@@ -460,5 +567,9 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
 
 .document-list-item:last-child {
   border-bottom: none;
+}
+
+.selected-item {
+  background-color: rgba(33, 150, 243, 0.1) !important;
 }
 </style>

@@ -80,33 +80,33 @@
                     No fields defined. Click "Add Field" to add a field to this structure.
                   </div>
 
-                  <v-list v-else lines="two">
+                  <v-list v-else class="structure-fields-list" lines="two">
                     <template v-for="(field, index) in newStructure.fields" :key="index">
-                      <v-list-item>
+                      <v-list-item class="structure-field-item">
                         <template v-slot:prepend>
                           <v-avatar color="primary" size="32">
                             <v-icon icon="mdi-table-column"></v-icon>
                           </v-avatar>
                         </template>
 
-                        <v-list-item-title>
+                        <v-list-item-title class="structure-field-title">
                           <v-text-field
                               v-model="field.name"
                               class="mr-2"
-                              density="compact"
+                              density="comfortable"
                               hide-details
                               label="Field Name"
                               variant="outlined"
                           ></v-text-field>
                         </v-list-item-title>
 
-                        <v-list-item-subtitle>
-                          <v-row class="align-center mt-1" no-gutters>
+                        <v-list-item-subtitle class="structure-field-subtitle">
+                          <v-row class="align-center" no-gutters>
                             <v-col cols="4">
                               <v-select
                                   v-model="field.type"
                                   :items="fieldTypes"
-                                  density="compact"
+                                  density="comfortable"
                                   hide-details
                                   label="Type"
                                   variant="outlined"
@@ -120,7 +120,7 @@
                                   v-model="field.items"
                                   :items="props.structureList"
                                   clearable
-                                  density="compact"
+                                  density="comfortable"
                                   hide-details
                                   item-title="name"
                                   item-value="_id"
@@ -132,14 +132,14 @@
                                   v-model="field.items"
                                   :items="primitiveTypes"
                                   clearable
-                                  density="compact"
+                                  density="comfortable"
                                   hide-details
                                   label="Array Item Type"
                                   variant="outlined"
                               ></v-select>
                             </v-col>
 
-                            <v-col class="pl-2" cols="2">
+                            <v-col class="pl-2 text-right" cols="2">
                               <v-btn
                                   color="error"
                                   icon="mdi-delete"
@@ -277,7 +277,46 @@ watch(() => props.show, (newVal) => {
 </script>
 
 <style scoped>
-.v-list-item {
+.structure-fields-list {
+  padding: 8px 0;
+}
+
+.structure-field-item {
+  min-height: 160px;
+  padding: 16px 16px;
+}
+
+.structure-field-title {
+  margin-bottom: 20px;
+  padding-top: 16px;
+}
+
+.structure-field-subtitle {
+  padding-left: 40px;
   min-height: 80px;
+  padding-top: 8px;
+}
+
+.v-text-field, .v-select {
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.v-text-field :deep(.v-label), .v-select :deep(.v-label) {
+  top: 16px !important;
+  line-height: 1.2 !important;
+}
+
+.v-text-field :deep(.v-input__control), .v-select :deep(.v-input__control) {
+  min-height: 48px;
+}
+
+.v-text-field :deep(.v-field__input), .v-select :deep(.v-field__input) {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+.v-text-field :deep(.v-label--floating), .v-select :deep(.v-label--floating) {
+  transform: translateY(-24px) scale(0.85) !important;
 }
 </style>

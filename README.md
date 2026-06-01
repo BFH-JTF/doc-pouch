@@ -33,6 +33,19 @@ Documents have access control settings:
 
 Owners can change these settings in the document editor.
 
+#### Anonymous Documents
+
+Documents can be created anonymously by setting the `anonymous` flag to `true` during creation. When a document is created
+as anonymous:
+
+- The document is owned by the admin user instead of the creating user
+- The original creator cannot edit or delete the document after creation
+- Only administrators can edit or delete anonymous documents
+- The document content can still contain identifying information added by the user
+
+This feature is useful for collecting feedback or other sensitive information where the submitter wants to remain anonymous
+while still allowing administrators to manage the content.
+
 ### Document Structures
 Document structures describe how documents following this structure are structured and what information they hold.
 They contain a separate DataElement for each field of the data structure in their "fields" property.
@@ -271,6 +284,7 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 - `GET /docs/list` - List all documents readable by the user (including public ones)
 - `POST /docs/fetch` - Get documents based on a query object (including public ones)
 - `POST /docs/create` - Create a new document
+  - Optional `anonymous` parameter (boolean) - If true, document will be owned by admin user
 - `PATCH /docs/update/{documentID}` - Update an existing document
 - `DELETE /docs/remove/{documentID}` - Remove a document
 

@@ -853,9 +853,16 @@ export default class NetworkManager {
         });
 
         this.expressApp.post("/docs/create", this.authenticate, (req, res) => {
+            this.logger.debug(`Document creation request received with body: ${JSON.stringify(req.body)}`);
             if (this.validator.getValidatedObject("documentCreation", req.body)) {
-                this.dataManager.createDocument(req.body, req.userid)
+                this.logger.debug("Document creation validation passed");
+                // Check if the document should be anonymous
+                const isAnonymous = req.body.anonymous === true;
+                this.logger.debug(`Anonymous flag: ${isAnonymous}`);
+                
+                this.dataManager.createDocument(req.body, req.userid, isAnonymous)
                     .then((document) => {
+                        this.logger.debug(`Document created successfully: ${JSON.stringify(document)}`);
                         // Send to document owner and users with access
                         if (document._id) {
                             this.socketServer.sendEventToDocumentAccessors(req.socketID, document._id, "newDocument", {newDocument: document});
@@ -867,9 +874,11 @@ export default class NetworkManager {
                         res.status(200).json(document);
                     })
                     .catch((error) => {
-                        res.status(500).json({error: error.message || error});
+                        this.logger.error(`Document creation failed: ${error.message || error}`, error);
+                        res.status(500).json({error: error.message || "Document creation failed"});
                     });
             } else {
+                this.logger.error("Document creation validation failed");
                 res.status(400).json({
                     error: "Invalid document data",
                 });
