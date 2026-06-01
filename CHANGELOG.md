@@ -1,3 +1,16 @@
+# [1.11.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.10.0...v1.11.0) (2026-06-01)
+
+
+### Bug Fixes
+
+* improve StructureDisplay and StructureCreationDialog layout and update dependencies ([72c7849](https://github.com/BFH-JTF/doc-pouch/commit/72c78494bfa0d7f952a56d24a4b7adcb35e93275))
+
+
+### Features
+
+* add multi-select and bulk delete functionality to DocumentPad ([610606f](https://github.com/BFH-JTF/doc-pouch/commit/610606f9a9e7bc1a9afe19add76ce3385b945ce5))
+* improve StructureCreationDialog styling for better readability ([3a5aae3](https://github.com/BFH-JTF/doc-pouch/commit/3a5aae31f4baef2a796be2d2b9c84471db1bb09d))
+
 # [1.10.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.9.2...v1.10.0) (2026-05-31)
 
 
