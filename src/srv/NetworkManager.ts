@@ -516,14 +516,7 @@ export default class NetworkManager {
             }
         });
 
-        // Error handling middleware for the app
-        this.expressApp.use((err: any, req: Request, res: Response, next: NextFunction) => {
-            this.logger.error(`Express error: ${err.message}`, err);
-            if (res.headersSent) {
-                return next(err);
-            }
-            res.status(500).json({error: 'Internal server error', message: err.message});
-        });
+
 
         // Error handling middleware for the app
         this.expressApp.use((err: any, req: Request, res: Response, next: NextFunction) => {
@@ -535,6 +528,25 @@ export default class NetworkManager {
         });
 
         // Mount OIDC provider before body parser to avoid upstream parser warning
+        // Add custom middleware for end_session endpoint validation
+        this.expressApp.use("/oidc/end_session", async (req: Request, res: Response, next: NextFunction) => {
+            // Log the end_session request for debugging
+            this.logger.debug(`OIDC end_session request: ${req.method} ${req.originalUrl}`);
+
+            // Get the post_logout_redirect_uri from query parameters
+            const postLogoutRedirectUri = req.query.post_logout_redirect_uri as string;
+
+            // If no post_logout_redirect_uri, continue to OIDC provider
+            if (!postLogoutRedirectUri) {
+                return next();
+            }
+
+            this.logger.debug(`Validating post_logout_redirect_uri: ${postLogoutRedirectUri}`);
+
+            // Continue to the OIDC provider - it will handle the actual validation
+            next();
+        });
+        
         this.expressApp.use("/oidc", (req: Request, res: Response, next: NextFunction) => {
             this.logger.debug(`OIDC request: ${req.method} ${req.originalUrl}`);
             // Add error handling middleware for OIDC requests
