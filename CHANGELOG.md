@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.11.0...v1.12.0) (2026-06-02)
+
+
+### Features
+
+* update dependencies and enhance OIDC logout flow ([a1415e8](https://github.com/BFH-JTF/doc-pouch/commit/a1415e8e25eb8134c1d76ad12081756bb26b0cbc))
+
 # [1.11.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.10.0...v1.11.0) (2026-06-01)
 
 
