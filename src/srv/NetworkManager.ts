@@ -164,6 +164,31 @@ export default class NetworkManager {
                     enabled: true,
                     // Custom logout confirmation page
                     logoutSource: async function renderLogoutPage(ctx: any, form: string) {
+                        // Log debugging information
+                        ctx.logger?.debug('=== Logout Source Called ===');
+                        ctx.logger?.debug('Context query params: ' + JSON.stringify(ctx.query));
+                        ctx.logger?.debug('Context params: ' + JSON.stringify(ctx.params));
+                        ctx.logger?.debug('OIDC params: ' + JSON.stringify(ctx.oidc?.params));
+                        ctx.logger?.debug('Interaction result: ' + JSON.stringify(ctx.oidc?.result));
+
+                        // Check if there's an error or cancellation already
+                        if (ctx.oidc?.result?.error === 'access_denied') {
+                            ctx.logger?.debug('Logout was cancelled, redirecting back');
+                            // Redirect back to the application
+                            const returnTo = ctx.oidc.params?.post_logout_redirect_uri || '/';
+                            ctx.redirect(returnTo);
+                            return;
+                        }
+
+                        // Log form details
+                        ctx.logger?.debug('Form HTML: ' + form);
+
+                        // Look for the form action and method
+                        const formActionMatch = form.match(/action="([^"]*)"/);
+                        const formMethodMatch = form.match(/method="([^"]*)"/);
+                        ctx.logger?.debug('Form action: ' + (formActionMatch ? formActionMatch[1] : 'Not found'));
+                        ctx.logger?.debug('Form method: ' + (formMethodMatch ? formMethodMatch[1] : 'Not found'));
+                        
                         // Use the existing OIDC login page as a template
                         const htmlPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/oidc-login.html'))
                             ? path.resolve(process.cwd(), 'dist/srv/oidc-login.html')
@@ -528,23 +553,24 @@ export default class NetworkManager {
         });
 
         // Mount OIDC provider before body parser to avoid upstream parser warning
-        // Add custom middleware for end_session endpoint validation
-        this.expressApp.use("/oidc/end_session", async (req: Request, res: Response, next: NextFunction) => {
-            // Log the end_session request for debugging
-            this.logger.debug(`OIDC end_session request: ${req.method} ${req.originalUrl}`);
-
-            // Get the post_logout_redirect_uri from query parameters
-            const postLogoutRedirectUri = req.query.post_logout_redirect_uri as string;
-
-            // If no post_logout_redirect_uri, continue to OIDC provider
-            if (!postLogoutRedirectUri) {
-                return next();
-            }
-
-            this.logger.debug(`Validating post_logout_redirect_uri: ${postLogoutRedirectUri}`);
-
-            // Continue to the OIDC provider - it will handle the actual validation
-            next();
+        // Log all OIDC requests for debugging
+        this.expressApp.use("/oidc", (req: Request, res: Response, next: NextFunction) => {
+            this.logger.debug('=== OIDC Request ===');
+            this.logger.debug(`${req.method} ${req.url}`);
+            this.logger.debug('Query: ' + JSON.stringify(req.query));
+            this.logger.debug('Body: ' + JSON.stringify(req.body));
+            this.logger.debug('Headers: ' + JSON.stringify(req.headers));
+            // Add error handling middleware for OIDC requests
+            this.oidcProvider.callback()(req, res, (err: any) => {
+                if (err) {
+                    this.logger.error(`OIDC request error: ${err.message}`, err);
+                    // Pass the error to the next error handling middleware
+                    next(err);
+                } else {
+                    // If no error, continue with normal processing
+                    next();
+                }
+            });
         });
         
         this.expressApp.use("/oidc", (req: Request, res: Response, next: NextFunction) => {
@@ -626,9 +652,54 @@ export default class NetworkManager {
 
         // Handle login form submission
         this.expressApp.post('/interaction/:uid', async (req, res) => {
+            this.logger.debug('=== Interaction POST Request ===');
+            this.logger.debug('URL: ' + req.url);
+            this.logger.debug('Method: ' + req.method);
+            this.logger.debug('Body: ' + JSON.stringify(req.body));
+            this.logger.debug('Params: ' + JSON.stringify(req.params));
+            
             try {
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
+                this.logger.debug('Interaction details: ' + JSON.stringify(interaction, null, 2));
+                
                 const {uid, prompt} = interaction;
+                this.logger.debug('Prompt name: ' + prompt?.name);
+                this.logger.debug('Prompt details: ' + JSON.stringify(prompt?.details));
+
+                // Handle logout cancellation
+                if (prompt?.name === 'logout') {
+                    this.logger.debug('Handling logout prompt');
+                    this.logger.debug('Logout value from form: ' + req.body.logout);
+
+                    if (req.body.logout === 'no') {
+                        this.logger.debug('User cancelled logout');
+                        // User cancelled logout - redirect back without logging out
+                        const clientId = interaction.params?.client_id;
+                        this.logger.debug('Client ID: ' + clientId);
+
+                        let returnTo = '/';
+
+                        if (clientId) {
+                            // Get the client's post_logout_redirect_uri if available
+                            const client = await this.oidcProvider.Client.find(clientId);
+                            this.logger.debug('Client details: ' + JSON.stringify(client));
+
+                            if (client && client.postLogoutRedirectUris && client.postLogoutRedirectUris.length > 0) {
+                                returnTo = client.postLogoutRedirectUris[0];
+                                this.logger.debug('Using client post-logout redirect URI: ' + returnTo);
+                            }
+                        }
+
+                        this.logger.debug('Redirecting user to: ' + returnTo);
+                        res.redirect(returnTo);
+                        return;
+                    } else {
+                        this.logger.debug('User confirmed logout');
+                        // User confirmed logout - proceed with normal logout
+                        await this.oidcProvider.interactionFinished(req, res, {logout: {}}, {mergeWithLastSubmission: false});
+                        return;
+                    }
+                }
 
                 if (prompt?.name === 'login') {
                     const {name, password} = req.body;
@@ -653,6 +724,7 @@ export default class NetworkManager {
                     await this.oidcProvider.interactionFinished(req, res, {consent: {grantId}}, {mergeWithLastSubmission: true});
                 }
             } catch (err) {
+                this.logger.error('Interaction handling error: ' + err);
                 res.redirect(`/interaction/${req.params.uid}?error=Login+failed.+Please+try+again.`);
             }
         });
