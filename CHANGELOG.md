@@ -1,3 +1,12 @@
+# [1.13.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.12.0...v1.13.0) (2026-06-06)
+
+
+### Features
+
+* enhance OIDC flow, update dependencies, and improve logout handling ([c29b849](https://github.com/BFH-JTF/doc-pouch/commit/c29b849e719abf3f739b725ff620696dc6636649))
+* enhance OIDC request and interaction debugging ([9a91cf0](https://github.com/BFH-JTF/doc-pouch/commit/9a91cf01a5dbc0a4ba287cbe85eab3c0d8db6419))
+* improve logout flow with nested redirect URI extraction and enable client registration management ([38c48cf](https://github.com/BFH-JTF/doc-pouch/commit/38c48cf003aa7fba270387a6c4f4c7d3b92661c8))
+
 # [1.12.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.11.0...v1.12.0) (2026-06-02)
 
 
