@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.13.0...v1.14.0) (2026-06-06)
+
+
+### Features
+
+* introduce minimal OIDC Relying Party demo and enhance documentation ([44aa2ee](https://github.com/BFH-JTF/doc-pouch/commit/44aa2ee3304f272d39898930b9807ba875278acd))
+
 # [1.13.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.12.0...v1.13.0) (2026-06-06)
 
 
