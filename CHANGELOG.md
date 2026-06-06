@@ -1,3 +1,11 @@
+## [1.14.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.14.0...v1.14.1) (2026-06-06)
+
+
+### Bug Fixes
+
+* allow multi-selection for structure filtering in DocumentPad ([52f7472](https://github.com/BFH-JTF/doc-pouch/commit/52f7472d4a8888dc3a5343a7638e79959e275e24))
+* resolve user update issues and improve error handling in NeDbWrapper ([c036f3b](https://github.com/BFH-JTF/doc-pouch/commit/c036f3b3bc4113d5f701dba42e4b0b206423fa27))
+
 # [1.14.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.13.0...v1.14.0) (2026-06-06)
 
 
