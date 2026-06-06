@@ -7,6 +7,7 @@ import type {I_LoginResponse} from "docpouch-client";
 const props = defineProps<{
   show: boolean;
   apiClient: DbPouchClient;
+  showOidc?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -97,8 +98,9 @@ async function handleLogin() {
           Login
         </v-btn>
       </v-card-actions>
-      <v-divider class="mx-4 my-2"></v-divider>
+      <v-divider v-if="props.showOidc" class="mx-4 my-2"></v-divider>
       <v-img
+          v-if="props.showOidc"
           :src="oidcBanner"
           class="mx-4 my-2 rounded cursor-pointer"
           style="cursor: pointer;"

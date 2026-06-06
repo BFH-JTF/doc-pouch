@@ -110,36 +110,53 @@ export default class NetworkManager {
         this.dataManager = dataManager;
         this.logger = logger;
         this.validator = new SchemaValidator(logger);
-        // Generate static JWKS for token signing (development/simple setup)
-        const {publicKey, privateKey} = crypto.generateKeyPairSync('rsa', {
-            modulusLength: 4096,
-            publicKeyEncoding: {type: 'spki', format: 'pem'},
-            privateKeyEncoding: {type: 'pkcs8', format: 'pem'}
-        });
+        const jwksFile = path.join(process.cwd(), 'db', 'oidc-jwks.json');
 
-        // Convert PEM to JWK format for oidc-provider
-        const keyPair = crypto.createPrivateKey(privateKey);
-        const jwk = keyPair.export({format: 'jwk'});
-        const publicJwk = crypto.createPublicKey(publicKey).export({format: 'jwk'});
+        let jwks: any;
+        if (fs.existsSync(jwksFile)) {
+            jwks = JSON.parse(fs.readFileSync(jwksFile, 'utf8'));
+            this.logger.info('Loaded existing JWKS from disk');
+        } else {
+            // Generate static JWKS for token signing (development/simple setup)
+            this.logger.info('Generating new JWKS key pair');
+            const {publicKey, privateKey} = crypto.generateKeyPairSync('rsa', {
+                modulusLength: 4096,
+                publicKeyEncoding: {type: 'spki', format: 'pem'},
+                privateKeyEncoding: {type: 'pkcs8', format: 'pem'}
+            });
 
-        const jwks = {
-            keys: [{
-                kty: 'RSA',
-                use: 'sig',
-                alg: 'RS256',
-                kid: 'docpouch-key-1',
-                ...publicJwk,
-                d: jwk.d,
-                p: jwk.p,
-                dp: jwk.dp,
-                dq: jwk.dq,
-                q: jwk.q,
-                qi: jwk.qi
-            }]
-        };
+            const keyPair = crypto.createPrivateKey(privateKey);
+            const jwk = keyPair.export({format: 'jwk'});
+            const publicJwk = crypto.createPublicKey(publicKey).export({format: 'jwk'});
+
+            jwks = {
+                keys: [{
+                    kty: 'RSA',
+                    use: 'sig',
+                    alg: 'RS256',
+                    kid: 'docpouch-key-1',
+                    ...publicJwk,
+                    d: jwk.d,
+                    p: jwk.p,
+                    dp: jwk.dp,
+                    dq: jwk.dq,
+                    q: jwk.q,
+                    qi: jwk.qi
+                }]
+            };
+
+            if (!fs.existsSync(path.dirname(jwksFile))) {
+                fs.mkdirSync(path.dirname(jwksFile), {recursive: true});
+            }
+            fs.writeFileSync(jwksFile, JSON.stringify(jwks, null, 2), 'utf8');
+            this.logger.info('Persisted new JWKS to disk');
+        }
 
         // Determine the correct issuer based on environment
-        const issuer = process.env.OIDC_ISSUER || `http://localhost:${port}/oidc`;
+        if (!process.env.OIDC_ISSUER) {
+            throw new Error('OIDC_ISSUER environment variable is required for OIDC provider initialization');
+        }
+        const issuer = process.env.OIDC_ISSUER;
         this.logger.info(`Initializing OIDC provider with issuer: ${issuer}`);
 
         this.oidcProvider = new oidc.Provider(issuer, {
@@ -156,85 +173,63 @@ export default class NetworkManager {
                     secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
                     httpOnly: true,
                     sameSite: 'lax'
+                },
+                names: {
+                    session: '_session',
+                    interaction: '_interaction',
+                    resume: '_interaction_resume'
                 }
             },
             features: {
                 devInteractions: {enabled: false},
                 rpInitiatedLogout: {
                     enabled: true,
-                    // Custom logout confirmation page
-                    logoutSource: async function renderLogoutPage(ctx: any, form: string) {
-                        // Log debugging information
-                        ctx.logger?.debug('=== Logout Source Called ===');
-                        ctx.logger?.debug('Context query params: ' + JSON.stringify(ctx.query));
-                        ctx.logger?.debug('Context params: ' + JSON.stringify(ctx.params));
-                        ctx.logger?.debug('OIDC params: ' + JSON.stringify(ctx.oidc?.params));
-                        ctx.logger?.debug('Interaction result: ' + JSON.stringify(ctx.oidc?.result));
-
-                        // Check if there's an error or cancellation already
-                        if (ctx.oidc?.result?.error === 'access_denied') {
-                            ctx.logger?.debug('Logout was cancelled, redirecting back');
-                            // Redirect back to the application
-                            const returnTo = ctx.oidc.params?.post_logout_redirect_uri || '/';
-                            ctx.redirect(returnTo);
-                            return;
-                        }
-
-                        // Log form details
-                        ctx.logger?.debug('Form HTML: ' + form);
-
-                        // Look for the form action and method
-                        const formActionMatch = form.match(/action="([^"]*)"/);
-                        const formMethodMatch = form.match(/method="([^"]*)"/);
-                        ctx.logger?.debug('Form action: ' + (formActionMatch ? formActionMatch[1] : 'Not found'));
-                        ctx.logger?.debug('Form method: ' + (formMethodMatch ? formMethodMatch[1] : 'Not found'));
-                        
-                        // Use the existing OIDC login page as a template
-                        const htmlPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/oidc-login.html'))
-                            ? path.resolve(process.cwd(), 'dist/srv/oidc-login.html')
-                            : path.resolve(process.cwd(), 'src/srv/oidc-login.html');
+                    logoutSource: async function (ctx: any, form: string) {
+                        ctx.logger?.debug('Rendering logout confirmation page');
+                        const htmlPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/oidc-logout.html'))
+                            ? path.resolve(process.cwd(), 'dist/srv/oidc-logout.html')
+                            : path.resolve(process.cwd(), 'src/srv/oidc-logout.html');
                         let html = fs.readFileSync(htmlPath, 'utf8');
-
-                        // Customize for logout confirmation
-                        html = html.replace('<title>DocPouch - Login</title>', '<title>DocPouch - Logout</title>');
+                        const actionMatch = form.match(/action="([^"]+)"/);
+                        const xsrfMatch = form.match(/name="xsrf" value="([^"]+)"/);
+                        const postLogoutRedirectUri = ctx.oidc?.session?.state?.postLogoutRedirectUri || '/';
                         html = html.replace(/__NONCE__/g, ctx.res.locals?.nonce || '');
-
-                        // Create logout-specific content
-                        const logoutForm = `
-                          <div class="logo">
-                            <img alt="DocPouch" class="logo-img" src="/oidc/static/docPouch.png">
-                            <h1>DocPouch</h1>
-                            <p>Sign out confirmation</p>
-                          </div>
-                          
-                          <div class="info">
-                            Do you want to sign out from DocPouch?
-                          </div>
-                          
-                          ${form}
-                          
-                          <div style="display: flex; gap: 10px; margin-top: 20px;">
-                            <button type="submit" form="op.logoutForm" value="yes" name="logout" 
-                                    style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; flex: 1;">
-                              Yes, sign me out
-                            </button>
-                            <button type="submit" form="op.logoutForm" value="no" name="logout"
-                                    style="background: #f5f5f5; color: #333; border: 2px solid #e0e0e0; padding: 14px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; flex: 1;">
-                              No, stay signed in
-                            </button>
-                          </div>
-                        `;
-
-                        // Replace the login form with our logout confirmation
-                        const loginFormRegex = /<div class="login-container">[\s\S]*?<form id="loginForm"[\s\S]*?<\/form>[\s\S]*?<\/div>/;
-                        html = html.replace(loginFormRegex,
-                            `<div class="login-container">${logoutForm}</div>`);
-
+                        html = html.replace('__ACTION_URL__', actionMatch ? actionMatch[1] : '');
+                        html = html.replace('__XSRF__', xsrfMatch ? xsrfMatch[1] : '');
+                        html = html.replace('__POST_LOGOUT_REDIRECT_URI__', '/');
                         ctx.body = html;
                     },
-
-                    // Custom post-logout success page
                     postLogoutSuccessSource: async function renderLogoutSuccessPage(ctx: any) {
+                        // Clear all oidc-provider session cookies to ensure re-authentication is required
+                        const cookieNames = ['_session', '_interaction', '_interaction_resume'];
+                        const cookieOptions = {
+                            path: '/',
+                            httpOnly: true,
+                            secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+                            sameSite: 'lax' as const,
+                            maxAge: 0
+                        };
+
+                        cookieNames.forEach(name => {
+                            ctx.cookies.set(name, '', cookieOptions);
+                            ctx.cookies.set(`${name}.sig`, '', cookieOptions);
+                        });
+
+                        // Also destroy the session in the backend store
+                        try {
+                            const sessionUid = ctx.oidc?.session?.uid;
+                            if (sessionUid) {
+                                const sessionAdapter = new (ctx.oidc?.provider?.Adapter || function () {
+                                })('Session');
+                                if (sessionAdapter.destroy) {
+                                    await sessionAdapter.destroy(sessionUid);
+                                    ctx.logger?.debug(`Destroyed session ${sessionUid}`);
+                                }
+                            }
+                        } catch (err) {
+                            ctx.logger?.debug('Session destruction not critical:', err);
+                        }
+                        
                         const display = ctx.oidc.client?.clientName || ctx.oidc.client?.clientId;
 
                         ctx.body = `<!DOCTYPE html>
@@ -341,11 +336,16 @@ export default class NetworkManager {
                                 You have been successfully signed out of DocPouch.
                               </div>
                               
-                              <button onclick="window.location.href='/'">
+                              <button id="returnToAppBtn">
                                 Return to Application
                               </button>
                             </div>
                           </body>
+                          <script nonce="${ctx.res.locals?.nonce || ''}">
+                            document.getElementById('returnToAppBtn').addEventListener('click', () => {
+                              window.location.href = '/';
+                            });
+                          </script>
                           </html>`;
                     }
                 },
@@ -367,13 +367,18 @@ export default class NetworkManager {
                     client_id: 'docpouch-admin-ui',
                     client_name: 'DocPouch Admin UI',
                     redirect_uris: [process.env.OIDC_REDIRECT_URI || `${issuer.replace('/oidc', '')}/`],
-                    post_logout_redirect_uris: [process.env.OIDC_POST_LOGOUT_REDIRECT_URI || process.env.OIDC_REDIRECT_URI || `${issuer.replace('/oidc', '')}/`],
+                    post_logout_redirect_uris: [
+                        process.env.OIDC_POST_LOGOUT_REDIRECT_URI || process.env.OIDC_REDIRECT_URI || `${issuer.replace('/oidc', '')}/`,
+                        `${issuer.replace('/oidc', '')}/oidc/logout-redirect`,
+                    ],
                     grant_types: ['authorization_code', 'refresh_token'],
                     response_types: ['code'],
                     token_endpoint_auth_method: 'none',
                     application_type: 'web',
                 }
             ],
+            // Configure which scopes are available to clients
+            scopes: ['openid', 'profile', 'email', 'offline_access'],
             // Add specific configuration for end_session endpoint
             routes: {
                 authorization: '/auth',
@@ -412,15 +417,21 @@ export default class NetworkManager {
                 };
             },
             ttl: {
-                Interaction: 3600,
-                Session: 86400,
+                Session: 3600,           // 1 hour
+                Grant: 3600,             // 1 hour
+                AccessToken: 3600,       // 1 hour
+                IdToken: 3600,           // 1 hour
+                RefreshToken: 86400,     // 24 hours
+                Interaction: 300,        // 5 minutes
             },
             renderError: (ctx, out, error) => {
-                ctx.status = (error as any)?.status || 500;
+                const err = error as any;
+                console.error('OIDC renderError:', err.message, err.error_description, err.error_detail, err.stack);
+                ctx.status = err?.status || 500;
                 ctx.body = {
-                    error: (error as any)?.message || 'Unknown error',
-                    error_description: (error as any)?.description || 'An error occurred'
-                }
+                    error: err?.message || 'Unknown error',
+                    error_description: err?.error_description || err?.description || 'An error occurred'
+                };
             }
         });
 
@@ -480,6 +491,10 @@ export default class NetworkManager {
         // OIDC client config endpoint (must be before the OIDC provider mount)
         this.expressApp.get('/api/oidc-client-config', async (req, res) => {
             try {
+                if (!process.env.OIDC_ISSUER) {
+                    res.json({configured: false});
+                    return;
+                }
                 const host = req.headers.host || `localhost:${this.port}`;
                 const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
                 const redirectUri = `${protocol}://${host}/`;
@@ -489,14 +504,15 @@ export default class NetworkManager {
 
                 let registeredClientId: string | null = null;
 
+                const logoutRedirectUri = `${protocol}://${host}/oidc/logout-redirect`;
+
                 if (existing) {
                     registeredClientId = (existing.client_id || existing._id || clientId) as string;
-                    // Update redirect URI if it has changed
                     const existingUris = existing.redirect_uris || [];
                     const existingPostLogoutUris = existing.post_logout_redirect_uris || [];
-                    if (!existingUris.includes(redirectUri)) {
-                        const updatedUris = [...existingUris, redirectUri];
-                        const updatedPostLogoutUris = [...existingPostLogoutUris, redirectUri];
+                    const updatedUris = existingUris.includes(redirectUri) ? existingUris : [...existingUris, redirectUri];
+                    const updatedPostLogoutUris = existingPostLogoutUris.includes(logoutRedirectUri) ? existingPostLogoutUris : [...existingPostLogoutUris, logoutRedirectUri];
+                    if (updatedUris !== existingUris || updatedPostLogoutUris !== existingPostLogoutUris) {
                         await clientAdapter.upsert(registeredClientId, {
                             ...existing,
                             redirect_uris: updatedUris,
@@ -512,13 +528,18 @@ export default class NetworkManager {
                             client_id: clientId,
                             client_name: 'DocPouch Admin UI',
                             redirect_uris: [redirectUri],
-                            post_logout_redirect_uris: [redirectUri],
+                            post_logout_redirect_uris: [logoutRedirectUri],
                             grant_types: ['authorization_code', 'refresh_token'],
                             response_types: ['code'],
                             token_endpoint_auth_method: 'none',
                             application_type: 'web',
+                            default_max_age: 86400,
+                            require_auth_time: false,
                         });
-                        await clientAdapter.upsert(client.clientId, client.metadata(), client.expiresAt);
+                        // Persist the client with allowed scopes
+                        const clientMetadata = client.metadata();
+                        clientMetadata.allowed_scopes = 'openid profile email offline_access';
+                        await clientAdapter.upsert(client.clientId, clientMetadata, client.expiresAt);
                         registeredClientId = client.clientId;
                         this.logger.info(`Admin UI OIDC client created: ${registeredClientId}`);
                     } catch (err: any) {
@@ -529,10 +550,11 @@ export default class NetworkManager {
                 }
 
                 res.json({
-                    issuer: process.env.OIDC_ISSUER || `${protocol}://${host}/oidc`,
+                    configured: true,
+                    issuer: process.env.OIDC_ISSUER,
                     clientId: registeredClientId,
                     redirectUri,
-                    postLogoutRedirectUri: redirectUri,
+                    postLogoutRedirectUri: `${protocol}://${host}/oidc/logout-redirect`,
                     scope: 'openid profile email offline_access',
                 });
             } catch (err: any) {
@@ -552,45 +574,69 @@ export default class NetworkManager {
             res.status(500).json({error: 'Internal server error', message: err.message});
         });
 
-        // Mount OIDC provider before body parser to avoid upstream parser warning
+        // Error handling middleware for the app
+        this.expressApp.use((err: any, req: Request, res: Response, next: NextFunction) => {
+            this.logger.error(`Express error: ${err.message}`, err);
+            if (res.headersSent) {
+                return next(err);
+            }
+            res.status(500).json({error: 'Internal server error', message: err.message});
+        });
+
+        // Logout redirect handler - must be before OIDC provider mount
+        // Ensures cookies are cleared after oidc-provider logout
+        this.expressApp.get('/oidc/logout-redirect', async (req, res) => {
+            this.logger.debug('Logout redirect handler called');
+            const postLogoutRedirectUri = req.query.post_logout_redirect_uri as string || '/';
+
+            const cookieOptions = {
+                httpOnly: true,
+                secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+                sameSite: 'lax' as const,
+                path: '/'
+            };
+
+            ['_session', '_interaction', '_interaction_resume'].forEach(name => {
+                res.clearCookie(name, cookieOptions);
+                res.clearCookie(`${name}.legacy`, cookieOptions);
+                res.clearCookie(`${name}.sig`, cookieOptions);
+            });
+
+            this.logger.debug('Redirecting to:', postLogoutRedirectUri);
+            res.redirect(postLogoutRedirectUri);
+        });
+
         // Log all OIDC requests for debugging
         this.expressApp.use("/oidc", (req: Request, res: Response, next: NextFunction) => {
             this.logger.debug('=== OIDC Request ===');
             this.logger.debug(`${req.method} ${req.url}`);
             this.logger.debug('Query: ' + JSON.stringify(req.query));
-            this.logger.debug('Body: ' + JSON.stringify(req.body));
             this.logger.debug('Headers: ' + JSON.stringify(req.headers));
-            // Add error handling middleware for OIDC requests
-            this.oidcProvider.callback()(req, res, (err: any) => {
-                if (err) {
-                    this.logger.error(`OIDC request error: ${err.message}`, err);
-                    // Pass the error to the next error handling middleware
-                    next(err);
-                } else {
-                    // If no error, continue with normal processing
-                    next();
-                }
+
+            // Log response when it finishes
+            res.on('finish', () => {
+                this.logger.debug(`Response sent: ${res.statusCode} for ${req.method} ${req.originalUrl}`);
             });
+
+            next();
         });
-        
+
+        // Mount OIDC provider (it has its own body parser)
         this.expressApp.use("/oidc", (req: Request, res: Response, next: NextFunction) => {
-            this.logger.debug(`OIDC request: ${req.method} ${req.originalUrl}`);
-            // Add error handling middleware for OIDC requests
             this.oidcProvider.callback()(req, res, (err: any) => {
                 if (err) {
-                    this.logger.error(`OIDC request error: ${err.message}`, err);
-                    // Pass the error to the next error handling middleware
+                    this.logger.error(`OIDC callback error: ${err.message}`, err);
                     next(err);
                 } else {
-                    // If no error, continue with normal processing
                     next();
                 }
             });
         });
 
-        // Body parser for non-OIDC routes only
+        // Body parser for non-OIDC routes only (must be after OIDC provider)
         this.expressApp.use(express.json());
         this.expressApp.use(express.urlencoded({extended: true}));
+
 
         // Configure multer for file uploads
         const upload = multer({
@@ -666,41 +712,6 @@ export default class NetworkManager {
                 this.logger.debug('Prompt name: ' + prompt?.name);
                 this.logger.debug('Prompt details: ' + JSON.stringify(prompt?.details));
 
-                // Handle logout cancellation
-                if (prompt?.name === 'logout') {
-                    this.logger.debug('Handling logout prompt');
-                    this.logger.debug('Logout value from form: ' + req.body.logout);
-
-                    if (req.body.logout === 'no') {
-                        this.logger.debug('User cancelled logout');
-                        // User cancelled logout - redirect back without logging out
-                        const clientId = interaction.params?.client_id;
-                        this.logger.debug('Client ID: ' + clientId);
-
-                        let returnTo = '/';
-
-                        if (clientId) {
-                            // Get the client's post_logout_redirect_uri if available
-                            const client = await this.oidcProvider.Client.find(clientId);
-                            this.logger.debug('Client details: ' + JSON.stringify(client));
-
-                            if (client && client.postLogoutRedirectUris && client.postLogoutRedirectUris.length > 0) {
-                                returnTo = client.postLogoutRedirectUris[0];
-                                this.logger.debug('Using client post-logout redirect URI: ' + returnTo);
-                            }
-                        }
-
-                        this.logger.debug('Redirecting user to: ' + returnTo);
-                        res.redirect(returnTo);
-                        return;
-                    } else {
-                        this.logger.debug('User confirmed logout');
-                        // User confirmed logout - proceed with normal logout
-                        await this.oidcProvider.interactionFinished(req, res, {logout: {}}, {mergeWithLastSubmission: false});
-                        return;
-                    }
-                }
-
                 if (prompt?.name === 'login') {
                     const {name, password} = req.body;
                     const user = await this.dataManager.validateUser(name, password);
@@ -708,7 +719,24 @@ export default class NetworkManager {
                         res.redirect(`/interaction/${uid}?error=Invalid+username+or+password`);
                         return;
                     }
-                    await this.oidcProvider.interactionFinished(req, res, {login: {accountId: user._id}}, {mergeWithLastSubmission: false});
+                    this.logger.debug('Login successful for user: ' + user._id);
+                    // Complete login and immediately grant consent for all requested scopes
+                    const grant = new this.oidcProvider.Grant({
+                        accountId: user._id,
+                        clientId: interaction.params?.client_id,
+                    });
+                    // Use the full scope from the original authorization request
+                    const requestedScope = interaction.params?.scope || 'openid profile email offline_access';
+                    this.logger.debug('Granting scopes: ' + requestedScope);
+                    grant.addOIDCScope(requestedScope);
+                    const grantId = await grant.save();
+                    this.logger.debug('Grant created with ID: ' + grantId);
+                    await this.oidcProvider.interactionFinished(req, res, {
+                        login: {accountId: user._id},
+                        consent: {grantId}
+                    }, {mergeWithLastSubmission: false});
+                    this.logger.debug('Login and consent interaction finished');
+                    return;
                 } else if (prompt?.name === 'consent') {
                     const grant = new this.oidcProvider.Grant({
                         accountId: interaction.session?.accountId,
@@ -722,6 +750,20 @@ export default class NetworkManager {
                     }
                     const grantId = await grant.save();
                     await this.oidcProvider.interactionFinished(req, res, {consent: {grantId}}, {mergeWithLastSubmission: true});
+                } else if (prompt?.name === 'logout') {
+                    this.logger.debug('Handling logout prompt');
+                    this.logger.debug('Logout value from form: ' + req.body.logout);
+
+                    if (req.body.logout === 'no') {
+                        this.logger.debug('User cancelled logout - redirecting back without logging out');
+                        const redirectUri = interaction.params?.post_logout_redirect_uri || '/';
+                        res.redirect(redirectUri);
+                        return;
+                    } else {
+                        this.logger.debug('User confirmed logout - proceeding with logout');
+                        await this.oidcProvider.interactionFinished(req, res, {logout: {}}, {mergeWithLastSubmission: false});
+                        return;
+                    }
                 }
             } catch (err) {
                 this.logger.error('Interaction handling error: ' + err);

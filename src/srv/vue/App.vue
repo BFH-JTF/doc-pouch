@@ -34,6 +34,7 @@ interface I_LegacyDocumentType {
 const serverPort = 3030;
 
 interface I_OidcClientConfig {
+  configured: boolean;
   issuer: string;
   clientId: string;
   redirectUri: string;
@@ -59,6 +60,7 @@ let shownComponent = ref(DisplayComponent.documentViewer);
 const apiClient = new DbPouchClient(window.location.href.slice(0, window.location.href.lastIndexOf('/')), serverPort, handleNetworkEvent);
 const isLoggedIn = computed(() => authToken.value !== null);
 const showLoginDialog = ref(true)
+const showOidcLogin = ref(false)
 const showAboutDialog = ref(false)
 const showImportDialog = ref(false)
 const realtimeUpdates = ref(false);
@@ -352,13 +354,25 @@ onMounted(async () => {
     const configResponse = await fetch('/api/oidc-client-config');
     if (configResponse.ok) {
       const config = await configResponse.json();
-      oidcConfig.value = config;
-      apiClient.setOidcConfig(config);
+      if (config.configured) {
+        oidcConfig.value = config;
+        showOidcLogin.value = true;
+        apiClient.setOidcConfig(config);
+      }
     }
   } catch {
   }
 
-  // 1. Try OIDC callback (URL has code/state from OIDC redirect)
+  // 1. Check if we just returned from a completed logout
+  if (apiClient.wasJustLoggedOut()) {
+    console.log("OIDC logout completed, clearing all auth state");
+    setToken(null);
+    localStorage.removeItem('docpouch_oidc_session');
+    localStorage.removeItem('authMethod');
+    return;
+  }
+
+  // 2. Try OIDC callback (URL has code/state from OIDC redirect)
   try {
     const handled = await apiClient.handleOidcCallback();
     if (handled) {
@@ -477,12 +491,8 @@ function handleUserRemoved(userID: string) {
 }
 
 async function handleLogout() {
-  // Use the client's logout method which handles both JWT and OIDC
-  // For OIDC: client will redirect to /end_session with post_logout_redirect_uri
-  // For JWT: client only clears localStorage (no server call)
-  apiClient.logout({
-    redirectUri: oidcConfig.value?.postLogoutRedirectUri || oidcConfig.value?.redirectUri || window.location.origin
-  });
+  sessionStorage.setItem('docpouch_logout_in_progress', 'true');
+  apiClient.logout();
   authToken.value = null;
   localStorage.removeItem('authToken');
   localStorage.removeItem('isAdmin');
@@ -508,6 +518,7 @@ function handleApiError(error: unknown, context: string = "API operation") {
       apiClient.logout();
       authToken.value = null;
       localStorage.removeItem('authToken');
+      localStorage.removeItem('docpouch_oidc_session');
       localStorage.removeItem('isAdmin');
       localStorage.removeItem('authMethod');
       showLoginDialog.value = true;
@@ -866,7 +877,8 @@ async function migrateDatabase() {
         </div>
       </v-footer>
       <LoginDialog v-if="!authToken" v-model:show="showLoginDialog"
-                   :api-client="apiClient" @login-success="handleLoginSuccess"
+                   :api-client="apiClient" :show-oidc="showOidcLogin"
+                   @login-success="handleLoginSuccess"
                    @oidc-login="startOidcLogin"
                    @update:show="handleDialogUpdate"/>
       <AboutDialog :show="showAboutDialog" @close="showAboutDialog = false"/>
