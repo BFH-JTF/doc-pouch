@@ -192,11 +192,15 @@ export default class NetworkManager {
                         let html = fs.readFileSync(htmlPath, 'utf8');
                         const actionMatch = form.match(/action="([^"]+)"/);
                         const xsrfMatch = form.match(/name="xsrf" value="([^"]+)"/);
-                        const postLogoutRedirectUri = ctx.oidc?.session?.state?.postLogoutRedirectUri || '/';
+                        const rawRedirectUri = ctx.oidc?.session?.state?.postLogoutRedirectUri || '/';
+                        // If the URI is a proxy (contains a nested post_logout_redirect_uri query param),
+                        // extract the actual RP return URL for the cancel button
+                        const nestedMatch = rawRedirectUri.match(/[?&]post_logout_redirect_uri=([^&]+)/);
+                        const cancelUrl = nestedMatch ? decodeURIComponent(nestedMatch[1]) : rawRedirectUri;
                         html = html.replace(/__NONCE__/g, ctx.res.locals?.nonce || '');
                         html = html.replace('__ACTION_URL__', actionMatch ? actionMatch[1] : '');
                         html = html.replace('__XSRF__', xsrfMatch ? xsrfMatch[1] : '');
-                        html = html.replace('__POST_LOGOUT_REDIRECT_URI__', '/');
+                        html = html.replace('__POST_LOGOUT_REDIRECT_URI__', cancelUrl);
                         ctx.body = html;
                     },
                     postLogoutSuccessSource: async function renderLogoutSuccessPage(ctx: any) {
@@ -359,7 +363,8 @@ export default class NetworkManager {
                     secretFactory: (ctx) => {
                         return crypto.randomBytes(64).toString('base64url');
                     }
-                }
+                },
+                registrationManagement: {enabled: true, rotateRegistrationAccessToken: false},
             },
             // Additional configuration for proper logout handling
             clients: [
