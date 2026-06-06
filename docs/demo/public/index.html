@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>DocPouch OIDC RP demo</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 720px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        pre {
+            background: #f4f4f4;
+            padding: 1rem;
+            overflow: auto;
+        }
+
+        button {
+            padding: .5rem 1rem;
+            margin-right: .5rem;
+        }
+
+        .ok {
+            color: #15803d;
+        }
+
+        .err {
+            color: #b91c1c;
+        }
+    </style>
+</head>
+<body>
+<h1>DocPouch OIDC Relying Party demo</h1>
+<p>This page uses <code>docpouch-client</code> to authenticate against
+    DocPouch using OpenID Connect (authorization code + PKCE).</p>
+
+<div id="status">Loading…</div>
+
+<div id="actions" style="margin-top: 1rem; display: none;">
+    <button id="btn-login">Log in with DocPouch</button>
+    <button id="btn-list">List documents</button>
+    <button id="btn-logout">Log out</button>
+</div>
+
+<h3>Result</h3>
+<pre id="output">(no calls yet)</pre>
+
+<!-- docpouch-client is an ESM module published on npm. When you install
+     the demo with `npm install`, Vite/webpack/serve-with-imports will
+     resolve this. For a quick browser-only test you can also load it
+     from a local dev server that resolves node_modules. -->
+<script src="./app.js" type="module"></script>
+</body>
+</html>

@@ -46,10 +46,14 @@ paths:
                   userName:
                     type: string
                     description: "The user's display name"
+                  _id:
+                    type: string
+                    description: "The unique identifier of the logged-in user"
                 required:
                   - token
                   - isAdmin
                   - userName
+                  - _id
         401:
           description: "Invalid credentials"
         404:

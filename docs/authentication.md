@@ -53,7 +53,7 @@ const response = await fetch('http://localhost:3030/users/login', {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'admin', password: 'password' })
 });
-const { token, isAdmin, userName } = await response.json();
+const { token, isAdmin, userName, _id } = await response.json();
 
 // Store token (localStorage, sessionStorage, or memory)
 localStorage.setItem('authToken', token);
@@ -69,6 +69,9 @@ const userResponse = await fetch('http://localhost:3030/users/whoami', {
 });
 const userInfo = await userResponse.json();
 ```
+
+The login response also includes the user's `_id`. `docpouch-client` does this for you; the field is documented
+here for users building their own HTTP clients.
 
 ### Pros/Cons
 
@@ -108,6 +111,7 @@ curl -X POST http://localhost:3030/oidc/reg \
   -d '{
     "client_name": "My App",
     "redirect_uris": ["http://localhost:8080/callback"],
+    "post_logout_redirect_uris": ["http://localhost:8080/"],
     "response_types": ["code"],
     "grant_types": ["authorization_code"],
     "token_endpoint_auth_method": "client_secret_basic"
@@ -120,9 +124,31 @@ curl -X POST http://localhost:3030/oidc/reg \
   "client_id": "abc123...",
   "client_secret": "secret456...",
   "registration_access_token": "token...",
-  "registration_client_uri": "..."
+  "registration_client_uri": "...",
+  "post_logout_redirect_uris": ["http://localhost:8080/"]
 }
 ```
+
+> If you want RP-initiated logout (`/end_session`) to redirect the user back to your app afterwards, you **must**
+> register at least one `post_logout_redirect_uri` matching the value you pass to `end_session`.
+
+The server also registers a built-in client named `docpouch-admin-ui` (the bundled admin UI). You do not need to
+do anything to provision it; it is created automatically the first time the server boots. It is exposed through
+`GET /api/oidc-client-config`, which returns:
+
+```json
+{
+  "configured": true,
+  "issuer": "http://localhost:3030",
+  "clientId": "docpouch-admin-ui",
+  "redirectUri": "http://localhost:3030/",
+  "postLogoutRedirectUri": "http://localhost:3030/oidc/logout-redirect",
+  "scope": "openid profile email offline_access"
+}
+```
+
+You can read, update, or delete your own registration later through `GET/PUT/DELETE /oidc/reg/{clientId}` using
+the returned `registration_access_token`.
 
 ### Step 2: Initiate Authorization Flow
 
@@ -250,14 +276,18 @@ whether `name` and `email` are included in the `/oidc/me` user info endpoint res
 
 ## Environment Variables
 
-| Variable                  | Description                                                                        | Default                                       |
-|---------------------------|------------------------------------------------------------------------------------|-----------------------------------------------|
-| `OIDC_REGISTRATION_TOKEN` | Token for client registration                                                      | (required)                                    |
-| `OIDC_ISSUER`             | Base URL of the OIDC provider                                                      | `http://localhost:3030`                       |
-| `OIDC_COOKIE_KEY`         | Secret for session cookies                                                         | `docpouch-cookie-secret-change-in-production` |
-| `OIDC_COOKIE_SECURE`      | Set to `true` when running directly with HTTPS; leave unset behind a reverse proxy | `false`                                       |
+| Variable                        | Description                                                                                           | Default                                          |
+|---------------------------------|-------------------------------------------------------------------------------------------------------|--------------------------------------------------|
+| `OIDC_REGISTRATION_TOKEN`       | Token for client registration (initial access token).                                                 | (required)                                       |
+| `OIDC_ISSUER`                   | Base URL of the OIDC provider.                                                                        | `http://localhost:3030`                          |
+| `OIDC_REDIRECT_URI`             | Default redirect URI for the built-in admin UI client.                                                | `${OIDC_ISSUER}/`                                |
+| `OIDC_POST_LOGOUT_REDIRECT_URI` | Default post-logout redirect URI for the built-in admin UI client. Falls back to `OIDC_REDIRECT_URI`. | `${OIDC_ISSUER}/`                                |
+| `OIDC_COOKIE_KEY`               | Secret for OIDC session cookies. **Change in production!**                                            | `docpouch-cookie-secret-change-in-production`    |
+| `OIDC_COOKIE_SECURE`            | Set to `true` when running directly with HTTPS; leave unset behind a reverse proxy.                   | `false` (auto-`true` when `NODE_ENV=production`) |
 
-Copy `.env.example` to `.env` and configure these values.
+Copy `.env.example` to `.env` and configure these values. When `NODE_ENV=production`, `OIDC_COOKIE_SECURE` is
+implicitly enabled regardless of its value, and the OIDC provider also sets `proxy: true` to behave correctly
+behind a reverse proxy.
 
 ---
 
@@ -284,28 +314,57 @@ Copy `.env.example` to `.env` and configure these values.
 
 ### JWT Logout (Client-Side Only)
 For JWT authentication, no server-side logout is needed:
-```bash
+
+```javascript
 await client.logout();
-# Only clears localStorage, no redirect needed
+// Only clears localStorage, no redirect needed
 ```
 
 ### OIDC Logout (Server-Side)
-For OIDC authentication, redirect to the `/end_session` endpoint:
-```bash
+
+For OIDC authentication, DocPouch implements the standard RP-initiated logout flow at `/oidc/end_session`.
+DocPouch serves a custom confirmation page (with a `Cancel` button) and a custom success page (with a
+`Return to application` button). After `end_session` finishes, the user is bounced through
+`/oidc/logout-redirect`, which clears the residual OIDC cookies (`_session`, `_interaction`, `_interaction_resume`)
+and then redirects to the registered `post_logout_redirect_uri`.
+
+```
 GET /oidc/end_session?
-  post_logout_redirect_uri=http://localhost:8080/&
-  id_token_hint=eyJhbGci...
+  post_logout_redirect_uri=https://your-app.example.com/&
+  id_token_hint=eyJhbGci...&
+  state=xyz
 ```
 
 **Parameters:**
-- `post_logout_redirect_uri`: Where to redirect after logout (must be in client's `post_logout_redirect_uris`)
-- `id_token_hint`: Optional ID token (for logout confirmation)
+
+- `post_logout_redirect_uri`: Where to redirect after logout. **Must be one of the URIs registered in the
+  client's `post_logout_redirect_uris`.**
+- `id_token_hint`: Optional ID token (for logout confirmation; some providers require it).
+- `state`: Optional value that is passed through to the `post_logout_redirect_uri`.
 
 **Response:**
-- On success: Redirect to `post_logout_redirect_uri`
-- On error: Redirect to `post_logout_redirect_uri?error=...`
 
-**Example (JavaScript):**
+- On success: redirect to `post_logout_redirect_uri` (after `end_session` resolves and the
+  `/oidc/logout-redirect` cookie-clearing hop).
+- On error: redirect to `post_logout_redirect_uri?error=...` (and `error_description`).
+
+**Example using `docpouch-client` (recommended):**
+
+```javascript
+import DbPouchClient from 'docpouch-client';
+
+const client = new DbPouchClient('http://localhost:3030', 3030);
+client.setOidcConfig(config);
+
+await client.logout();
+// For OIDC: redirects the browser to /oidc/end_session, which destroys the
+// server-side session, clears OIDC cookies via /oidc/logout-redirect, and
+// returns the user to your post_logout_redirect_uri. The library also
+// exposes onLogout() / onOidcLogout() callbacks you can use to react to
+// the redirect.
+```
+
+**Example building the URL manually (not recommended):**
 ```javascript
 // Get OIDC config
 const config = await fetch('/api/oidc-client-config').then(r => r.json());

@@ -48,20 +48,26 @@ while still allowing administrators to manage the content.
 
 ### Document Structures
 Document structures describe how documents following this structure are structured and what information they hold.
-They contain a separate DataElement for each field of the data structure in their "fields" property.
+They contain a separate DataElement for each field of the data structure in their `fields` property. Each field has
+a stable machine-readable `name` and a human-readable `displayName` shown in the UI.
 
 **Example for a document structure with two fields**
 ```
 {
     "_id": "tt5vo04DN3jm8Bqe",
-    "title": "City Info",
+    "name": "City Info",
+    "description": "A structure describing basic city information",
+    "type": 99,
+    "subType": 99,
     "fields": [
         {
-            "name": "City name",
-            "type": "string",
+            "name": "cityName",
+            "displayName": "City name",
+            "type": "string"
         },
         {
-            "name": "# of inhabitants",
+            "name": "inhabitants",
+            "displayName": "# of inhabitants",
             "type": "number"
         }
     ]
@@ -69,31 +75,39 @@ They contain a separate DataElement for each field of the data structure in thei
 ```
 
 #### Arrays of items
-Arrays of items are specified using the type "array" and indicating the type of the array elements in "items".
+
+Arrays of items are specified using the type `array` and indicating the type of the array elements in `items`.
 
 #### Referencing other document structures
 Document structures can refer to other document structures to build more complex data interrelations.
-To reference a document structure inside another structure, the "items" property in the DataElement is used.
+To reference a document structure inside another structure, the `items` property of a field is used.
 
-**Example for a document structure referencing another**  
-This structure consists of the name of the street plus an array of data structures named "Houses" described in the data structure ```g33vo0rPd3jmfBqe```.
-The "items" field can therefore only be used in combination with the types *array* or *structure*.
+**Example for a document structure referencing another**
+This structure consists of the name of the street plus an array of data structures named "Houses" described in the data
+structure `g33vo0rPd3jmfBqe`.
+The `items` field can therefore only be used in combination with the types `array` or `structure`.
 ```
 {
     "_id": "tt5vo04DN3jm8Bqe",
-    "title": "Street Info",
+    "name": "Street Info",
+    "description": "A street with houses",
+    "type": 99,
+    "subType": 99,
     "fields": [
         {
-            "name": "Street name",
-            "type": "string",
+            "name": "streetName",
+            "displayName": "Street name",
+            "type": "string"
         },
         {
-            "name": "Alternative names",
+            "name": "alternativeNames",
+            "displayName": "Alternative names",
             "type": "array",
             "items": "string"
         },
         {
             "name": "houses",
+            "displayName": "Houses",
             "type": "array",
             "items": "g33vo0rPd3jmfBqe"
         }
@@ -104,19 +118,25 @@ A fitting document structure for houses could look like this:
 ```
 {
     "_id": "g33vo0rPd3jmfBqe",
-    "title": "House Info",
+    "name": "House Info",
+    "description": "A single house",
+    "type": 99,
+    "subType": 99,
     "fields": [
         {
-            "name": "Has fiber glass connection",
-            "type": "boolean",
+            "name": "hasFiberGlass",
+            "displayName": "Has fiber glass connection",
+            "type": "boolean"
         },
         {
-            "name": "Number of inhabitants",
-            "type": "number",
+            "name": "numInhabitants",
+            "displayName": "Number of inhabitants",
+            "type": "number"
         },
         {
-            "name": "Is connected to the gas grid",
-            "type": "boolean",
+            "name": "connectedToGasGrid",
+            "displayName": "Is connected to the gas grid",
+            "type": "boolean"
         }
     ]
 }
@@ -180,11 +200,13 @@ or in a `.env` file when running locally.
 
 #### Core Configuration
 
-| Variable      | Description                                                                | Default     |
-|---------------|----------------------------------------------------------------------------|-------------|
-| `PORT`        | The port the server will listen on.                                        | `3030`      |
-| `MEMORY_ONLY` | Set to `true` to use an in-memory database (data will be lost on restart). | `false`     |
-| `PREFIX`      | Prefix for database filenames.                                             | `docpouch-` |
+| Variable      | Description                                                                                          | Default       |
+|---------------|------------------------------------------------------------------------------------------------------|---------------|
+| `PORT`        | The port the server will listen on.                                                                  | `3030`        |
+| `MEMORY_ONLY` | Set to `true` to use an in-memory database (data will be lost on restart).                           | `false`       |
+| `PREFIX`      | Prefix for database filenames.                                                                       | `docpouch-`   |
+| `LOG_LEVEL`   | Application log level. One of `debug`, `info`, `warn`, `error`.                                      | `info`        |
+| `NODE_ENV`    | Node environment. When set to `production`, the server enforces secure OIDC cookies and CSP upgrade. | `development` |
 
 #### Security Configuration
 
@@ -201,12 +223,16 @@ or in a `.env` file when running locally.
 
 #### OIDC Configuration
 
-| Variable                  | Description                                                                                                         | Default                                       |
-|---------------------------|---------------------------------------------------------------------------------------------------------------------|-----------------------------------------------|
-| `OIDC_ISSUER`             | Base URL of the OIDC provider.                                                                                      | `http://localhost:3030`                       |
-| `OIDC_REGISTRATION_TOKEN` | Token required for dynamic OIDC client registration.                                                                | (none — must be set for OIDC use)             |
-| `OIDC_COOKIE_KEY`         | Secret key used to encrypt/sign OIDC session cookies. **Change in production!**                                     | `docpouch-cookie-secret-change-in-production` |
-| `OIDC_COOKIE_SECURE`      | Set to `true` when running the server directly with HTTPS. Leave unset when behind a TLS-terminating reverse proxy. | `false`                                       |
+| Variable                        | Description                                                                                                         | Default                                       |
+|---------------------------------|---------------------------------------------------------------------------------------------------------------------|-----------------------------------------------|
+| `OIDC_ISSUER`                   | Base URL of the OIDC provider.                                                                                      | `http://localhost:3030`                       |
+| `OIDC_REGISTRATION_TOKEN`       | Token required for dynamic OIDC client registration (initial access token).                                         | (none — must be set for OIDC use)             |
+| `OIDC_REDIRECT_URI`             | Redirect URI for the built-in admin UI client. Leave unset to use the issuer root.                                  | `${OIDC_ISSUER}/`                             |
+| `OIDC_POST_LOGOUT_REDIRECT_URI` | Post-logout redirect URI for the built-in admin UI client. Falls back to `OIDC_REDIRECT_URI`.                       | `${OIDC_ISSUER}/`                             |
+| `OIDC_COOKIE_KEY`               | Secret key used to encrypt/sign OIDC session cookies. **Change in production!**                                     | `docpouch-cookie-secret-change-in-production` |
+| `OIDC_COOKIE_SECURE`            | Set to `true` when running the server directly with HTTPS. Leave unset when behind a TLS-terminating reverse proxy. | `false`                                       |
+
+The server trusts `X-Forwarded-*` headers (`trust proxy: true`), so it works behind a reverse proxy out of the box.
 
 #### Example Configuration
 
@@ -308,6 +334,11 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
         - `scope`: Import scope - `all` (default), `users`, `documents`, or `structures`
         - `mode`: Import mode - `replace` (default), `add`, or `skip`
 
+### Miscellaneous
+
+- `GET /version/check` - Returns the result of the latest update check against the GitHub repository.
+  Returns `200` with `{ hasUpdate, currentVersion, latestVersion }` or `503` if no check has run yet.
+
 All API endpoints (except login) require authentication using either JWT tokens or OIDC tokens. You can find an OpenAPI
 specification in the `docpouch_openAPI.yaml` file.
 
@@ -315,11 +346,50 @@ specification in the `docpouch_openAPI.yaml` file.
 
 ## OpenID Connect (OIDC)
 
-DocPouch supports OIDC authentication. The `docpouch-client` library handles the entire flow automatically.
+DocPouch ships with a built-in OpenID Connect provider. Authentication is shared with JWT — clients can pick the
+method that fits their use case, and both methods talk to the same user database.
 
-### Setup
+The `docpouch-client` library handles the entire OIDC flow automatically. The shipped admin UI uses the same
+library. See [`docs/authentication.md`](docs/authentication.md) for the full reference, including a step-by-step
+description of the flows below.
 
-**1. Register your client** (requires `OIDC_REGISTRATION_TOKEN` from admin):
+### Endpoints
+
+The OIDC provider is mounted at `/oidc` and follows the standard OpenID Connect / OAuth2 routes:
+
+| Route                   | Purpose                                                          |
+|-------------------------|------------------------------------------------------------------|
+| `GET /oidc/auth`        | Authorization endpoint (DocPouch serves the login page)          |
+| `POST /oidc/token`      | Token endpoint (authorization_code, refresh_token)               |
+| `GET /oidc/userinfo`    | UserInfo endpoint                                                |
+| `GET /oidc/jwks`        | JSON Web Key Set used to verify ID tokens                        |
+| `GET /oidc/end_session` | RP-initiated logout                                              |
+| `POST /oidc/revocation` | Token revocation                                                 |
+| `POST /oidc/par`        | Pushed Authorization Requests                                    |
+| `POST /oidc/reg`        | Dynamic client registration (requires `OIDC_REGISTRATION_TOKEN`) |
+| `GET /oidc/reg/{id}`    | Read/update/delete a registered client                           |
+
+In addition, the server exposes a few DocPouch-specific endpoints:
+
+- `GET /api/oidc-client-config` - returns the OIDC config for the built-in admin UI client
+  (`{ configured, issuer, clientId, redirectUri, postLogoutRedirectUri, scope }`).
+- `GET /.well-known/openid-configuration` - discovery document (proxied to the OIDC provider).
+- `GET /interaction/:uid` and `GET /interaction/:uid/details` - serve the login / consent / logout interaction
+  pages that DocPouch hosts on behalf of the OIDC provider.
+- `GET /oidc/logout-redirect` - clears the OIDC session cookies after `end_session` and redirects to the
+  RP-supplied `post_logout_redirect_uri`.
+
+### Built-in admin UI client
+
+DocPouch automatically registers a fixed OIDC client (`client_id: docpouch-admin-ui`) for the bundled admin UI.
+It uses PKCE (`token_endpoint_auth_method: none`) so the UI can log in without storing a client secret. The
+redirect and post-logout URIs default to the issuer root, but can be overridden with `OIDC_REDIRECT_URI` and
+`OIDC_POST_LOGOUT_REDIRECT_URI`. `GET /api/oidc-client-config` is what the UI uses to discover this client.
+
+### Registering your own client
+
+External tools (or you, when integrating DocPouch into your own application) register their own client through
+dynamic client registration. You need an `OIDC_REGISTRATION_TOKEN` from the DocPouch administrator.
 
 ```ts
 import DbPouchClient from 'docpouch-client';
@@ -329,6 +399,7 @@ const client = new DbPouchClient('http://localhost:3030', 3030);
 await client.registerOidcClient({
   client_name: 'My App',
   redirect_uris: ['http://localhost:8080/callback'],
+  post_logout_redirect_uris: ['http://localhost:8080/'],
   grant_types: ['authorization_code'],
   response_types: ['code'],
   token_endpoint_auth_method: 'client_secret_basic',
@@ -336,108 +407,52 @@ await client.registerOidcClient({
 }, 'YOUR_REGISTRATION_TOKEN');
 ```
 
-**2. Fetch OIDC config and initiate login:**
+After registration you can also read, update, and delete the registration via the
+`client.getOidcClient(...)`, `client.updateOidcClient(...)`, and `client.deleteOidcClient(...)` methods.
 
-```ts
-const config = await fetch('/api/oidc-client-config').then(r => r.json());
-// Returns: { issuer, clientId, redirectUri, scope }
-client.setOidcConfig(config);
-
-// Triggers browser redirect to DocPouch login page
-await client.loginWithOidc(config);
-```
-
-**3. Handle the callback** (on your redirect URI page):
-
-```ts
-const handled = await client.handleOidcCallback();
-// Returns true if code+state present, exchanges for tokens
-// Stores access_token, refresh_token, id_token in localStorage
-```
-
-**4. Restore session on page reload:**
-
-```ts
-if (client.restoreOidcSession()) {
-  const token = client.getToken();
-  // token is valid, proceed with authenticated requests
-}
-```
-
-**5. Use for API calls (automatic token attachment and refresh):**
-
-```ts
-// All client methods automatically:
-// - Call ensureValidOidcToken() before auth-required requests
-// - Refresh token via /oidc/token if expired
-// - Attach Authorization: Bearer {token} header
-const docs = await client.listDocuments();
-const users = await client.listUsers();
-```
-
-**6. Logout:**
+### Logout
 
 For **JWT authentication**, use:
+
 ```ts
 await client.logout();
-// Clears tokens, disconnects WebSocket
-// No server-side session to destroy
+// Clears tokens, disconnects WebSocket. No server-side session to destroy.
 ```
 
 For **OIDC authentication**, use:
-```ts
-// Redirect to OIDC end_session endpoint
-const config = await fetch('/api/oidc-client-config').then(r => r.json());
-const logoutUrl = `${config.issuer}/end_session?post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
-window.location.href = logoutUrl;
-// After logout, user is redirected back to post_logout_redirect_uri
-// Client should detect logout and show login dialog
-```
 
-Or use the docpouch-client library's logout method which handles both:
 ```ts
 await client.logout();
-// For OIDC: automatically handles server session destruction
-// For JWT: only client-side cleanup
+// For OIDC, this redirects the browser to the provider's /end_session endpoint.
+// The provider destroys the server-side session, redirects to the
+// post_logout_redirect_uri, and DocPouch clears the remaining OIDC cookies
+// via its /oidc/logout-redirect handler.
 ```
+
+`docpouch-client.logout()` handles both authentication methods automatically — there is no need to build the
+end_session URL yourself. The full flow is documented in [`docs/authentication.md`](docs/authentication.md#logout).
 
 ### Key Details
 
-- **PKCE**: Handled automatically (64-char verifier → SHA-256 → base64url S256 challenge)
-- **Token refresh**: Automatic when `Date.now() >= tokenExpiry - 60s`
-- **Auth method**: `client.getAuthMethod()` returns `'jwt' | 'oidc' | 'none'`
-- **Check auth**: `client.isAuthenticated()` checks token validity based on method
-- **Supported scopes**: `openid`, `profile`, `email`, `offline_access`
-- **Discovery**: `GET /.well-known/openid-configuration` and `GET /oidc/jwks`
-
-### Complete Example
-
-```ts
-import DbPouchClient from 'docpouch-client';
-
-const client = new DbPouchClient('http://localhost:3030', 3030);
-
-// On app init
-const config = await fetch('/api/oidc-client-config').then(r => r.json());
-client.setOidcConfig(config);
-
-// Try to restore session or redirect to login
-if (!client.restoreOidcSession()) {
-  await client.loginWithOidc(config);
-}
-
-// Once authenticated
-const token = client.getToken();
-const docs = await client.listDocuments();
-```
+- **PKCE**: Handled automatically by `docpouch-client` (64-char verifier → SHA-256 → base64url S256 challenge).
+- **Token refresh**: Automatic when `Date.now() >= tokenExpiry - 60s`.
+- **Auth method**: `client.getAuthMethod()` returns `'jwt' | 'oidc' | 'none'`.
+- **Check auth**: `client.isAuthenticated()` checks token validity based on method.
+- **Supported scopes**: `openid`, `profile`, `email`, `offline_access`.
+- **Discovery**: `GET /.well-known/openid-configuration` and `GET /oidc/jwks`.
+- **Reverse proxy**: The OIDC provider is configured with `proxy: true` and `trust proxy: true` so that it works
+  correctly behind nginx / Caddy / Traefik.
 
 ## Real-Time Updates
 
 DocPouch supports WebSocket-based real-time updates using Socket.io. Events are triggered for documents, users,
-and structures.
+and structures. See [`docs/socketIoApi.md`](docs/socketIoApi.md) for the full event reference.
 
 To simplify integration, use the official client library: [docpouch-client](https://github.com/BFH-JTF/docpouch-client),
 which handles authentication, connection, and event handling.
+
+A complete, runnable Relying Party demo that integrates DocPouch via OIDC using `docpouch-client` is provided in
+[`docs/demo`](docs/demo).
 
 ## Frontend UI
 
@@ -446,7 +461,16 @@ The DocPouch frontend provides an intuitive interface for managing documents, us
 ### Main Features
 - **User Management**: Create, view, update, and delete user accounts (admin only)
 - **Document Management**: View, edit, and delete documents with structured content
+    - Multi-select and bulk delete of documents
+    - Anonymous document creation (owned by admin)
 - **Document Structure Management**: View document structures with various field types
+- **Database Export / Import**: Export to JSON or ZIP; import from JSON (full or scoped) or ZIP
+- **Update Notifications**: A background check against the GitHub release informs the user when a newer
+  version is available
+- **OIDC Login**: The built-in admin UI can log in via DocPouch's OIDC provider, in addition to username/password
+
+The frontend automatically runs a one-time database consistency check on connect (admin only) and shows a warning
+for documents whose owner or structure reference no longer exists.
 
 ## Support the Project
 

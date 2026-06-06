@@ -51,24 +51,27 @@ socket.on('connect', () => {
 
 ## Server to Client Events
 
-These are the events that the server emits to clients:
+These are the events that the server emits to clients. The payload of every event is a single object
+implementing the `I_WsMessage` interface from `docpouch-client`; only the relevant property is set for a given
+event.
 
-| Event Name              | Description                                | Payload Structure                                      | Triggered By           | Access             |
-|-------------------------|--------------------------------------------|--------------------------------------------------------|------------------------|--------------------|
-| `heartbeatPing`         | Server checking if client is alive         | None                                                   | Sent every 60 seconds  | All clients        |
-| `newDocument`           | Notifies about new document creation       | `{ newDocument: { _id: string, title: string, ... } }` | Document creation      | Document accessors |
-| `changedDocument`       | Notifies about document updates            | `{ changedDocument: { _id: string, ... } }`            | Document update        | Document accessors |
-| `removedDocument`       | Notifies about document deletion           | `{ removedID: string }`                                | Document deletion      | Document accessors |
-| `newUser`               | Notifies about new user creation           | `{ newUser: { _id: string, name: string, ... } }`      | User creation          | Admin only         |
-| `changedUser`           | Notifies about user updates                | `{ changedUser: { _id: string, ... } }`                | User update            | Admin only         |
-| `removedUser`           | Notifies about user deletion               | `{ removedID: string }`                                | User deletion          | Admin only         |
-| `newStructure`          | Notifies about new structure creation      | `{ newStructure: { _id: string, name: string, ... } }` | Structure creation     | All clients        |
-| `changedStructure`      | Notifies about structure updates           | `{ changedStructure: { _id: string, ... } }`           | Structure update       | All clients        |
-| `removedStructure`      | Notifies about structure deletion          | `{ removedID: string }`                                | Structure deletion     | All clients        |
-| `databaseInconsistency` | Notifies admin about data integrity issues | `{ faultyDocuments: [...] }`                           | Admin connection       | Admin only         |
+| Event Name              | Description                                | Payload Property                      | Triggered By            | Access             |
+|-------------------------|--------------------------------------------|---------------------------------------|-------------------------|--------------------|
+| `heartbeatPing`         | Server checking if client is alive         | _(none)_                              | Sent every 60 seconds   | All clients        |
+| `newDocument`           | Notifies about new document creation       | `newDocument: I_DocumentEntry`        | Document creation       | Document accessors |
+| `changedDocument`       | Notifies about document updates            | `changedDocument: I_DocumentUpdate`   | Document update         | Document accessors |
+| `removedDocument`       | Notifies about document deletion           | `removedID: string`                   | Document deletion       | Document accessors |
+| `newUser`               | Notifies about new user creation           | `newUser: I_UserEntry`                | User creation           | Admin only         |
+| `changedUser`           | Notifies about user updates                | `changedUser: I_UserUpdate`           | User update             | Admin only         |
+| `removedUser`           | Notifies about user deletion               | `removedID: string`                   | User deletion           | Admin only         |
+| `newStructure`          | Notifies about new structure creation      | `newStructure: I_DataStructure`       | Structure creation      | All clients        |
+| `changedStructure`      | Notifies about structure updates           | `changedStructure: I_StructureUpdate` | Structure update        | All clients        |
+| `removedStructure`      | Notifies about structure deletion          | `removedID: string`                   | Structure deletion      | All clients        |
+| `databaseInconsistency` | Notifies admin about data integrity issues | `faultyDocuments: I_DocumentEntry[]`  | Admin socket connection | Admin only         |
 
-Note: The `newType`, `changedType`, and `removedType` events are deprecated and no longer used. The "types" collection
-is maintained only for backward compatibility.
+> The `newType`, `changedType`, and `removedType` events are reserved for the deprecated document-type system and
+> are never emitted by the current server. The `types` collection itself is kept on disk only for backward
+> compatibility with pre-1.9.x databases.
 
 ### Example: Handling Events with DocPouch Client
 
@@ -95,7 +98,21 @@ function handleNetworkEvent(event, data) {
             console.log('New user created:', data.newUser);
             break;
 
-        // Note: "types" collection is deprecated and no longer used
+        case "changedUser":
+        case "removedUser":
+            // Refresh the user list as an admin
+            break;
+
+        case "newStructure":
+        case "changedStructure":
+        case "removedStructure":
+            // Refresh structure list (visible to all clients)
+            break;
+
+        case "databaseInconsistency":
+            // Only received by admin users on connect
+            console.warn('Database inconsistency detected:', data.faultyDocuments);
+            break;
     }
 }
 ```
@@ -160,7 +177,7 @@ function handleNetworkEvent(event, data) {
         case "newUser":
         case "changedUser":
         case "removedUser":
-            console.log('User removed:', data.removedID);
+            console.log('User event:', data.removedID || data.newUser || data.changedUser);
             break;
 
         case "newStructure":
@@ -169,15 +186,18 @@ function handleNetworkEvent(event, data) {
             // Refresh structure list
             refreshStructures();
             break;
+
+        case "databaseInconsistency":
+            // Only received by admin users on connect
+            console.warn('Database inconsistency detected:', data.faultyDocuments);
+            break;
     }
-}
-}
 }
 
 // Login and setup
 async function setupClient() {
     try {
-        // Login
+        // Login (JWT)
         const loginResponse = await apiClient.login({
             name: 'username',
             password: 'password'
@@ -287,26 +307,34 @@ socket.on('removedStructure', (data) => {
 
 ## Message Structure
 
-All data is sent using the `I_WsMessage` interface, which may contain one of the following properties:
+All data is sent using the `I_WsMessage` interface (re-exported by `docpouch-client`), which may contain one of
+the following properties:
 
-- `newDocument`: Contains a newly created document
-- `changedDocument`: Contains a document update
-- `removedID`: Contains the ID of a removed entity
-- `newUser`: Contains a newly created user
-- `changedUser`: Contains a user update
-- `newStructure`: Contains a newly created structure
-- `changedStructure`: Contains a structure update
+- `newDocument: I_DocumentEntry` — a newly created document
+- `changedDocument: I_DocumentUpdate` — a partial document update
+- `removedID: string` — the `_id` of a removed document, user, or structure
+- `newUser: I_UserEntry` — a newly created user
+- `changedUser: I_UserUpdate` — a partial user update
+- `newStructure: I_DataStructure` — a newly created data structure
+- `changedStructure: I_StructureUpdate` — a partial data structure update
+- `faultyDocuments: I_DocumentEntry[]` — a list of documents that fail the consistency check (admin only)
+- `heartbeatPing: number` / `heartbeatPong: number` — heartbeat plumbing
+
+Note that `removedID` is a single shared payload field used for all three "removed" events (`removedDocument`,
+`removedUser`, `removedStructure`); the event name disambiguates which collection it refers to.
 
 ## Implementation Notes
 
 - The Socket.io server runs on the same port as the REST API
 - CORS is enabled with `origin: "*"` for development purposes
-- Inactive clients are automatically disconnected after 120 seconds without response to heartbeat
-- JWT tokens expire after 24 hours by default
+- Inactive clients are automatically disconnected after 120 seconds without response to a heartbeat
+- JWT tokens expire after 24 hours by default; OIDC access tokens are short-lived (1 hour) and the client
+  library transparently refreshes them
 - **DocPouch Client Library** handles all Socket.io complexity automatically
 - Real-time synchronization is managed by calling `apiClient.setRealTimeSync(true/false)`
 - Document sharing permissions (department/group sharing) are automatically respected for event distribution
-- Authentication and subscription happen automatically upon successful connection
+- Authentication and subscription happen automatically upon successful connection — both JWT and OIDC access
+  tokens are accepted on the socket handshake
 - The client library is available as `docpouch-client` npm package
 
 ## API Client Methods
