@@ -380,34 +380,32 @@ export default class NeDbWrapper {
             this.users.query({_id: userID}).then((userDoc) => {
                 if (userDoc.length > 0) {
                     const user = userDoc[0];
-                    if (user && ("isAdmin" in user && user.isAdmin) || !("isAdmin" in updateData)) {
-                        if ("name" in updateData && updateData.name) {
-                            const newUserName = updateData.name;
+                    if (!user) {
+                        reject(new Error("User not found"));
+                        return;
+                    }
 
-                            this.users.count({name: newUserName}).then((count) => {
-                                if (count > 0) {
-                                    reject(new Error("User with this name already exists"));
-                                }
-                            }).catch(reject);
-                        }
+                    if ("name" in updateData && updateData.name) {
+                        const newUserName = updateData.name;
 
-                        if ("password" in updateData && updateData.password) {
-                            bcrypt.hash(updateData.password, this.saltRounds).then((hash: string) => {
-                                updateData.password = hash;
-                                this.users.update(userID, updateData).then((result) => {
-                                    resolve(result);
-                                })
-                            })
-                        }
+                        this.users.count({name: newUserName}).then((count) => {
+                            if (count > 0) {
+                                reject(new Error("User with this name already exists"));
+                            }
+                        }).catch(reject);
+                    }
 
-                        if (user && "_id" in user && user._id) {
-                            this.users.update(user._id, updateData).then((result) => {
+                    if ("password" in updateData && updateData.password) {
+                        bcrypt.hash(updateData.password, this.saltRounds).then((hash: string) => {
+                            updateData.password = hash;
+                            this.users.update(userID, updateData).then((result) => {
                                 resolve(result);
                             }).catch(reject);
-                        }
-
+                        })
                     } else {
-                        reject(new Error("Cannot change admin status"));
+                        this.users.update(userID, updateData).then((result) => {
+                            resolve(result);
+                        }).catch(reject);
                     }
                 } else {
                     reject(new Error("User not found"));
