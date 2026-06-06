@@ -27,8 +27,11 @@ async function waitForServer(url, timeout = 30000) {
 export default async function globalSetup() {
     process.env.PORT = '3030';
     process.env.MEMORY_ONLY = 'true';
+    process.env.OIDC_ISSUER = process.env.OIDC_ISSUER || 'http://localhost:3030/oidc';
+    process.env.OIDC_COOKIE_KEY = process.env.OIDC_COOKIE_KEY || 'docpouch-test-cookie-secret';
 
     await execAsync('npm run build:backend', {cwd: projectRoot});
+    await execAsync('npm run build:frontend', {cwd: projectRoot});
 
     const serverPath = path.join(projectRoot, 'dist/srv/main.js');
     const serverProcess = spawn('node', [serverPath], {
@@ -36,7 +39,9 @@ export default async function globalSetup() {
         env: {
             ...process.env,
             PORT: '3030',
-            MEMORY_ONLY: 'true'
+            MEMORY_ONLY: 'true',
+            OIDC_ISSUER: process.env.OIDC_ISSUER,
+            OIDC_COOKIE_KEY: process.env.OIDC_COOKIE_KEY
         },
         stdio: 'inherit'
     });
