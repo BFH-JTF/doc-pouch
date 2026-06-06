@@ -1,0 +1,15 @@
+{
+  "name": "docpouch-oidc-rp-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal Relying Party demo that authenticates against DocPouch via OIDC using docpouch-client.",
+  "scripts": {
+    "start": "node server.js",
+    "register": "node register.js"
+  },
+  "dependencies": {
+    "docpouch-client": "^1.1.2",
+    "express": "^4.19.2"
+  }
+}
