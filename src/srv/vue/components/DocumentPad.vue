@@ -22,7 +22,7 @@ const typeFilter = ref<number | null>(null);
 const subtypeFilter = ref<number | null>(null);
 const ownerFilter = ref('');
 const filterMode = ref<'raw' | 'structure'>('structure');
-const structureFilter = ref('');
+const structureFilter = ref<string[]>([]);
 
 const showDeleteConfirmDialog = ref(false);
 const documentToDelete = ref<string | null>(null);
@@ -144,11 +144,11 @@ const documents = computed(() => {
       filteredDocs = filteredDocs.filter(doc => doc.subType === subtypeFilter.value);
     }
   } else if (filterMode.value === 'structure') {
-    if (structureFilter.value) {
-      const selectedType = props.documentStructures?.find(dt => dt.name === structureFilter.value);
-      if (selectedType) {
+    if (structureFilter.value.length > 0) {
+      const selectedTypes = props.documentStructures?.filter(dt => structureFilter.value.includes(dt.name));
+      if (selectedTypes && selectedTypes.length > 0) {
         filteredDocs = filteredDocs.filter(doc =>
-            doc.type === selectedType.type && doc.subType === selectedType.subType
+            selectedTypes.some(selectedType => doc.type === selectedType.type && doc.subType === selectedType.subType)
         );
       }
     }
@@ -229,14 +229,14 @@ const clearFilters = () => {
   titleFilter.value = '';
   typeFilter.value = null;
   subtypeFilter.value = null;
-  structureFilter.value = '';
+  structureFilter.value = [];
   ownerFilter.value = '';
 };
 
 // Check if any filters are active
 const hasActiveFilters = computed(() => {
   const rawTypeActive = filterMode.value === 'raw' && (titleFilter.value || typeFilter.value !== null || subtypeFilter.value !== null || ownerFilter.value);
-  const structureActive = filterMode.value === 'structure' && (titleFilter.value || structureFilter.value || ownerFilter.value);
+  const structureActive = filterMode.value === 'structure' && (titleFilter.value || structureFilter.value.length > 0 || ownerFilter.value);
   return rawTypeActive || structureActive;
 });
 
@@ -246,7 +246,7 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
     filterMode.value = newMode;
     typeFilter.value = null;
     subtypeFilter.value = null;
-    structureFilter.value = '';
+    structureFilter.value = [];
   }
 };
 </script>
@@ -362,6 +362,7 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
                   label="Filter by structure"
                   prepend-inner-icon="mdi-table"
                   variant="outlined"
+                  multiple
               ></v-select>
             </v-col>
             <v-col class="pl-md-1 mt-2 mt-md-0" cols="12" md="4">
