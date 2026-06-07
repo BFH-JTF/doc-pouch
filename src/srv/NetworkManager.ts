@@ -240,6 +240,19 @@ export default class NetworkManager {
                         
                         const display = ctx.oidc.client?.clientName || ctx.oidc.client?.clientId;
 
+                        // Resolve the post_logout_redirect_uri from the session
+                        // state. If the RP registered the /oidc/logout-redirect
+                        // proxy as its post_logout_redirect_uri, the actual RP
+                        // URL is nested as ?post_logout_redirect_uri=... and we
+                        // need to unwrap it (mirrors the logic in logoutSource).
+                        const rawRedirectUri = ctx.oidc?.session?.state?.postLogoutRedirectUri;
+                        let returnUrl = '/';
+                        if (rawRedirectUri) {
+                            const nestedMatch = rawRedirectUri.match(/[?&]post_logout_redirect_uri=([^&]+)/);
+                            returnUrl = nestedMatch ? decodeURIComponent(nestedMatch[1]) : rawRedirectUri;
+                        }
+                        const returnUrlJs = JSON.stringify(returnUrl);
+
                         ctx.body = `<!DOCTYPE html>
                           <html lang="en">
                           <head>
@@ -351,7 +364,7 @@ export default class NetworkManager {
                           </body>
                           <script nonce="${ctx.res.locals?.nonce || ''}">
                             document.getElementById('returnToAppBtn').addEventListener('click', () => {
-                              window.location.href = '/';
+                              window.location.href = ${returnUrlJs};
                             });
                           </script>
                           </html>`;
