@@ -22,6 +22,7 @@ export interface INeDbOptions {
     inMemoryOnly?: boolean;
     filenamePrefix?: string;
     dbPath?: string;
+    anonymousDocumentsEnabled?: boolean;
 }
 
 export type DatabaseCollection = "users" | "documents" | "structures";
@@ -43,13 +44,17 @@ export default class NeDbWrapper {
     private readonly inMemoryOnly: boolean;
     private readonly filenamePrefix: string | undefined;
     private readonly dbPath: string | undefined;
+    private readonly anonymousDocumentsEnabled: boolean;
     private readonly initializationPromise: Promise<void>;
 
-    constructor(winstonLogger: winston.Logger, options: INeDbOptions = {}) {
+    constructor(winstonLogger: winston.Logger, options: INeDbOptions = {}, runtimeOptions: {
+        anonymousDocumentsEnabled?: boolean
+    } = {}) {
         this.logger = winstonLogger;
         this.inMemoryOnly = options.inMemoryOnly ?? false;
         this.filenamePrefix = options.filenamePrefix ?? undefined;
         this.dbPath = options.dbPath ?? "./db";
+        this.anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
         if (!fs.existsSync(this.dbPath)) {
             fs.mkdirSync(this.dbPath);
         }
@@ -622,30 +627,26 @@ export default class NeDbWrapper {
     }
 
     createDocument(document: I_DocumentCreation, requestingUserID: string, anonymous: boolean = false): Promise<I_DocumentEntry> {
-        this.logger.debug(`Creating document with anonymous flag: ${anonymous}`);
         return new Promise((resolve, reject) => {
             // Determine the owner for the document
             let ownerId = requestingUserID;
-            
+
             // If the document should be anonymous, reassign ownership to the admin user
             if (anonymous) {
-                this.logger.debug("Reassigning document ownership to admin user");
                 this.getAdminUserID().then((adminUserId) => {
-                    this.logger.debug(`Got admin user ID: ${adminUserId}`);
                     ownerId = adminUserId;
-                    this.createDocumentWithOwner(document, ownerId, resolve, reject);
+                    this.createDocumentWithOwner(document, ownerId, true, resolve, reject);
                 }).catch((error) => {
                     this.logger.error("Failed to get admin user:", error);
                     reject(new Error("Failed to get admin user: " + error));
                 });
             } else {
-                this.createDocumentWithOwner(document, ownerId, resolve, reject);
+                this.createDocumentWithOwner(document, ownerId, false, resolve, reject);
             }
         });
     }
 
-    private createDocumentWithOwner(document: I_DocumentCreation, ownerId: string, resolve: (value: I_DocumentEntry | PromiseLike<I_DocumentEntry>) => void, reject: (reason?: any) => void): void {
-        this.logger.debug(`Creating document with owner ID: ${ownerId}`);
+    private createDocumentWithOwner(document: I_DocumentCreation, ownerId: string, isAnonymous: boolean, resolve: (value: I_DocumentEntry | PromiseLike<I_DocumentEntry>) => void, reject: (reason?: any) => void): void {
         // Set the owner to the specified user
         let newDocument: I_DocumentCreationOwned = {
             content: document.content,
@@ -660,13 +661,33 @@ export default class NeDbWrapper {
         }
 
         this.documents.add(newDocument).then((savedDocument) => {
-            this.logger.debug(`Document created successfully: ${JSON.stringify(savedDocument)}`);
-            this.logger.info("Created new document: " + JSON.stringify(savedDocument));
-            resolve(savedDocument as I_DocumentEntry);
+            // For privacy: never log the full document body. The body of an
+            // anonymous document may contain identifying information written
+            // by the creator. Log only metadata that is safe to expose.
+            const saved = savedDocument as I_DocumentEntry;
+            const summary = isAnonymous ? this.redactDocumentSummary(saved) : {owner: saved.owner};
+            if (isAnonymous) {
+                this.logger.debug(`Anonymous document created: ${JSON.stringify(summary)}`);
+            } else {
+                this.logger.debug(`Document created: ${JSON.stringify(saved)}`);
+            }
+            resolve(saved);
         }).catch((error) => {
             this.logger.error("Failed to create document:", error);
             reject(error);
         });
+    }
+
+    private redactDocumentSummary(doc: I_DocumentEntry): Record<string, unknown> {
+        return {
+            _id: doc._id,
+            type: doc.type,
+            subType: doc.subType,
+            public: doc.public,
+            shareWithGroup: doc.shareWithGroup,
+            shareWithDepartment: doc.shareWithDepartment,
+            owner: doc.owner,
+        };
     }
 
     updateDocument(documentID: string, updateData: I_DocumentUpdate, requestingUserID: string): Promise<number> {

@@ -27,6 +27,12 @@ if (process.env.MEMORY_ONLY)
 else
     MEMORY_ONLY = false
 
+let ANONYMOUS_DOCUMENTS_ENABLED: boolean;
+if (process.env.ANONYMOUS_DOCUMENTS_ENABLED)
+    ANONYMOUS_DOCUMENTS_ENABLED = process.env.ANONYMOUS_DOCUMENTS_ENABLED.toLowerCase() === "true";
+else
+    ANONYMOUS_DOCUMENTS_ENABLED = false
+
 const dbPath = "./log"
 if (!fs.existsSync(dbPath)) {
     fs.mkdirSync(dbPath);
@@ -61,13 +67,20 @@ let dbOptions: INeDbOptions = {
 
 checkForUpdates(winstonLogger);
 
-initOidcDatabases('./db', MEMORY_ONLY);
+if (ANONYMOUS_DOCUMENTS_ENABLED) {
+    winstonLogger.info("Anonymous document creation is ENABLED. The OIDC session store will be in-memory and document creation logs are reduced for privacy.");
+}
 
-const dataManager = new NeDbWrapper(winstonLogger, dbOptions);
+// When anonymous documents are enabled, force the OIDC adapter to in-memory
+// storage so that the session/access-token NeDB files cannot be used to
+// correlate user activity with anonymous document creation.
+initOidcDatabases('./db', MEMORY_ONLY || ANONYMOUS_DOCUMENTS_ENABLED);
+
+const dataManager = new NeDbWrapper(winstonLogger, dbOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED});
 
 dataManager.waitForInitialization().then(() => {
     winstonLogger.info("Database initialized, starting server...");
-    new NetworkManager(winstonLogger, dataManager, PORT, corsOptions);
+    new NetworkManager(winstonLogger, dataManager, PORT, corsOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED});
 }).catch((error) => {
     winstonLogger.error(`Failed to initialize database: ${error}`);
     process.exit(1);
