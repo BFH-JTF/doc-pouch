@@ -2,10 +2,6 @@ services:
   docpouch:
 #    image: ghcr.io/bfh-jtf/doc-pouch:latest
     image: docpouch:latest
-    labels:
-      - caddy=docpouch.pantek.app
-      - caddy.reverse_proxy="{{upstreams 3030}}"
-      - caddy.header.X-Forwarded-Proto=https
     volumes:
       - "./db:/app/db"
       - "./log:/app/log"
