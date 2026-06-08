@@ -9,6 +9,8 @@ services:
     networks:
       - server
     restart: unless-stopped
+    ports:
+      - "3030:3030"
 networks:
   server:
     external: true

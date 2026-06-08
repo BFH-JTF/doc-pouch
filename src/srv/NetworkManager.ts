@@ -622,6 +622,19 @@ export default class NetworkManager {
         this.expressApp.get('/oidc/logout-redirect', async (req, res) => {
             this.logger.debug('Logout redirect handler called');
             const postLogoutRedirectUri = req.query.post_logout_redirect_uri as string || '/';
+            const isLogoutCancelled = req.query.logout === 'no';
+
+            // If the user cancelled the logout, do not destroy their
+            // session. Just redirect back to the app, preserving the
+            // ?logout=no query param so the client library's
+            // wasJustLoggedOut() helper can distinguish the cancel from
+            // a successful logout.
+            if (isLogoutCancelled) {
+                this.logger.debug('Logout cancelled by client, preserving session cookies');
+                const separator = postLogoutRedirectUri.includes('?') ? '&' : '?';
+                res.redirect(`${postLogoutRedirectUri}${separator}logout=no`);
+                return;
+            }
 
             const cookieOptions = {
                 httpOnly: true,
@@ -638,6 +651,32 @@ export default class NetworkManager {
 
             this.logger.debug('Redirecting to:', postLogoutRedirectUri);
             res.redirect(postLogoutRedirectUri);
+        });
+
+        // Cancel logout handler - must be before OIDC provider mount
+        // The OIDC provider's default /end_session/confirm handler resets
+        // the session identifier even when the user cancels logout
+        // (logout=no), which effectively logs the user out. To preserve
+        // the session on cancel, the logout confirmation page's "No, stay
+        // signed in" button uses formaction="/oidc/cancel-logout" so the
+        // request bypasses the OIDC provider's confirm handler entirely
+        // and we just redirect to the post_logout_redirect_uri.
+        //
+        // The redirect URL is augmented with ?logout=no so the client
+        // library's wasJustLoggedOut() helper can distinguish a cancel
+        // from a successful logout. Without this query param the client
+        // would assume the logout succeeded and wipe the OIDC session
+        // from localStorage, even though the server preserved it.
+        //
+        // The body parser is applied to this single route only because
+        // the global urlencoded parser is mounted after the OIDC
+        // provider (so that the OIDC provider can install its own
+        // body parser without the body being consumed twice).
+        this.expressApp.post('/oidc/cancel-logout', express.urlencoded({extended: true}), (req, res) => {
+            this.logger.debug('Logout cancelled, redirecting back to app');
+            const postLogoutRedirectUri = req.body?.post_logout_redirect_uri as string || '/';
+            const separator = postLogoutRedirectUri.includes('?') ? '&' : '?';
+            res.redirect(303, `${postLogoutRedirectUri}${separator}logout=no`);
         });
 
         // Log all OIDC requests for debugging

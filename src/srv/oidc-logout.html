@@ -120,18 +120,17 @@
 
     <form id="logoutForm" action="__ACTION_URL__" method="POST">
         <input name="xsrf" type="hidden" value="__XSRF__">
+        <input name="post_logout_redirect_uri" type="hidden" value="__POST_LOGOUT_REDIRECT_URI__">
         <div class="buttons">
             <button class="yes" name="logout" type="submit" value="yes">Yes, sign out</button>
-            <button id="cancelLogoutBtn" class="no" type="button">No, stay signed in</button>
+            <button id="cancelLogoutBtn" class="no" formaction="/oidc/cancel-logout" name="logout" type="submit"
+                    value="no">No, stay signed in
+            </button>
         </div>
     </form>
 </div>
 
 <script nonce="__NONCE__">
-    document.getElementById('cancelLogoutBtn').addEventListener('click', () => {
-        const base = '__POST_LOGOUT_REDIRECT_URI__';
-        window.location.href = base + (base.includes('?') ? '&' : '?') + 'logout=no';
-    });
     document.getElementById('logoutForm').addEventListener('submit', () => {
         const buttons = document.querySelectorAll('button');
         buttons.forEach(btn => btn.disabled = true);
