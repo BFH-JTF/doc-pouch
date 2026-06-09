@@ -38,6 +38,7 @@ const OIDC_CONFIG = {
     issuer: `${DOCPOUCH_HOST}:${DOCPOUCH_PORT}`,
     clientId: 'demo-rp',
     redirectUri: REDIRECT_URI,
+    postLogoutRedirectUri: POST_LOGOUT_REDIRECT_URI,
     scopes: ['openid', 'profile', 'email', 'offline_access'],
 };
 
@@ -63,6 +64,11 @@ app.use(express.json());
 
 // Serve the demo HTML.
 app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// The OIDC provider redirects here after a successful login.
+app.get('/callback', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

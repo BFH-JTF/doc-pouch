@@ -9,7 +9,7 @@
     "register": "node register.js"
   },
   "dependencies": {
-    "docpouch-client": "^1.1.2",
+    "docpouch-client": "^1.1.3",
     "express": "^4.19.2"
   }
 }

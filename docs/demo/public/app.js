@@ -44,22 +44,7 @@ const client = new DbPouchClient(apiBaseUrl.hostname, Number(apiBaseUrl.port));
 //    load after the redirect needs it explicitly.)
 client.setOidcConfig(config);
 
-// 4. If we are returning from the DocPouch login page, exchange the code
-//    for tokens. handleOidcCallback() returns true when it handled the
-//    `?code=...&state=...` query string.
-const handled = await client.handleOidcCallback();
-if (handled) {
-    setStatus('Login successful.', 'ok');
-}
-
-// 5. Try to restore a session from localStorage (e.g. on a page reload
-//    that is not the callback URL). This does not perform any network
-//    call; it just re-hydrates the in-memory token state.
-if (!handled && client.restoreOidcSession()) {
-    setStatus('Session restored from storage.', 'ok');
-}
-
-// 6. Show UI based on the current auth state.
+// 4. Show UI based on the current auth state.
 function refreshUi() {
     if (client.isAuthenticated()) {
         setStatus(`Authenticated (${client.getAuthMethod()})`, 'ok');
@@ -74,9 +59,33 @@ function refreshUi() {
     }
 }
 
+// 5. If we are returning from the DocPouch logout confirmation page,
+//    wasJustLoggedOut() distinguishes a confirmed logout (?logout=yes)
+//    from a cancelled one (?logout=no). On a confirmed logout it clears
+//    the stored tokens and fires the logout event.
+if (client.wasJustLoggedOut()) {
+    setStatus('Logged out.', 'ok');
+    refreshUi();
+}
+
+// 6. If we are returning from the DocPouch login page, exchange the code
+//    for tokens. handleOidcCallback() returns true when it handled the
+//    `?code=...&state=...` query string.
+const handled = await client.handleOidcCallback();
+if (handled) {
+    setStatus('Login successful.', 'ok');
+}
+
+// 7. Try to restore a session from localStorage (e.g. on a page reload
+//    that is not the callback URL). This does not perform any network
+//    call; it just re-hydrates the in-memory token state.
+if (!handled && client.restoreOidcSession()) {
+    setStatus('Session restored from storage.', 'ok');
+}
+
 refreshUi();
 
-// 7. Wire up the buttons.
+// 8. Wire up the buttons.
 loginBtn.addEventListener('click', async () => {
     try {
         // Redirects the browser to the DocPouch login page.
@@ -98,14 +107,17 @@ listBtn.addEventListener('click', async () => {
 });
 
 logoutBtn.addEventListener('click', async () => {
-    // For OIDC, this redirects to DocPouch's /end_session endpoint,
-    // which destroys the server-side session and then bounces back
-    // to the post_logout_redirect_uri configured on the client.
+    // For OIDC, this redirects to DocPouch's /end_session endpoint.
+    // The user sees a confirmation page; clicking "Yes, sign out"
+    // destroys the server-side session and redirects back with
+    // ?logout=yes. Clicking "No, stay signed in" redirects back with
+    // ?logout=no and the session is preserved. The next page load
+    // calls wasJustLoggedOut() above to distinguish the two cases.
     await client.logout();
 });
 
-// 8. React to logout events fired by the library (e.g. when returning
-//    from /end_session).
+// 9. React to logout events fired by the library (e.g. when returning
+//    from /end_session after confirming the logout).
 client.onLogout(() => {
     refreshUi();
     setOutput('Logged out.');

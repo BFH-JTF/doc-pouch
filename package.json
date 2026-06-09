@@ -26,17 +26,17 @@
     "archiver": "^8.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
-    "docpouch-client": "^1.1.2",
+    "docpouch-client": "^1.1.4",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "9.0.3",
     "multer": "2.1.1",
     "node-fetch": "^3.3.2",
     "oidc-provider": "^9.8.4",
-    "semver": "^7.8.1",
+    "semver": "^7.8.3",
     "socket.io": "^4.8.3",
     "vue": "^3.5.35",
-    "vuetify": "^4.0.8",
+    "vuetify": "^4.1.1",
     "winston": "^3.19.0",
     "yup": "^1.7.1"
   },
@@ -65,9 +65,9 @@
     "semantic-release": "^25.0.3",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.2.2",
-    "ts-jest": "^29.4.9",
+    "ts-jest": "^29.4.11",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14",
-    "vue-tsc": "^3.3.3"
+    "vite": "^8.0.16",
+    "vue-tsc": "^3.3.4"
   }
 }

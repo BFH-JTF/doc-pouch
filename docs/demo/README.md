@@ -14,7 +14,7 @@ point for people who want to build their own tools on top of DocPouch.
 ```
 docs/demo/
 ├── package.json       # only two deps: docpouch-client + express
-├── server.js          # tiny express server, serves the page + /api/oidc-client-config
+├── server.js          # tiny express server, serves the page + /callback + /api/oidc-client-config
 ├── register.js        # one-shot OIDC client registration helper
 └── public/
     ├── index.html
@@ -67,8 +67,11 @@ It listens on `http://localhost:8080`.
    attached automatically; if it is close to expiry, `docpouch-client`
    refreshes it first.
 5. Click **Log out**. `client.logout()` redirects to DocPouch's
-   `/end_session` endpoint, which destroys the server-side session and
-   bounces you back to the demo.
+   `/end_session` endpoint, which shows a confirmation page. Clicking
+   **Yes, sign out** destroys the server-side session and redirects back
+   with `?logout=yes`. `wasJustLoggedOut()` detects this and clears the
+   stored tokens. Clicking **No, stay signed in** redirects back with
+   `?logout=no` and the session is preserved.
 
 ## How the flow maps to docpouch-client
 
@@ -77,6 +80,7 @@ It listens on `http://localhost:8080`.
 | Server publishes the RP's OIDC config           | served at `/api/oidc-client-config` (static for now)   |
 | Browser learns the config                       | `fetch('/api/oidc-client-config')`                     |
 | Browser stores the config                       | `client.setOidcConfig(config)`                         |
+| Detect completed/cancelled logout               | `client.wasJustLoggedOut()`                            |
 | Browser triggers login                          | `client.loginWithOidc(config)`                         |
 | Browser handles the redirect back               | `client.handleOidcCallback()`                          |
 | Browser restores a session after a refresh      | `client.restoreOidcSession()`                          |
@@ -93,6 +97,9 @@ It listens on `http://localhost:8080`.
   manager; never commit them.
 - **`OIDC_CONFIG.redirectUri`** – must match exactly what you register
   with DocPouch.
+- **`OIDC_CONFIG.postLogoutRedirectUri`** – where DocPouch redirects
+  after a successful logout. Must be listed in the client's
+  `post_logout_redirect_uris`.
 - **`ALLOWED_ORIGINS`** – make sure the DocPouch server allows your
   tool's origin, otherwise the browser blocks the API calls.
 - **Static config vs per-user config** – the demo serves a single
