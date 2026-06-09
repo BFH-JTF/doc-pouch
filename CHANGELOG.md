@@ -1,3 +1,15 @@
+# [1.15.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.14.1...v1.15.0) (2026-06-09)
+
+
+### Features
+
+* add privacy guidelines and update configurations for anonymous document handling ([916b220](https://github.com/BFH-JTF/doc-pouch/commit/916b220a6de066f4424b25a7af5021265db15d6e))
+* enhance logout handling with cancel flow and dynamic redirection ([a803092](https://github.com/BFH-JTF/doc-pouch/commit/a8030924822202d2cd244bf2d2c5f44ee5cba04a))
+* implement anonymous document support with updated documentation ([73ec90f](https://github.com/BFH-JTF/doc-pouch/commit/73ec90ff0833a9ce6b215d831f3bffbe5c241815))
+* improve logout flow with nested redirect URI extraction ([d520784](https://github.com/BFH-JTF/doc-pouch/commit/d520784cfa2e4aff6327e31bb89938a61f3f5db7))
+* update dependencies, improve demo OIDC flow, and enhance logout handling ([ad0a138](https://github.com/BFH-JTF/doc-pouch/commit/ad0a138ad9cf5c0bada8f70cbb6ec7a553d284e3))
+* upgrade demo to production-ready RP template with Vue, TypeScript, and real-time sync ([dd0347a](https://github.com/BFH-JTF/doc-pouch/commit/dd0347a90d40c898f1845df6412ee8036e77bb8c))
+
 ## [1.14.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.14.0...v1.14.1) (2026-06-06)
 
 
