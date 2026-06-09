@@ -46,6 +46,31 @@ as anonymous:
 This feature is useful for collecting feedback or other sensitive information where the submitter wants to remain anonymous
 while still allowing administrators to manage the content.
 
+##### Enabling Anonymous Documents
+
+Anonymous document creation is **opt-in** and is controlled by the `ANONYMOUS_DOCUMENTS_ENABLED` environment variable.
+When the flag is `false` (the default), `POST /docs/create` rejects any request body containing `"anonymous": true` with
+HTTP `400` and the error code `ANONYMOUS_DOCUMENTS_DISABLED`.
+
+When the flag is `true`:
+
+- The OIDC session/access-token NeDB files are replaced by an in-memory store, so user login activity is not persisted
+  to
+  disk and cannot later be correlated with anonymous document creation.
+- Document creation log lines are moved from `info` to `debug` and, for anonymous documents, the body of the log entry
+  is redacted to a metadata-only summary (id, type, sub-type, sharing flags, owner). The full document content is never
+  written to the application log.
+- The original creator's user ID, name, email, IP and any other identifying metadata are never written to the
+  application
+  log in connection with an anonymous creation.
+
+Operators running in this mode should additionally:
+
+- Not set `LOG_LEVEL=debug` (the redaction in debug mode is metadata-only and does not protect the body of non-anonymous
+  documents).
+- Consider not persisting any other log sink (load balancer access logs, reverse-proxy logs) that would record the
+  creator's identity alongside an anonymous request timestamp.
+
 ### Document Structures
 Document structures describe how documents following this structure are structured and what information they hold.
 They contain a separate DataElement for each field of the data structure in their `fields` property. Each field has
@@ -310,7 +335,9 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 - `GET /docs/list` - List all documents readable by the user (including public ones)
 - `POST /docs/fetch` - Get documents based on a query object (including public ones)
 - `POST /docs/create` - Create a new document
-  - Optional `anonymous` parameter (boolean) - If true, document will be owned by admin user
+    - Optional `anonymous` parameter (boolean) - If true, document will be owned by admin user. Requires
+      `ANONYMOUS_DOCUMENTS_ENABLED=true` on the server, otherwise the request is rejected with HTTP 400
+      (`ANONYMOUS_DOCUMENTS_DISABLED`).
 - `PATCH /docs/update/{documentID}` - Update an existing document
 - `DELETE /docs/remove/{documentID}` - Remove a document
 

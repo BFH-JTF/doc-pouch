@@ -101,14 +101,18 @@ export default class NetworkManager {
     logger: winston.Logger
     validator: SchemaValidator
     oidcProvider: any
+    private readonly anonymousDocumentsEnabled: boolean;
 
-    constructor(logger: winston.Logger, dataManager: NeDbWrapper, port: number, corsOptions: I_CorsOption) {
+    constructor(logger: winston.Logger, dataManager: NeDbWrapper, port: number, corsOptions: I_CorsOption, runtimeOptions: {
+        anonymousDocumentsEnabled?: boolean
+    } = {}) {
         this.corsOptions = corsOptions;
         this.port = port;
         this.expressApp = express();
         this.expressApp.set('trust proxy', true);
         this.dataManager = dataManager;
         this.logger = logger;
+        this.anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
         this.validator = new SchemaValidator(logger);
         const jwksFile = path.join(process.cwd(), 'db', 'oidc-jwks.json');
 
@@ -236,6 +240,19 @@ export default class NetworkManager {
                         
                         const display = ctx.oidc.client?.clientName || ctx.oidc.client?.clientId;
 
+                        // Resolve the post_logout_redirect_uri from the session
+                        // state. If the RP registered the /oidc/logout-redirect
+                        // proxy as its post_logout_redirect_uri, the actual RP
+                        // URL is nested as ?post_logout_redirect_uri=... and we
+                        // need to unwrap it (mirrors the logic in logoutSource).
+                        const rawRedirectUri = ctx.oidc?.session?.state?.postLogoutRedirectUri;
+                        let returnUrl = '/';
+                        if (rawRedirectUri) {
+                            const nestedMatch = rawRedirectUri.match(/[?&]post_logout_redirect_uri=([^&]+)/);
+                            returnUrl = nestedMatch ? decodeURIComponent(nestedMatch[1]) : rawRedirectUri;
+                        }
+                        const returnUrlJs = JSON.stringify(returnUrl);
+
                         ctx.body = `<!DOCTYPE html>
                           <html lang="en">
                           <head>
@@ -347,7 +364,7 @@ export default class NetworkManager {
                           </body>
                           <script nonce="${ctx.res.locals?.nonce || ''}">
                             document.getElementById('returnToAppBtn').addEventListener('click', () => {
-                              window.location.href = '/';
+                              window.location.href = ${returnUrlJs};
                             });
                           </script>
                           </html>`;
@@ -479,6 +496,18 @@ export default class NetworkManager {
         });
     }
 
+    private redactDocumentSummary(doc: any): Record<string, unknown> {
+        return {
+            _id: doc._id,
+            type: doc.type,
+            subType: doc.subType,
+            public: doc.public,
+            shareWithGroup: doc.shareWithGroup,
+            shareWithDepartment: doc.shareWithDepartment,
+            owner: doc.owner,
+        };
+    }
+
     private initializeExpress(): void {
         const vuePath = path.resolve(process.cwd(), 'dist/srv/vue');
         this.logger.info(`Serving static files from: ${vuePath}`);
@@ -593,6 +622,19 @@ export default class NetworkManager {
         this.expressApp.get('/oidc/logout-redirect', async (req, res) => {
             this.logger.debug('Logout redirect handler called');
             const postLogoutRedirectUri = req.query.post_logout_redirect_uri as string || '/';
+            const isLogoutCancelled = req.query.logout === 'no';
+
+            // If the user cancelled the logout, do not destroy their
+            // session. Just redirect back to the app, preserving the
+            // ?logout=no query param so the client library's
+            // wasJustLoggedOut() helper can distinguish the cancel from
+            // a successful logout.
+            if (isLogoutCancelled) {
+                this.logger.debug('Logout cancelled by client, preserving session cookies');
+                const separator = postLogoutRedirectUri.includes('?') ? '&' : '?';
+                res.redirect(`${postLogoutRedirectUri}${separator}logout=no`);
+                return;
+            }
 
             const cookieOptions = {
                 httpOnly: true,
@@ -609,6 +651,32 @@ export default class NetworkManager {
 
             this.logger.debug('Redirecting to:', postLogoutRedirectUri);
             res.redirect(postLogoutRedirectUri);
+        });
+
+        // Cancel logout handler - must be before OIDC provider mount
+        // The OIDC provider's default /end_session/confirm handler resets
+        // the session identifier even when the user cancels logout
+        // (logout=no), which effectively logs the user out. To preserve
+        // the session on cancel, the logout confirmation page's "No, stay
+        // signed in" button uses formaction="/oidc/cancel-logout" so the
+        // request bypasses the OIDC provider's confirm handler entirely
+        // and we just redirect to the post_logout_redirect_uri.
+        //
+        // The redirect URL is augmented with ?logout=no so the client
+        // library's wasJustLoggedOut() helper can distinguish a cancel
+        // from a successful logout. Without this query param the client
+        // would assume the logout succeeded and wipe the OIDC session
+        // from localStorage, even though the server preserved it.
+        //
+        // The body parser is applied to this single route only because
+        // the global urlencoded parser is mounted after the OIDC
+        // provider (so that the OIDC provider can install its own
+        // body parser without the body being consumed twice).
+        this.expressApp.post('/oidc/cancel-logout', express.urlencoded({extended: true}), (req, res) => {
+            this.logger.debug('Logout cancelled, redirecting back to app');
+            const postLogoutRedirectUri = req.body?.post_logout_redirect_uri as string || '/';
+            const separator = postLogoutRedirectUri.includes('?') ? '&' : '?';
+            res.redirect(303, `${postLogoutRedirectUri}${separator}logout=no`);
         });
 
         // Log all OIDC requests for debugging
@@ -984,16 +1052,40 @@ export default class NetworkManager {
         });
 
         this.expressApp.post("/docs/create", this.authenticate, (req, res) => {
-            this.logger.debug(`Document creation request received with body: ${JSON.stringify(req.body)}`);
+            // For privacy, do not log the full body when the request is for an
+            // anonymous document. Even the raw body may contain identifying
+            // information written by the submitter.
+            const isAnonymous = req.body?.anonymous === true;
+            if (isAnonymous) {
+                this.logger.debug("Anonymous document creation request received");
+            } else {
+                this.logger.debug(`Document creation request received with body: ${JSON.stringify(req.body)}`);
+            }
+
+            if (isAnonymous && !this.anonymousDocumentsEnabled) {
+                this.logger.debug("Anonymous document creation rejected: feature disabled");
+                res.status(400).json({
+                    error: "ANONYMOUS_DOCUMENTS_DISABLED",
+                    message: "Anonymous document creation is disabled on this server."
+                });
+                return;
+            }
+
             if (this.validator.getValidatedObject("documentCreation", req.body)) {
                 this.logger.debug("Document creation validation passed");
-                // Check if the document should be anonymous
-                const isAnonymous = req.body.anonymous === true;
-                this.logger.debug(`Anonymous flag: ${isAnonymous}`);
-                
+
                 this.dataManager.createDocument(req.body, req.userid, isAnonymous)
                     .then((document) => {
-                        this.logger.debug(`Document created successfully: ${JSON.stringify(document)}`);
+                        // For privacy: log a redacted summary (not the full
+                        // document body) when the request was anonymous. The
+                        // body of an anonymous document may contain
+                        // identifying information written by the submitter.
+                        if (isAnonymous) {
+                            const summary = this.redactDocumentSummary(document);
+                            this.logger.debug(`Anonymous document created successfully: ${JSON.stringify(summary)}`);
+                        } else {
+                            this.logger.debug(`Document created successfully: ${JSON.stringify(document)}`);
+                        }
                         // Send to document owner and users with access
                         if (document._id) {
                             this.socketServer.sendEventToDocumentAccessors(req.socketID, document._id, "newDocument", {newDocument: document});
@@ -1001,7 +1093,12 @@ export default class NetworkManager {
                             this.socketServer.sendEventToUser(req.socketID, req.userid, "newDocument", {newDocument: document});
                             this.socketServer.sendEventToAdmins(req.socketID, "newDocument", {newDocument: document})
                         }
-                        this.logger.info(`New document created: ${JSON.stringify(document)}`);
+                        if (isAnonymous) {
+                            const summary = this.redactDocumentSummary(document);
+                            this.logger.debug(`New anonymous document: ${JSON.stringify(summary)}`);
+                        } else {
+                            this.logger.debug(`New document created: ${JSON.stringify(document)}`);
+                        }
                         res.status(200).json(document);
                     })
                     .catch((error) => {

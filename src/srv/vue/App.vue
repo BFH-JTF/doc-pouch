@@ -491,12 +491,34 @@ function handleUserRemoved(userID: string) {
 }
 
 async function handleLogout() {
+  // The OIDC logout flow preserves the local UI state (e.g. an "in
+  // progress" indicator) until the user comes back from the OIDC
+  // provider's confirmation page. We therefore:
+  //
+  //  - Mark the logout as in progress so wasJustLoggedOut() knows to
+  //    act on the post-redirect URL.
+  //  - Tell the apiClient to redirect to the OIDC end_session endpoint
+  //    (or, for JWT, clear the JWT token client-side immediately).
+  //  - Optimistically clear the in-memory UI state and the JWT in
+  //    localStorage so any in-flight API calls fail and the spinner
+  //    shows up while the OIDC redirect is being prepared.
+  //
+  // Critically, we do NOT clear docpouch_oidc_session or authMethod
+  // from localStorage here. If the user clicks "No, stay signed in" on
+  // the OIDC confirmation page, the OIDC session on the server is
+  // preserved (see /oidc/cancel-logout in NetworkManager.ts) and we
+  // need the local OIDC tokens intact so restoreOidcSession() can put
+  // the user back where they were without a fresh login.
+  //
+  // If the user confirms the logout, the OIDC provider destroys the
+  // server-side session and redirects back. wasJustLoggedOut() then
+  // returns true and explicitly clears the OIDC session from
+  // localStorage in onMounted (lines 367-373).
   sessionStorage.setItem('docpouch_logout_in_progress', 'true');
   apiClient.logout();
   authToken.value = null;
   localStorage.removeItem('authToken');
   localStorage.removeItem('isAdmin');
-  localStorage.removeItem('authMethod');
   userArray.value = [];
   docArray.value = [];
   structureArray.value = [];

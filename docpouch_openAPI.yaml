@@ -160,6 +160,14 @@ paths:
   /docs/create:
     post:
       summary: Create a new document
+      description: |
+        Creates a new document. By default, the document is owned by the
+        authenticated caller. If the `anonymous` property is set to `true` in
+        the request body, the document is instead owned by the admin user and
+        the creator's user ID is discarded. Anonymous creation requires the
+        `ANONYMOUS_DOCUMENTS_ENABLED` environment variable to be set to `true`
+        on the server; when the flag is off the request is rejected with
+        HTTP 400 (error code `ANONYMOUS_DOCUMENTS_DISABLED`).
       tags:
         - documents
       security:
@@ -179,6 +187,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Document"
+        400:
+          description: |
+            Bad request. Returned, for example, when
+            `ANONYMOUS_DOCUMENTS_ENABLED` is `false` on the server but the
+            request body includes `"anonymous": true`. The response body
+            contains an error code and a human-readable message.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         401:
           description: "User is unauthorized to create new documents"
 
@@ -1020,7 +1038,7 @@ components:
     
     NewDocument:
       type: object
-      description: "Data element for creating a new document. The owner field is automatically set from the authenticated user's JWT token."
+      description: "Data element for creating a new document. The owner field is automatically set from the authenticated user's JWT token. If `anonymous` is `true`, the document is owned by the admin user instead and the creator's user ID is discarded."
       properties:
         title:
           type: string
@@ -1063,6 +1081,17 @@ components:
           type: boolean
           description: "If true, the document can be read by everybody"
           example: false
+        anonymous:
+          type: boolean
+          description: |
+            If `true`, the document is owned by the admin user instead of the
+            authenticated caller. The creator's user ID is discarded and
+            cannot be recovered from the document. The flag is not stored on
+            the document. Requires `ANONYMOUS_DOCUMENTS_ENABLED=true` on the
+            server; otherwise the request is rejected with HTTP 400 (error
+            code `ANONYMOUS_DOCUMENTS_DISABLED`).
+          example: false
+          default: false
       required:
         - title
         - type
@@ -1185,6 +1214,21 @@ components:
       required:
         - name
         - password
+
+    ErrorResponse:
+      type: object
+      description: "Standard error response returned for non-success HTTP statuses where a body is provided."
+      properties:
+        error:
+          type: string
+          description: "A short, machine-readable error code identifying the failure mode."
+          example: "ANONYMOUS_DOCUMENTS_DISABLED"
+        message:
+          type: string
+          description: "A human-readable error message describing the failure."
+          example: "Anonymous document creation is disabled on this server."
+      required:
+        - error
 
     DataStructure:
       type: object

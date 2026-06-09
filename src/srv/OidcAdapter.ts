@@ -35,9 +35,59 @@ export function initOidcDatabases(dbDir: string, memoryOnly = false): void {
     if (!inMemoryOnly && !fs.existsSync(dbPath)) {
         fs.mkdirSync(dbPath, {recursive: true});
     }
+    resetOidcDatastores();
     for (const model of OIDC_MODELS) {
         getDatastore(model);
     }
+}
+
+export function resetOidcDatastores(): void {
+    for (const ds of datastores.values()) {
+        try {
+            (ds as any).stopAutocompaction?.();
+        } catch {
+            // ignore - some datastores may not expose the method
+        }
+    }
+    datastores.clear();
+}
+
+/**
+ * Removes all records from every OIDC datastore. Intended for test setup
+ * so that each test starts from a clean OIDC state (no sessions, grants,
+ * clients, etc.) without needing to reinitialize the adapter.
+ */
+export function clearAllOidcData(): Promise<void> {
+    for (const model of OIDC_MODELS) {
+        getDatastore(model);
+    }
+    return new Promise((resolve, reject) => {
+        const targets = Array.from(datastores.keys());
+        let pending = targets.length;
+        if (pending === 0) {
+            resolve();
+            return;
+        }
+        let failed = false;
+        for (const model of targets) {
+            const ds = datastores.get(model);
+            if (!ds) {
+                pending--;
+                if (pending === 0) resolve();
+                continue;
+            }
+            (ds as any).remove({}, {multi: true}, (err: Error | null) => {
+                if (failed) return;
+                if (err) {
+                    failed = true;
+                    reject(err);
+                    return;
+                }
+                pending--;
+                if (pending === 0) resolve();
+            });
+        }
+    });
 }
 
 export default class OidcAdapter {
