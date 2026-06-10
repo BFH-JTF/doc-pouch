@@ -9,7 +9,7 @@ const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
 
-async function waitForServer(url, timeout = 30000) {
+async function waitForServer(url: string, timeout = 30000) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
         try {

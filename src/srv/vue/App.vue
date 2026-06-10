@@ -57,7 +57,7 @@ const docArray = ref(<I_DocumentEntry[]>[]);
 const structureArray = ref(<I_DataStructure[]>[]);
 const typeArray = ref(<I_LegacyDocumentType[]>[]);
 let shownComponent = ref(DisplayComponent.documentViewer);
-const apiClient = new DbPouchClient(window.location.href.slice(0, window.location.href.lastIndexOf('/')), serverPort, handleNetworkEvent);
+const apiClient = new DbPouchClient(window.location.origin, 0, handleNetworkEvent);
 const isLoggedIn = computed(() => authToken.value !== null);
 const showLoginDialog = ref(true)
 const showOidcLogin = ref(false)

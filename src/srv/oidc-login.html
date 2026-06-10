@@ -143,6 +143,10 @@
         .client-info strong {
             color: #333;
         }
+
+        .client-info.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -155,7 +159,7 @@
 
     <div id="errorMessage" class="error-message"></div>
 
-    <div id="clientInfo" class="client-info" style="display: none;">
+    <div id="clientInfo" class="client-info hidden">
         <strong>Client:</strong> <span id="clientName"></span>
     </div>
 
@@ -188,7 +192,7 @@
             if (response.ok) {
                 const data = await response.json();
                 if (data.clientName) {
-                    document.getElementById('clientInfo').style.display = 'block';
+                    document.getElementById('clientInfo').classList.remove('hidden');
                     document.getElementById('clientName').textContent = data.clientName;
                 }
             }
