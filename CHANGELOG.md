@@ -1,3 +1,10 @@
+## [1.15.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.15.0...v1.15.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* improve TypeScript typing, simplify client display logic, and refine CSS styling ([4b23149](https://github.com/BFH-JTF/doc-pouch/commit/4b2314939742126fc75481bfbc59fc799d7a3ab5))
+
 # [1.15.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.14.1...v1.15.0) (2026-06-09)
 
 
