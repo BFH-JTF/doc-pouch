@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.15.1...v1.16.0) (2026-06-11)
+
+
+### Features
+
+* enhance OIDC logging, CORS handling, and session lifecycle management ([da15020](https://github.com/BFH-JTF/doc-pouch/commit/da15020edb3736cb4082c9968fb2ce81be1e386b))
+
 ## [1.15.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.15.0...v1.15.1) (2026-06-10)
 
 
