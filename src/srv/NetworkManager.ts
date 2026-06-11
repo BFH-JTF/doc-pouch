@@ -189,13 +189,51 @@ export default class NetworkManager {
                 rpInitiatedLogout: {
                     enabled: true,
                     logoutSource: async function (ctx: any, form: string) {
-                        ctx.logger?.debug('Rendering logout confirmation page');
+                        // Diagnostic logging for "xsrf token invalid" debugging.
+                        // The XSRF secret in oidc-provider@9.x is regenerated on
+                        // every GET to /end_session and stored in
+                        // ctx.oidc.session.state.secret (see
+                        // node_modules/oidc-provider/lib/shared/xsrf.js). The
+                        // hidden form input below must carry that exact secret;
+                        // any mismatch at POST /end_session/confirm results in
+                        // "xsrf token invalid". When that happens the most
+                        // useful thing to see is whether the form actually
+                        // contains the secret, what session uid the server is
+                        // holding, and whether an interaction is in flight.
+                        const xsrfMatch = form.match(/name="xsrf" value="([^"]+)"/);
+                        ctx.logger?.debug({
+                            event: 'logoutSource.render',
+                            xsrf: xsrfMatch ? xsrfMatch[1] : 'NOT_FOUND',
+                            sessionUid: ctx.oidc?.session?.uid,
+                            sessionAccountId: ctx.oidc?.session?.accountId,
+                            sessionDestroyed: ctx.oidc?.session?.destroyed,
+                            sessionTransient: ctx.oidc?.session?.transient,
+                            sessionState: ctx.oidc?.session?.state
+                                ? {
+                                    hasSecret: !!ctx.oidc.session.state.secret,
+                                    clientId: ctx.oidc.session.state.clientId
+                                }
+                                : null,
+                            interaction: ctx.oidc?.entities?.Interaction
+                                ? {
+                                    uid: ctx.oidc.entities.Interaction.uid,
+                                    prompt: (ctx.oidc.entities.Interaction as any).prompt?.name
+                                }
+                                : null,
+                            params: ctx.oidc?.params
+                                ? {
+                                    post_logout_redirect_uri: ctx.oidc.params.post_logout_redirect_uri,
+                                    state: ctx.oidc.params.state,
+                                    id_token_hint_present: !!ctx.oidc.params.id_token_hint,
+                                    client_id: ctx.oidc.params.client_id
+                                }
+                                : null
+                        });
                         const htmlPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/oidc-logout.html'))
                             ? path.resolve(process.cwd(), 'dist/srv/oidc-logout.html')
                             : path.resolve(process.cwd(), 'src/srv/oidc-logout.html');
                         let html = fs.readFileSync(htmlPath, 'utf8');
                         const actionMatch = form.match(/action="([^"]+)"/);
-                        const xsrfMatch = form.match(/name="xsrf" value="([^"]+)"/);
                         const rawRedirectUri = ctx.oidc?.session?.state?.postLogoutRedirectUri || '/';
                         // If the URI is a proxy (contains a nested post_logout_redirect_uri query param),
                         // extract the actual RP return URL for the cancel button
@@ -208,7 +246,15 @@ export default class NetworkManager {
                         ctx.body = html;
                     },
                     postLogoutSuccessSource: async function renderLogoutSuccessPage(ctx: any) {
-                        // Clear all oidc-provider session cookies to ensure re-authentication is required
+                        // Note: when this function is reached, oidc-provider has
+                        // already destroyed the server-side session in
+                        // end_session.confirm() (see
+                        // node_modules/oidc-provider/lib/actions/end_session.js,
+                        // line 160). The session adapter destroy() call below
+                        // was a no-op at best and confusing at worst — remove
+                        // it. The only thing we need to do here is clear the
+                        // browser cookies (the proxy for the OIDC provider's
+                        // own cookie clearing) and render the success page.
                         const cookieNames = ['_session', '_interaction', '_interaction_resume'];
                         const cookieOptions = {
                             path: '/',
@@ -223,21 +269,13 @@ export default class NetworkManager {
                             ctx.cookies.set(`${name}.sig`, '', cookieOptions);
                         });
 
-                        // Also destroy the session in the backend store
-                        try {
-                            const sessionUid = ctx.oidc?.session?.uid;
-                            if (sessionUid) {
-                                const sessionAdapter = new (ctx.oidc?.provider?.Adapter || function () {
-                                })('Session');
-                                if (sessionAdapter.destroy) {
-                                    await sessionAdapter.destroy(sessionUid);
-                                    ctx.logger?.debug(`Destroyed session ${sessionUid}`);
-                                }
-                            }
-                        } catch (err) {
-                            ctx.logger?.debug('Session destruction not critical:', err);
-                        }
-                        
+                        ctx.logger?.debug({
+                            event: 'postLogoutSuccessSource.render',
+                            sessionUid: ctx.oidc?.session?.uid,
+                            sessionDestroyed: ctx.oidc?.session?.destroyed,
+                            sessionAccountId: ctx.oidc?.session?.accountId
+                        });
+
                         const display = ctx.oidc.client?.clientName || ctx.oidc.client?.clientId;
 
                         // Resolve the post_logout_redirect_uri from the session
@@ -620,7 +658,23 @@ export default class NetworkManager {
         // Logout redirect handler - must be before OIDC provider mount
         // Ensures cookies are cleared after oidc-provider logout
         this.expressApp.get('/oidc/logout-redirect', async (req, res) => {
-            this.logger.debug('Logout redirect handler called');
+            // Diagnostic logging: capture what query parameters the RP
+            // returned with, what cookies it sent, and what is the
+            // post_logout_redirect_uri it wants us to redirect to. This
+            // is the post-OIDC-flow URL the user lands on, so any mismatch
+            // with what /end_session.confirm decided shows up here.
+            this.logger.debug({
+                event: 'logoutRedirect.hit',
+                method: req.method,
+                query: req.query,
+                postLogoutRedirectUri: req.query.post_logout_redirect_uri,
+                isLogoutCancelled: req.query.logout === 'no',
+                headers: {
+                    cookie: req.headers.cookie,
+                    'user-agent': req.headers['user-agent'],
+                    referer: req.headers.referer
+                }
+            });
             const postLogoutRedirectUri = req.query.post_logout_redirect_uri as string || '/';
             const isLogoutCancelled = req.query.logout === 'no';
 

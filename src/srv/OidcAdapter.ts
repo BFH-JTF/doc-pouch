@@ -1,6 +1,7 @@
 import Nedb from "@seald-io/nedb";
 import path from "path";
 import fs from "fs";
+import type winston from "winston";
 
 declare const NedbConstructor: new (options?: any) => any;
 type NedbInstance = InstanceType<typeof NedbConstructor>;
@@ -16,6 +17,14 @@ const OIDC_MODELS = [
 const datastores = new Map<string, NedbInstance>();
 let dbPath = './db';
 let inMemoryOnly = false;
+let adapterLogger: winston.Logger | null = null;
+let adapterDebug = process.env.OIDC_ADAPTER_DEBUG === 'true';
+
+function dbg(payload: Record<string, unknown>): void {
+    if (adapterDebug && adapterLogger) {
+        adapterLogger.debug(payload);
+    }
+}
 
 function getDatastore(modelName: string): NedbInstance {
     if (!datastores.has(modelName)) {
@@ -38,6 +47,23 @@ export function initOidcDatabases(dbDir: string, memoryOnly = false): void {
     resetOidcDatastores();
     for (const model of OIDC_MODELS) {
         getDatastore(model);
+    }
+}
+
+/**
+ * Wire a winston logger into the OidcAdapter so the adapter emits
+ * debug-level events (find, upsert, destroy, etc.) that are useful
+ * for diagnosing OIDC session and XSRF mismatches.
+ *
+ * Debug output is gated by the OIDC_ADAPTER_DEBUG env var; this
+ * function just attaches the logger — the gate is read at module
+ * load time, so call this *after* the env has been processed.
+ */
+export function setOidcAdapterLogger(logger: winston.Logger): void {
+    adapterLogger = logger;
+    if (process.env.OIDC_ADAPTER_DEBUG === 'true') {
+        adapterDebug = true;
+        adapterLogger.info('OIDC adapter debug logging enabled');
     }
 }
 
@@ -107,9 +133,18 @@ export default class OidcAdapter {
             if (expiresIn) {
                 doc.expiresAt = Date.now() + expiresIn * 1000;
             }
+            dbg({
+                event: 'adapter.upsert',
+                model: this.modelName,
+                id,
+                kind: doc.kind || doc.payload?.kind,
+                hasAccount: !!doc.accountId
+            });
             this.datastore.update({_id: id}, {$set: doc}, {upsert: true}, (err: Error | null) => {
-                if (err) reject(err);
-                else resolve(undefined);
+                if (err) {
+                    dbg({event: 'adapter.upsert.error', model: this.modelName, id, err: err.message});
+                    reject(err);
+                } else resolve(undefined);
             });
         });
     }
@@ -117,8 +152,24 @@ export default class OidcAdapter {
     find(id: string): Promise<any> {
         return new Promise((resolve, reject) => {
             this.datastore.findOne({_id: id}, (err: Error | null, doc: any) => {
-                if (err) reject(err);
-                else resolve(doc || undefined);
+                if (err) {
+                    dbg({event: 'adapter.find.error', model: this.modelName, id, err: err.message});
+                    reject(err);
+                } else {
+                    dbg({
+                        event: 'adapter.find',
+                        model: this.modelName,
+                        id,
+                        found: !!doc,
+                        accountId: doc?.accountId,
+                        hasState: !!doc?.state,
+                        stateHasSecret: !!(doc?.state && doc.state.secret),
+                        uid: doc?.uid,
+                        transient: doc?.transient,
+                        expired: doc?.expiresAt ? doc.expiresAt < Date.now() : false
+                    });
+                    resolve(doc || undefined);
+                }
             });
         });
     }
@@ -126,8 +177,13 @@ export default class OidcAdapter {
     findByUid(uid: string): Promise<any> {
         return new Promise((resolve, reject) => {
             this.datastore.findOne({uid}, (err: Error | null, doc: any) => {
-                if (err) reject(err);
-                else resolve(doc || undefined);
+                if (err) {
+                    dbg({event: 'adapter.findByUid.error', model: this.modelName, uid, err: err.message});
+                    reject(err);
+                } else {
+                    dbg({event: 'adapter.findByUid', model: this.modelName, uid, found: !!doc, _id: doc?._id});
+                    resolve(doc || undefined);
+                }
             });
         });
     }
@@ -135,26 +191,43 @@ export default class OidcAdapter {
     findByUserCode(userCode: string): Promise<any> {
         return new Promise((resolve, reject) => {
             this.datastore.findOne({userCode}, (err: Error | null, doc: any) => {
-                if (err) reject(err);
-                else resolve(doc || undefined);
+                if (err) {
+                    dbg({event: 'adapter.findByUserCode.error', model: this.modelName, userCode, err: err.message});
+                    reject(err);
+                } else {
+                    dbg({
+                        event: 'adapter.findByUserCode',
+                        model: this.modelName,
+                        userCode,
+                        found: !!doc,
+                        _id: doc?._id
+                    });
+                    resolve(doc || undefined);
+                }
             });
         });
     }
 
     destroy(id: string): Promise<void> {
         return new Promise((resolve, reject) => {
+            dbg({event: 'adapter.destroy', model: this.modelName, id});
             this.datastore.remove({_id: id}, {}, (err: Error | null) => {
-                if (err) reject(err);
-                else resolve(undefined);
+                if (err) {
+                    dbg({event: 'adapter.destroy.error', model: this.modelName, id, err: err.message});
+                    reject(err);
+                } else resolve(undefined);
             });
         });
     }
 
     revokeByGrantId(grantId: string): Promise<void> {
         return new Promise((resolve, reject) => {
+            dbg({event: 'adapter.revokeByGrantId', model: this.modelName, grantId});
             this.datastore.remove({grantId}, {multi: true}, (err: Error | null) => {
-                if (err) reject(err);
-                else resolve(undefined);
+                if (err) {
+                    dbg({event: 'adapter.revokeByGrantId.error', model: this.modelName, grantId, err: err.message});
+                    reject(err);
+                } else resolve(undefined);
             });
         });
     }
@@ -162,8 +235,10 @@ export default class OidcAdapter {
     consume(id: string): Promise<void> {
         return new Promise((resolve, reject) => {
             this.datastore.update({_id: id}, {$set: {consumed: true}}, {}, (err: Error | null) => {
-                if (err) reject(err);
-                else resolve(undefined);
+                if (err) {
+                    dbg({event: 'adapter.consume.error', model: this.modelName, id, err: err.message});
+                    reject(err);
+                } else resolve(undefined);
             });
         });
     }

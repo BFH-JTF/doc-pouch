@@ -3,19 +3,30 @@ import NeDbWrapper, {type INeDbOptions} from "./NeDbWrapper.js";
 import winston from "winston";
 import fs from "fs";
 import {checkForUpdates} from "./updateChecker.js";
-import {initOidcDatabases} from "./OidcAdapter.js";
+import {initOidcDatabases, setOidcAdapterLogger} from "./OidcAdapter.js";
 import type {I_CorsOption} from "../types.ts";
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || "*";
-const ALLOWED_HEADERS = process.env.ALLOWED_HEADERS || "Content-Type, Authorization";
+const ALLOWED_HEADERS = process.env.ALLOWED_HEADERS || "";
 
 const origins = ALLOWED_ORIGINS.split(",").map(o => o.trim());
+// If the operator did not configure ALLOWED_HEADERS, leave the option
+// unset so the cors middleware reflects the browser's
+// Access-Control-Request-Headers on preflight. This is the safe
+// default for token-auth APIs (no cookies) and avoids breaking
+// clients that send additional custom headers (e.g. docpouch-client
+// sends X-Socket-ID whenever the socket.io connection is up).
+//
+// If ALLOWED_HEADERS is set, restrict the preflight to exactly that
+// list — the operator's intent is explicit and we should honor it.
 const corsOptions: I_CorsOption = {
     origin: origins.length === 1 ? origins[0] : origins,
-    allowedHeaders: ALLOWED_HEADERS.split(",").map(h => h.trim())
+    allowedHeaders: ALLOWED_HEADERS
+        ? ALLOWED_HEADERS.split(",").map(h => h.trim())
+        : undefined
 }
 
 // use environment variables to configure settings
@@ -75,6 +86,7 @@ if (ANONYMOUS_DOCUMENTS_ENABLED) {
 // storage so that the session/access-token NeDB files cannot be used to
 // correlate user activity with anonymous document creation.
 initOidcDatabases('./db', MEMORY_ONLY || ANONYMOUS_DOCUMENTS_ENABLED);
+setOidcAdapterLogger(winstonLogger);
 
 const dataManager = new NeDbWrapper(winstonLogger, dbOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED});
 
