@@ -33,12 +33,14 @@ function getGitHubRawUrl(packageInfo: PackageInfo): string | null {
         repoUrl = repoUrl.slice(0, -4);
     }
 
-    if (repoUrl.includes('github.com')) {
-        const parts = repoUrl.split('github.com/');
-        if (parts.length >= 2) {
-            const repoPath = parts[1];
+    try {
+        const parsed = new URL(repoUrl);
+        if (parsed.hostname === 'github.com' || parsed.hostname.endsWith('.github.com')) {
+            const repoPath = parsed.pathname.slice(1);
             return `https://raw.githubusercontent.com/${repoPath}/main/package.json`;
         }
+    } catch {
+        return null;
     }
 
     return null;

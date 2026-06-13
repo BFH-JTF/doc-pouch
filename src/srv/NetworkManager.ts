@@ -1,5 +1,6 @@
 import type {NextFunction, Request, Response} from 'express';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -675,7 +676,9 @@ export default class NetworkManager {
                     referer: req.headers.referer
                 }
             });
-            const postLogoutRedirectUri = req.query.post_logout_redirect_uri as string || '/';
+            const postLogoutRedirectUri = typeof req.query.post_logout_redirect_uri === 'string'
+                ? req.query.post_logout_redirect_uri
+                : '/';
             const isLogoutCancelled = req.query.logout === 'no';
 
             // If the user cancelled the logout, do not destroy their
@@ -728,7 +731,9 @@ export default class NetworkManager {
         // body parser without the body being consumed twice).
         this.expressApp.post('/oidc/cancel-logout', express.urlencoded({extended: true}), (req, res) => {
             this.logger.debug('Logout cancelled, redirecting back to app');
-            const postLogoutRedirectUri = req.body?.post_logout_redirect_uri as string || '/';
+            const postLogoutRedirectUri = typeof req.body?.post_logout_redirect_uri === 'string'
+                ? req.body.post_logout_redirect_uri
+                : '/';
             const separator = postLogoutRedirectUri.includes('?') ? '&' : '?';
             res.redirect(303, `${postLogoutRedirectUri}${separator}logout=no`);
         });
@@ -771,8 +776,40 @@ export default class NetworkManager {
             limits: {fileSize: 100 * 1024 * 1024} // 100MB limit
         });
 
+        const getSafeUploadPath = (filePath: string): string => {
+            const normalizedPath = path.normalize(filePath);
+            const uploadsDir = path.normalize(path.resolve('uploads'));
+            if (!normalizedPath.startsWith(uploadsDir + path.sep) && normalizedPath !== uploadsDir) {
+                throw new Error("Invalid file path: outside uploads directory");
+            }
+            return normalizedPath;
+        };
+
+        const safeDeleteFile = (filePath: string) => {
+            try {
+                const safePath = getSafeUploadPath(filePath);
+                fs.unlinkSync(safePath);
+            } catch {
+                // Silently ignore if path is invalid or file doesn't exist
+            }
+        };
+
+        const interactionRateLimiter = rateLimit({
+            windowMs: 15 * 60 * 1000,
+            max: 100,
+            standardHeaders: true,
+            legacyHeaders: false,
+        });
+
+        const wellKnownRateLimiter = rateLimit({
+            windowMs: 15 * 60 * 1000,
+            max: 100,
+            standardHeaders: true,
+            legacyHeaders: false,
+        });
+
         // Serve OIDC login page
-        this.expressApp.get('/interaction/:uid', async (req, res) => {
+        this.expressApp.get('/interaction/:uid', interactionRateLimiter, async (req, res) => {
             try {
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
 
@@ -799,7 +836,7 @@ export default class NetworkManager {
                     : path.resolve(process.cwd(), 'src/srv/oidc-login.html');
                 let html = fs.readFileSync(htmlPath, 'utf8');
                 html = html.replace(/__NONCE__/g, res.locals.nonce);
-                html = html.replace(/__UID__/g, req.params.uid);
+                html = html.replace(/__UID__/g, req.params.uid as string);
                 res.type('html').send(html);
             } catch (err) {
                 res.status(400).send('Invalid or expired login session. Please try again.');
@@ -898,7 +935,7 @@ export default class NetworkManager {
             }
         });
         // Proxy well-known OIDC discovery to the OIDC provider (mounted at /oidc)
-        this.expressApp.get('/.well-known/openid-configuration', (req, res) => {
+        this.expressApp.get('/.well-known/openid-configuration', wellKnownRateLimiter, (req, res) => {
             const options = {
                 hostname: 'localhost',
                 port: this.port,
@@ -1387,12 +1424,12 @@ export default class NetworkManager {
                     const originalName = uploadedFile.originalname.toLowerCase();
 
                     if (originalName.endsWith('.json')) {
-                        const rawContent = fs.readFileSync(uploadedFile.path, "utf8");
+                        const rawContent = fs.readFileSync(getSafeUploadPath(uploadedFile.path), "utf8");
                         const parsed = JSON.parse(rawContent);
 
                         if (scope === "all") {
                             if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-                                fs.unlinkSync(uploadedFile.path);
+                                safeDeleteFile(uploadedFile.path);
                                 return res.status(400).json({error: "Invalid JSON payload. Expected an object with one or more collections."});
                             }
 
@@ -1403,7 +1440,7 @@ export default class NetworkManager {
                                 types?: any[];
                             }, mode);
 
-                            fs.unlinkSync(uploadedFile.path);
+                            safeDeleteFile(uploadedFile.path);
                             this.logger.info(`Database JSON import successful for scope=all, mode=${mode}`);
                             return res.status(200).json({message: "Database imported successfully"});
                         }
@@ -1415,27 +1452,27 @@ export default class NetworkManager {
                                 : null);
 
                         if (!scopedData) {
-                            fs.unlinkSync(uploadedFile.path);
+                            safeDeleteFile(uploadedFile.path);
                             return res.status(400).json({error: `Invalid JSON payload for scope '${scope}'. Expected an array or an object containing '${scope}'.`});
                         }
 
                         await this.dataManager.importCollections({[scope]: scopedData}, mode);
-                        fs.unlinkSync(uploadedFile.path);
+                        safeDeleteFile(uploadedFile.path);
                         this.logger.info(`Database JSON import successful for scope=${scope}, mode=${mode}`);
                         return res.status(200).json({message: `${scope} imported successfully`});
                     }
 
                     if (!originalName.endsWith('.zip')) {
-                        fs.unlinkSync(uploadedFile.path);
+                        safeDeleteFile(uploadedFile.path);
                         return res.status(400).json({error: "Uploaded file must be a JSON or ZIP file"});
                     }
 
                     if (scope !== "all") {
-                        fs.unlinkSync(uploadedFile.path);
+                        safeDeleteFile(uploadedFile.path);
                         return res.status(400).json({error: "ZIP import supports only scope=all. Use JSON files for scoped import."});
                     }
 
-                    const zip = new AdmZip(uploadedFile.path);
+                    const zip = new AdmZip(getSafeUploadPath(uploadedFile.path));
                     const zipEntries = zip.getEntries();
 
                     const collectionsData: any = {};
@@ -1458,19 +1495,19 @@ export default class NetworkManager {
                     }
 
                     if (Object.keys(collectionsData).length === 0) {
-                        fs.unlinkSync(uploadedFile.path);
+                        safeDeleteFile(uploadedFile.path);
                         return res.status(400).json({error: "ZIP file does not contain any valid database files (.json or .db)"});
                     }
 
                     await this.dataManager.importCollections(collectionsData, mode);
-                    fs.unlinkSync(uploadedFile.path);
+                    safeDeleteFile(uploadedFile.path);
 
                     this.logger.info(`Database ZIP import successful, mode=${mode}`);
                     return res.status(200).json({message: "Database imported successfully"});
                 } catch (error) {
                     if ((error as Error).message?.startsWith("Invalid scope")) {
-                        if (fs.existsSync(uploadedFile.path)) {
-                            fs.unlinkSync(uploadedFile.path);
+                        if (fs.existsSync(getSafeUploadPath(uploadedFile.path))) {
+                            safeDeleteFile(uploadedFile.path);
                         }
                         return res.status(400).json({error: (error as Error).message});
                     }
@@ -1478,22 +1515,26 @@ export default class NetworkManager {
                     this.logger.error("Error importing database:", error);
 
                     // Delete the uploaded file if it exists
-                    if (fs.existsSync(uploadedFile.path)) {
-                        fs.unlinkSync(uploadedFile.path);
-                    }
+                    safeDeleteFile(uploadedFile.path);
 
                     res.status(500).json({error: "Error importing database"});
                 }
             }).catch((error) => {
                 this.logger.error("Error checking admin status:", error);
 
-                // Delete the uploaded file if it exists
-                if (req.file && fs.existsSync(req.file.path)) {
-                    fs.unlinkSync(req.file.path);
+                if (req.file) {
+                    safeDeleteFile(req.file.path);
                 }
 
                 res.status(500).json({error: "Error checking admin status"});
             });
+        });
+
+        const indexRateLimiter = rateLimit({
+            windowMs: 15 * 60 * 1000,
+            max: 100,
+            standardHeaders: true,
+            legacyHeaders: false,
         });
 
         this.expressApp.use((req, res, next) => {
@@ -1509,6 +1550,10 @@ export default class NetworkManager {
                 return next();
             }
 
+            indexRateLimiter(req, res, next);
+        });
+
+        this.expressApp.use((req, res, next) => {
             // For all other routes, serve the index.html file
             res.sendFile(path.join(vuePath, 'index.html'));
         });
