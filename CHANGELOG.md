@@ -1,3 +1,15 @@
+# [1.17.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.16.0...v1.17.0) (2026-06-13)
+
+
+### Bug Fixes
+
+* add rate limiting, safe file handling, and dependency updates ([9f6dccf](https://github.com/BFH-JTF/doc-pouch/commit/9f6dccfc1f0dc2bf96b3cf57bfbc67c24975bf6f))
+
+
+### Features
+
+* add CodeQL analysis workflow for improved security scanning ([742fb93](https://github.com/BFH-JTF/doc-pouch/commit/742fb9318a42bd117775cb03f83bab2b7b29417d))
+
 # [1.16.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.15.1...v1.16.0) (2026-06-11)
 
 
