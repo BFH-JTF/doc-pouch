@@ -235,9 +235,10 @@ or in a `.env` file when running locally.
 
 #### Security Configuration
 
-| Variable     | Description                                                   | Default                            |
-|--------------|---------------------------------------------------------------|------------------------------------|
-| `JWT_SECRET` | Secret key used to sign JWT tokens. **Change in production!** | `ThisIsMyVeryOwnAndCreativeSecret` |
+| Variable          | Description                                                                                               | Default                            |
+|-------------------|-----------------------------------------------------------------------------------------------------------|------------------------------------|
+| `JWT_SECRET`      | Secret key used to sign JWT tokens. **Change in production!**                                             | `ThisIsMyVeryOwnAndCreativeSecret` |
+| `SESSION_TIMEOUT` | Session timeout for JWT tokens and OIDC sessions. Accepts duration strings like `24h`, `8h`, `30m`, `7d`. | `24h`                              |
 
 #### CORS Configuration
 
@@ -277,6 +278,7 @@ services:
       - MEMORY_ONLY=false
       - PREFIX=myapp-
       - JWT_SECRET=your-secure-secret-here
+      - SESSION_TIMEOUT=24h
       - ALLOWED_ORIGINS=https://example.com,https://app.example.com
     restart: unless-stopped
 ```
@@ -288,6 +290,7 @@ PORT=3030
 MEMORY_ONLY=false
 PREFIX=docpouch-
 JWT_SECRET=your-development-secret
+SESSION_TIMEOUT=24h
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 ALLOWED_HEADERS=Content-Type, Authorization, X-Requested-With
 ```
@@ -301,6 +304,7 @@ docker run -d \
   -v ./db:/app/db \
   -v ./log:/app/log \
   -e JWT_SECRET=your-secure-secret \
+  -e SESSION_TIMEOUT=24h \
   -e ALLOWED_ORIGINS=https://example.com \
   ghcr.io/bfh-jtf/doc-pouch:latest
 ```

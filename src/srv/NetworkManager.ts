@@ -16,7 +16,7 @@ import fs from "fs";
 import multer from "multer";
 import { ZipArchive } from "archiver";
 import AdmZip from "adm-zip";
-import {JWTOptions} from "./webTokenStuff.js";
+import {JWTOptions, parseDurationToSeconds} from "./webTokenStuff.js";
 import {getCachedUpdateResult} from "./updateChecker.js";
 import * as oidc from "oidc-provider";
 import OidcAdapter from "./OidcAdapter.js";
@@ -478,12 +478,12 @@ export default class NetworkManager {
                 };
             },
             ttl: {
-                Session: 3600,           // 1 hour
-                Grant: 3600,             // 1 hour
-                AccessToken: 3600,       // 1 hour
-                IdToken: 3600,           // 1 hour
-                RefreshToken: 86400,     // 24 hours
-                Interaction: 300,        // 5 minutes
+                Session: parseDurationToSeconds(process.env.SESSION_TIMEOUT || "24h"),
+                Grant: parseDurationToSeconds(process.env.SESSION_TIMEOUT || "24h"),
+                AccessToken: parseDurationToSeconds(process.env.SESSION_TIMEOUT || "24h"),
+                IdToken: parseDurationToSeconds(process.env.SESSION_TIMEOUT || "24h"),
+                RefreshToken: parseDurationToSeconds(process.env.SESSION_TIMEOUT || "24h"),
+                Interaction: 300,
             },
             renderError: (ctx, out, error) => {
                 const err = error as any;
@@ -519,6 +519,7 @@ export default class NetworkManager {
             }
 
             this.logger.log("info", `Server is running on ${hostAddress}:${this.port}`);
+            this.logger.info(`Session timeout: ${JWTOptions.settings.expiresIn} (JWT), ${parseDurationToSeconds(JWTOptions.settings.expiresIn as string)}s (OIDC TTLs)`);
         });
         this.socketServer = new IoSocketServer(this, {
             secret: JWTOptions.secret,
