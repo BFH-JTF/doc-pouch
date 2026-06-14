@@ -258,6 +258,14 @@ or in a `.env` file when running locally.
 | `OIDC_COOKIE_KEY`               | Secret key used to encrypt/sign OIDC session cookies. **Change in production!**                                     | `docpouch-cookie-secret-change-in-production` |
 | `OIDC_COOKIE_SECURE`            | Set to `true` when running the server directly with HTTPS. Leave unset when behind a TLS-terminating reverse proxy. | `false`                                       |
 
+#### MCP Configuration
+
+| Variable      | Description                                             | Default |
+|---------------|---------------------------------------------------------|---------|
+| `MCP_ENABLED` | Mount the MCP server at `/mcp`. Set `false` to disable. | `true`  |
+
+#### Feature Flags
+
 The server trusts `X-Forwarded-*` headers (`trust proxy: true`), so it works behind a reverse proxy out of the box.
 
 #### Example Configuration
@@ -484,6 +492,27 @@ which handles authentication, connection, and event handling.
 
 A complete, runnable Relying Party demo that integrates DocPouch via OIDC using `docpouch-client` is provided in
 [`docs/demo`](docs/demo).
+
+## MCP for AI Agents
+
+DocPouch includes an embedded [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that allows AI
+agents and LLM-powered tools to interact with documents, structures, and users. The MCP server is enabled by default at
+`/mcp` and uses the same JWT/OIDC authentication as the REST API.
+
+Quick connection example:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:3030/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"name":"admin","password":"your-password"}' | jq -r '.token')
+
+curl -X POST http://localhost:3030/mcp \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}'
+```
+
+Set `MCP_ENABLED=false` to disable. See [`docs/mcp.md`](docs/mcp.md) for the full tool reference and security notes.
 
 ## Frontend UI
 

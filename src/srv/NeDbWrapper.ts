@@ -44,7 +44,7 @@ export default class NeDbWrapper {
     private readonly inMemoryOnly: boolean;
     private readonly filenamePrefix: string | undefined;
     private readonly dbPath: string | undefined;
-    private readonly anonymousDocumentsEnabled: boolean;
+    private readonly _anonymousDocumentsEnabled: boolean;
     private readonly initializationPromise: Promise<void>;
 
     constructor(winstonLogger: winston.Logger, options: INeDbOptions = {}, runtimeOptions: {
@@ -54,7 +54,7 @@ export default class NeDbWrapper {
         this.inMemoryOnly = options.inMemoryOnly ?? false;
         this.filenamePrefix = options.filenamePrefix ?? undefined;
         this.dbPath = options.dbPath ?? "./db";
-        this.anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
+        this._anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
         if (!fs.existsSync(this.dbPath)) {
             fs.mkdirSync(this.dbPath);
         }
@@ -91,6 +91,10 @@ export default class NeDbWrapper {
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
         }
         this.initializationPromise = this.initializeDatabase();
+    }
+
+    get anonymousDocumentsEnabled(): boolean {
+        return this._anonymousDocumentsEnabled;
     }
 
     public async waitForInitialization(): Promise<void> {

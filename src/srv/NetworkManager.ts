@@ -7,7 +7,6 @@ import crypto from 'crypto';
 import type {I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode} from "./NeDbWrapper.js";
 import winston from "winston";
-import jwt from "jsonwebtoken"
 import SchemaValidator from "./SchemaValidator.js";
 import IoSocketServer from "./IoSocketServer.js";
 import * as http from "node:http";
@@ -16,11 +15,14 @@ import fs from "fs";
 import multer from "multer";
 import { ZipArchive } from "archiver";
 import AdmZip from "adm-zip";
-import {JWTOptions, parseDurationToSeconds} from "./webTokenStuff.js";
 import {getCachedUpdateResult} from "./updateChecker.js";
 import * as oidc from "oidc-provider";
 import OidcAdapter from "./OidcAdapter.js";
 import type {I_CorsOption} from "../types.ts";
+import {authenticateRequest} from "./mcp/auth.js";
+import McpManager from "./mcp/McpManager.js";
+import jwt from "jsonwebtoken";
+import {JWTOptions, parseDurationToSeconds} from "./webTokenStuff.js";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
@@ -103,6 +105,7 @@ export default class NetworkManager {
     validator: SchemaValidator
     oidcProvider: any
     private readonly anonymousDocumentsEnabled: boolean;
+    private mcpManager?: McpManager;
 
     constructor(logger: winston.Logger, dataManager: NeDbWrapper, port: number, corsOptions: I_CorsOption, runtimeOptions: {
         anonymousDocumentsEnabled?: boolean
@@ -528,10 +531,11 @@ export default class NetworkManager {
         this.initializeExpress();
     }
 
-    public stop(): Promise<void> {
+    public async stop(): Promise<void> {
+        if (this.mcpManager) await this.mcpManager.close();
+        this.socketServer.close();
+        this.dataManager.stop();
         return new Promise((resolve) => {
-            this.socketServer.close();
-            this.dataManager.stop();
             this.webServer.close(() => resolve());
         });
     }
@@ -1547,12 +1551,27 @@ export default class NetworkManager {
                 req.path.startsWith('/structures') ||
                 req.path.startsWith('/database') ||
                 req.path.startsWith('/.well-known') ||
-                req.path.startsWith('/oidc')) {
+                req.path.startsWith('/oidc') ||
+                req.path.startsWith('/mcp')) {
                 return next();
             }
 
             indexRateLimiter(req, res, next);
         });
+
+        // Mount MCP server before the SPA catch-all so /mcp is handled
+        if (process.env.MCP_ENABLED !== 'false') {
+            this.mcpManager = new McpManager(
+                this.expressApp,
+                this.dataManager,
+                this.logger,
+                this.validator,
+                this.oidcProvider,
+            );
+            this.logger.info('MCP server mounted at /mcp');
+        } else {
+            this.logger.info('MCP server disabled by MCP_ENABLED=false');
+        }
 
         this.expressApp.use((req, res, next) => {
             // For all other routes, serve the index.html file
@@ -1564,53 +1583,23 @@ export default class NetworkManager {
 
     private authenticate = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const authHeader = req.headers['authorization'];
-            if (!authHeader) {
-                res.status(401).json({error: "No authorization header"});
+            const result = await authenticateRequest(req, this.dataManager, this.oidcProvider);
+            if (!result) {
+                const authHeader = req.headers['authorization'];
+                if (!authHeader) {
+                    res.status(401).json({error: "No authorization header"});
+                } else if (!authHeader.toString().split(' ')[1]) {
+                    res.status(401).json({error: "No token provided"});
+                } else {
+                    res.status(401).json({error: "Invalid token"});
+                }
                 return;
             }
-
-            const token = authHeader.split(' ')[1];
-            if (!token) {
-                res.status(401).json({error: "No token provided"});
-                return;
+            req.userid = result.userid;
+            if (result.socketID) {
+                req.socketID = result.socketID;
             }
-
-            // Try JWT token first (from /users/login)
-            try {
-                const payload = jwt.verify(token, JWTOptions.secret) as any;
-                const user = await this.dataManager.getUserByID(payload.id);
-                if (!user) {
-                    res.status(401).json({error: "User not found"});
-                    return;
-                }
-                req.userid = payload.id;
-                if (req.headers['x-socket-id'])
-                    req.socketID = req.headers['x-socket-id'] as string;
-                return next();
-            } catch (jwtError) {
-                // JWT verification failed, try OIDC token
-            }
-
-            // Try OIDC access token (from OIDC flow)
-            try {
-                // Use oidc-provider's AccessToken.find to validate
-                const accessToken = await this.oidcProvider.AccessToken.find(token);
-
-                if (accessToken && accessToken.accountId) {
-                    req.userid = accessToken.accountId;
-                    if (req.headers['x-socket-id'])
-                        req.socketID = req.headers['x-socket-id'] as string;
-                    return next();
-                }
-            } catch (oidcError) {
-                // OIDC token validation failed, fall through to 401
-            }
-
-            // Both methods failed
-            res.status(401).json({error: "Invalid token"});
-            return;
-
+            next();
         } catch (error) {
             res.status(500).json({error: "Authentication error"});
             return;

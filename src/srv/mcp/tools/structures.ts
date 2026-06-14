@@ -1,0 +1,158 @@
+import type {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
+import NeDbWrapper from '../../NeDbWrapper.js';
+import SchemaValidator from '../../SchemaValidator.js';
+import type winston from 'winston';
+import {
+    ListStructuresSchema,
+    GetStructureSchema,
+    CreateStructureSchema,
+    UpdateStructureSchema,
+    DeleteStructureSchema,
+} from '../schemas.js';
+import {mcpAuthContext} from '../context.js';
+
+function getUserId(): string | null {
+    const store = mcpAuthContext.getStore();
+    return store?.userid ?? null;
+}
+
+export function registerStructureTools(
+    server: McpServer,
+    dataManager: NeDbWrapper,
+    logger: winston.Logger,
+    validator: SchemaValidator,
+): void {
+    server.registerTool('list_structures', {
+        description: 'List all document structures. Available to any authenticated user.',
+        inputSchema: ListStructuresSchema,
+    }, async () => {
+        const userid = getUserId();
+        if (!userid) {
+            return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
+        }
+        try {
+            const structures = await dataManager.getStructures();
+            return {content: [{type: 'text', text: JSON.stringify(structures)}]};
+        } catch (error: any) {
+            logger.error(`MCP list_structures error: ${error.message}`);
+            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        }
+    });
+
+    server.registerTool('get_structure', {
+        description: 'Get a single structure by ID. Available to any authenticated user.',
+        inputSchema: GetStructureSchema,
+    }, async (args) => {
+        const userid = getUserId();
+        if (!userid) {
+            return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
+        }
+        try {
+            const structure = await dataManager.getStructureByID(Number(args.id));
+            return {content: [{type: 'text', text: JSON.stringify(structure)}]};
+        } catch (error: any) {
+            logger.error(`MCP get_structure error: ${error.message}`);
+            return {content: [{type: 'text', text: `Error: Structure not found`}], isError: true};
+        }
+    });
+
+    server.registerTool('create_structure', {
+        description: 'Create a new document structure. Admin only.',
+        inputSchema: CreateStructureSchema,
+    }, async (args) => {
+        const userid = getUserId();
+        if (!userid) {
+            return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
+        }
+        try {
+            const isAdmin = await dataManager.isAdmin(userid);
+            if (!isAdmin) {
+                return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
+            }
+            const inputObj: Record<string, unknown> = {
+                name: args.name,
+                fields: args.fields,
+            };
+            if (args.description !== undefined) inputObj.description = args.description;
+            if (args.type !== undefined) inputObj.type = args.type;
+            if (args.subType !== undefined) inputObj.subType = args.subType;
+
+            const validated = validator.getValidatedObject('structureCreation', inputObj);
+            if (!validated) {
+                return {content: [{type: 'text', text: 'Error: validation failed'}], isError: true};
+            }
+            const structure = await dataManager.createStructure(validated as any, userid);
+            return {content: [{type: 'text', text: JSON.stringify(structure)}]};
+        } catch (error: any) {
+            logger.error(`MCP create_structure error: ${error.message}`);
+            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        }
+    });
+
+    server.registerTool('update_structure', {
+        description: 'Update an existing structure. Admin only.',
+        inputSchema: UpdateStructureSchema,
+    }, async (args) => {
+        const userid = getUserId();
+        if (!userid) {
+            return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
+        }
+        try {
+            const isAdmin = await dataManager.isAdmin(userid);
+            if (!isAdmin) {
+                return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
+            }
+            const inputObj: Record<string, unknown> = {};
+            if (args.name !== undefined) inputObj.name = args.name;
+            if (args.description !== undefined) inputObj.description = args.description;
+            if (args.type !== undefined) inputObj.type = args.type;
+            if (args.subType !== undefined) inputObj.subType = args.subType;
+            if (args.fields !== undefined) inputObj.fields = args.fields;
+
+            const validated = validator.getValidatedObject('structureUpdate', inputObj);
+            if (!validated) {
+                return {content: [{type: 'text', text: 'Error: validation failed'}], isError: true};
+            }
+
+            const currentStructures = await dataManager.getStructures();
+            const existing = currentStructures.find((s: any) => s._id === args.id);
+            if (!existing) {
+                return {content: [{type: 'text', text: 'Error: Structure not found'}], isError: true};
+            }
+
+            const updatedData = {...existing, ...validated};
+            const result = await dataManager.updateStructure(args.id, updatedData as any, userid);
+            if (result === 401) {
+                return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
+            }
+            return {content: [{type: 'text', text: JSON.stringify({updated: result})}]};
+        } catch (error: any) {
+            logger.error(`MCP update_structure error: ${error.message}`);
+            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        }
+    });
+
+    server.registerTool('delete_structure', {
+        description: 'Delete a structure by ID. Admin only.',
+        inputSchema: DeleteStructureSchema,
+    }, async (args) => {
+        const userid = getUserId();
+        if (!userid) {
+            return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
+        }
+        try {
+            const isAdmin = await dataManager.isAdmin(userid);
+            if (!isAdmin) {
+                return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
+            }
+            const result = await dataManager.removeStructure(args.id, userid);
+            if (result === 404) {
+                return {content: [{type: 'text', text: 'Error: Structure not found'}], isError: true};
+            }
+            return {content: [{type: 'text', text: JSON.stringify({deleted: result})}]};
+        } catch (error: any) {
+            logger.error(`MCP delete_structure error: ${error.message}`);
+            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        }
+    });
+}
