@@ -14,6 +14,15 @@ const emit = defineEmits<{
 
 const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure'];
 const primitiveTypes = ['string', 'number', 'boolean'];
+const arrayItemTypes = ['string', 'number', 'boolean', 'structure'];
+
+function getArrayItemCategory(field: I_StructureField): string {
+  if ((field as any)._arrayCategory) return (field as any)._arrayCategory;
+  if (field.items === undefined || field.items === null) return 'string';
+  if (field.items === '') return 'structure';
+  if (primitiveTypes.includes(field.items)) return field.items;
+  return 'structure';
+}
 
 const isDuplicateTypeSubtype = computed(() => {
   if (!editableStructure.value || editableStructure.value.type === undefined || editableStructure.value.subType === undefined) {
@@ -26,6 +35,8 @@ const isDuplicateTypeSubtype = computed(() => {
   );
 });
 
+const keyNamePattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 const formValid = computed(() => {
   if (!editableStructure.value) {
     return false;
@@ -33,18 +44,28 @@ const formValid = computed(() => {
   if (isDuplicateTypeSubtype.value) {
     return false;
   }
+  if (editableStructure.value.fields.some(f => !f.name || !keyNamePattern.test(f.name))) {
+    return false;
+  }
   return true;
 });
 
 const editableStructure = ref<I_DataStructure | undefined>(undefined);
 
-watch(() => props.displayStructure, (newStructure) => {
-  editableStructure.value = newStructure ? JSON.parse(JSON.stringify(newStructure)) : undefined;
-}, {immediate: true, deep: true});
+watch(() => props.displayStructure?._id, () => {
+  editableStructure.value = props.displayStructure ? JSON.parse(JSON.stringify(props.displayStructure)) : undefined;
+}, {immediate: true});
 
 function updateStructure() {
   if (editableStructure.value && !isDuplicateTypeSubtype.value) {
-    emit('update:structure', editableStructure.value);
+    const structure = JSON.parse(JSON.stringify(editableStructure.value)) as I_DataStructure;
+    for (const field of structure.fields) {
+      if (field.items === '') {
+        field.items = undefined;
+      }
+      delete (field as any)._arrayCategory;
+    }
+    emit('update:structure', structure);
   }
 }
 
@@ -71,10 +92,23 @@ function removeField(index: number) {
 function handleFieldTypeChange(field: I_StructureField, newType: string) {
   if (newType !== 'array' && newType !== 'structure') {
     field.items = undefined;
+    delete (field as any)._arrayCategory;
   } else if (newType === 'array') {
     field.items = 'string';
+    (field as any)._arrayCategory = 'string';
   } else if (newType === 'structure') {
     field.items = undefined;
+    delete (field as any)._arrayCategory;
+  }
+}
+
+function handleArrayItemCategoryChange(field: I_StructureField, category: string) {
+  (field as any)._arrayCategory = category;
+  if (category === 'structure') {
+    field.items = '';
+  } else {
+    field.items = category;
+    updateStructure();
   }
 }
 
@@ -152,82 +186,56 @@ function createFieldNode(field: I_StructureField): I_StructureTreeItem {
       
       if (field.items === 'string' || field.items === 'number' || field.items === 'boolean') {
         node.name = `${field.displayName} [${field.name}] (Array of ${field.items})`;
-        // Add small badge or icon for item type
         const itemTypeInfo = typeIcons[field.items] || typeIcons.default;
       } else if (field.items) {
-        node.name = `${field.displayName} [${field.name}] (Array of structures)`;
-        
-        // Try to find the referenced structure
         const referencedStructure = props.structureList.find(s => s._id === field.items);
-        if (!node.children)
-          node.children = [];
         if (referencedStructure) {
-          // Create a child node for the referenced structure
-          const structureNode: I_StructureTreeItem = {
-            name: referencedStructure.name,
-            id: `${node.id}.${referencedStructure._id}`,
-            children: [],
-            icon: typeIcons.structure.icon,
-            color: typeIcons.structure.color
-          };
-          
-          // Add fields from the referenced structure
+          node.name = `${field.displayName} [${field.name}] (${referencedStructure.name})`;
+          if (!node.children)
+            node.children = [];
           if (referencedStructure.fields && referencedStructure.fields.length > 0) {
-            structureNode.children = referencedStructure.fields.map(childField => 
+            node.children = referencedStructure.fields.map(childField =>
               createFieldNode(childField)
             );
           }
-          
-          node.children.push(structureNode);
         } else {
-          // Referenced structure not found
-          node.children.push({
+          node.name = `${field.displayName} [${field.name}] (Array of structures)`;
+          node.children = [{
             name: `Unknown Structure (ID: ${field.items})`,
             id: `${node.id}.unknown-${field.items}`,
             icon: 'mdi-alert-circle-outline',
             color: 'grey'
-          });
+          }];
         }
       }
       break;
       
     case 'structure':
-      node.name = `${field.name}`;
       node.icon = typeIcons.structure.icon;
       node.color = typeIcons.structure.color;
       
-      // Try to find the referenced structure
       if (field.items) {
         const referencedStructure = props.structureList.find(s => s._id === field.items);
-        if (!node.children)
-          node.children = [];
         if (referencedStructure) {
-          // Create a child node for the referenced structure
-          const structureNode: I_StructureTreeItem = {
-            name: referencedStructure.name,
-            id: `${node.id}.${referencedStructure._id}`,
-            children: [],
-            icon: typeIcons.structure.icon,
-            color: typeIcons.structure.color
-          };
-          
-          // Add fields from the referenced structure
+          node.name = `${field.displayName} [${field.name}] (${referencedStructure.name})`;
+          if (!node.children)
+            node.children = [];
           if (referencedStructure.fields && referencedStructure.fields.length > 0) {
-            structureNode.children = referencedStructure.fields.map(childField => 
+            node.children = referencedStructure.fields.map(childField =>
               createFieldNode(childField)
             );
           }
-          
-          node.children.push(structureNode);
         } else {
-          // Referenced structure not found
-          node.children.push({
+          node.name = `${field.displayName} [${field.name}]`;
+          node.children = [{
             name: `Unknown Structure (ID: ${field.items})`,
             id: `${node.id}.unknown-${field.items}`,
             icon: 'mdi-alert-circle-outline',
             color: 'grey'
-          });
+          }];
         }
+      } else {
+        node.name = `${field.displayName} [${field.name}]`;
       }
       break;
       
@@ -397,10 +405,19 @@ watch(treeItems, (newItems) => {
                   <v-text-field
                       v-model="field.name"
                       :readonly="!props.isAdmin"
+                      :rules="props.isAdmin ? [v => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v) || 'Only letters, digits, underscores; must start with a letter or underscore'] : []"
                       class="mr-2"
                       density="comfortable"
+                      label="Key Name"
+                      variant="outlined"
+                      @change="updateStructure"
+                  ></v-text-field>
+                  <v-text-field
+                      v-model="field.displayName"
+                      :readonly="!props.isAdmin"
+                      density="comfortable"
                       hide-details
-                      label="Field Name"
+                      label="Display Name"
                       variant="outlined"
                       @change="updateStructure"
                   ></v-text-field>
@@ -424,8 +441,8 @@ watch(treeItems, (newItems) => {
                     <v-col v-if="field.type === 'array' || field.type === 'structure'" class="pl-2" cols="4">
                       <v-select
                           v-if="field.type === 'structure'"
-                          v-model="field.items"
-                          :items="props.structureList.filter(s => s._id !== editableStructure._id)"
+                          :items="props.structureList.filter(s => s._id !== editableStructure!._id)"
+                          :model-value="field.items"
                           :readonly="!props.isAdmin"
                           clearable
                           density="compact"
@@ -434,20 +451,34 @@ watch(treeItems, (newItems) => {
                           item-value="_id"
                           label="Referenced Structure"
                           variant="outlined"
-                          @change="updateStructure"
+                          @update:model-value="(val: string | null) => { field.items = val ?? undefined; updateStructure(); }"
                       ></v-select>
-                      <v-select
-                          v-else-if="field.type === 'array'"
-                          v-model="field.items"
-                          :items="primitiveTypes"
-                          :readonly="!props.isAdmin"
-                          clearable
-                          density="compact"
-                          hide-details
-                          label="Array Item Type"
-                          variant="outlined"
-                          @change="updateStructure"
-                      ></v-select>
+                      <template v-else-if="field.type === 'array'">
+                        <v-select
+                            :items="arrayItemTypes"
+                            :model-value="getArrayItemCategory(field)"
+                            :readonly="!props.isAdmin"
+                            density="compact"
+                            hide-details
+                            label="Array Item Type"
+                            variant="outlined"
+                            @update:model-value="(val: string) => { handleArrayItemCategoryChange(field, val); }"
+                        ></v-select>
+                        <v-select
+                            v-if="getArrayItemCategory(field) === 'structure'"
+                            :items="props.structureList.filter(s => s._id !== editableStructure!._id)"
+                            :model-value="field.items || null"
+                            :readonly="!props.isAdmin"
+                            clearable
+                            density="compact"
+                            hide-details
+                            item-title="name"
+                            item-value="_id"
+                            label="Referenced Structure"
+                            variant="outlined"
+                            @update:model-value="(val: string | null) => { field.items = val ?? ''; updateStructure(); }"
+                        ></v-select>
+                      </template>
                     </v-col>
 
                     <v-col v-if="props.isAdmin" class="pl-2" cols="2">

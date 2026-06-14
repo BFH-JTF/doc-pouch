@@ -304,7 +304,7 @@ async function fetchData() {
 function handleLoginSuccess(loginInformation: I_LoginResponse | null) {
   if (loginInformation !== null) {
     console.log("Login success, setting token");
-    setToken(loginInformation.token);
+    setToken(loginInformation.token ?? null);
     loggedInUsername.value = loginInformation.userName;
     if (loginInformation.isAdmin !== undefined) {
       localStorage.setItem('isAdmin', String(loginInformation.isAdmin));

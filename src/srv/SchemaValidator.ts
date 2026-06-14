@@ -80,7 +80,17 @@ export default class SchemaValidator {
 
         this.structureCreationSchema = object({
             name: string().required(),
-            fields: array().required(),
+            description: string().optional(),
+            type: number().optional(),
+            subType: number().optional(),
+            fields: array().of(
+                object({
+                    name: string().required(),
+                    displayName: string().optional(),
+                    type: string().required(),
+                    items: string().optional(),
+                })
+            ).required(),
         });
 
         this.structureUpdateSchema = object({
@@ -88,7 +98,14 @@ export default class SchemaValidator {
             description: string().optional(),
             type: number().optional(),
             subType: number().optional(),
-            fields: array().optional(),
+            fields: array().of(
+                object({
+                    name: string().required(),
+                    displayName: string().optional(),
+                    type: string().required(),
+                    items: string().optional(),
+                })
+            ).optional(),
         });
 
         this.documentFetchSchema = object({

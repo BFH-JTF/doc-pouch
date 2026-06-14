@@ -92,10 +92,17 @@
                         <v-list-item-title class="structure-field-title">
                           <v-text-field
                               v-model="field.name"
+                              :rules="[v => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v) || 'Only letters, digits, underscores; must start with a letter or underscore']"
                               class="mr-2"
                               density="comfortable"
+                              label="Key Name"
+                              variant="outlined"
+                          ></v-text-field>
+                          <v-text-field
+                              v-model="field.displayName"
+                              density="comfortable"
                               hide-details
-                              label="Field Name"
+                              label="Display Name"
                               variant="outlined"
                           ></v-text-field>
                         </v-list-item-title>
@@ -117,7 +124,7 @@
                             <v-col v-if="field.type === 'array' || field.type === 'structure'" class="pl-2" cols="4">
                               <v-select
                                   v-if="field.type === 'structure'"
-                                  v-model="field.items"
+                                  :model-value="field.items"
                                   :items="props.structureList"
                                   clearable
                                   density="comfortable"
@@ -126,17 +133,32 @@
                                   item-value="_id"
                                   label="Referenced Structure"
                                   variant="outlined"
+                                  @update:model-value="(val: string | null) => field.items = val ?? undefined"
                               ></v-select>
-                              <v-select
-                                  v-else-if="field.type === 'array'"
-                                  v-model="field.items"
-                                  :items="primitiveTypes"
-                                  clearable
-                                  density="comfortable"
-                                  hide-details
-                                  label="Array Item Type"
-                                  variant="outlined"
-                              ></v-select>
+                              <template v-else-if="field.type === 'array'">
+                                <v-select
+                                    :items="arrayItemTypes"
+                                    :model-value="getArrayItemCategory(field)"
+                                    density="comfortable"
+                                    hide-details
+                                    label="Array Item Type"
+                                    variant="outlined"
+                                    @update:model-value="(val: string) => handleArrayItemCategoryChange(field, val)"
+                                ></v-select>
+                                <v-select
+                                    v-if="getArrayItemCategory(field) === 'structure'"
+                                    :items="props.structureList"
+                                    :model-value="field.items || null"
+                                    clearable
+                                    density="comfortable"
+                                    hide-details
+                                    item-title="name"
+                                    item-value="_id"
+                                    label="Referenced Structure"
+                                    variant="outlined"
+                                    @update:model-value="(val: string | null) => field.items = val ?? ''"
+                                ></v-select>
+                              </template>
                             </v-col>
 
                             <v-col class="pl-2 text-right" cols="2">
@@ -192,6 +214,15 @@ const emit = defineEmits<{
 
 const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure'];
 const primitiveTypes = ['string', 'number', 'boolean'];
+const arrayItemTypes = ['string', 'number', 'boolean', 'structure'];
+
+function getArrayItemCategory(field: I_StructureField): string {
+  if ((field as any)._arrayCategory) return (field as any)._arrayCategory;
+  if (field.items === undefined || field.items === null) return 'string';
+  if (field.items === '') return 'structure';
+  if (primitiveTypes.includes(field.items)) return field.items;
+  return 'structure';
+}
 
 const newStructure = ref<I_DataStructure>({
   _id: undefined,
@@ -221,11 +252,16 @@ const isDuplicateTypeSubtype = computed(() => {
   );
 });
 
+const keyNamePattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 const formValid = computed(() => {
   if (!newStructure.value.name) {
     return false;
   }
   if (isDuplicateTypeSubtype.value) {
+    return false;
+  }
+  if (newStructure.value.fields.some(f => !f.name || !keyNamePattern.test(f.name))) {
     return false;
   }
   return true;
@@ -247,15 +283,34 @@ function removeField(index: number) {
 function handleTypeChange(field: I_StructureField, newType: string) {
   if (newType !== 'array' && newType !== 'structure') {
     field.items = undefined;
+    delete (field as any)._arrayCategory;
   } else if (newType === 'array') {
     field.items = 'string';
+    (field as any)._arrayCategory = 'string';
   } else if (newType === 'structure') {
     field.items = undefined;
+    delete (field as any)._arrayCategory;
+  }
+}
+
+function handleArrayItemCategoryChange(field: I_StructureField, category: string) {
+  (field as any)._arrayCategory = category;
+  if (category === 'structure') {
+    field.items = '';
+  } else {
+    field.items = category;
   }
 }
 
 function handleStructureCreation() {
-  emit('structureCreated', {...newStructure.value});
+  const structure = JSON.parse(JSON.stringify(newStructure.value)) as I_DataStructure;
+  for (const field of structure.fields) {
+    if (field.items === '') {
+      field.items = undefined;
+    }
+    delete (field as any)._arrayCategory;
+  }
+  emit('structureCreated', structure);
 }
 
 function cancelDialog() {
