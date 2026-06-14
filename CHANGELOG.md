@@ -1,3 +1,11 @@
+# [1.18.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.17.0...v1.18.0) (2026-06-14)
+
+
+### Features
+
+* add configurable session timeout for JWT and OIDC tokens ([67c8c00](https://github.com/BFH-JTF/doc-pouch/commit/67c8c00662395c516376f4e1c46e1baec02a80a2))
+* enhance structure editing with array item categorization and validation ([e31b78a](https://github.com/BFH-JTF/doc-pouch/commit/e31b78a1259a6e671231a83cb2ae00eb69e091bb))
+
 # [1.17.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.16.0...v1.17.0) (2026-06-13)
 
 
