@@ -1,3 +1,14 @@
+# [1.19.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.18.0...v1.19.0) (2026-06-15)
+
+
+### Features
+
+* add `closeOidcDatabases` for better OIDC test cleanup ([5ea3985](https://github.com/BFH-JTF/doc-pouch/commit/5ea3985a5b70af956e2c5e886e7dab48c4beda4a))
+* add API Key Management UI, backend handling, and tests ([7990b4e](https://github.com/BFH-JTF/doc-pouch/commit/7990b4eebfa7eec43b6b013ad490e4a08cad1ef5))
+* add safe file handling and improve `/users/login` endpoint behavior ([5b9fd05](https://github.com/BFH-JTF/doc-pouch/commit/5b9fd0598fc60a001523b7a420df0f2e9f78e6c3))
+* implement OIDC enhancements, user tools, and SDK integration ([cba87c8](https://github.com/BFH-JTF/doc-pouch/commit/cba87c8b5074cc62e7b9bb858c857d6d9123e402))
+* refactor MCP server initialization and enhance docPouch descriptions ([2613dd6](https://github.com/BFH-JTF/doc-pouch/commit/2613dd6e13ae67853e2935775068a207221b5778))
+
 # [1.18.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.17.0...v1.18.0) (2026-06-14)
 
 
