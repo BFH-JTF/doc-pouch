@@ -1,7 +1,7 @@
 import {Server} from 'http';
 import NetworkManager from '../../src/srv/NetworkManager.js';
 import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
-import {clearAllOidcData, initOidcDatabases} from '../../src/srv/OidcAdapter.js';
+import {clearAllOidcData, initOidcDatabases, closeOidcDatabases} from '../../src/srv/OidcAdapter.js';
 import winston from 'winston';
 import {Writable} from 'stream';
 import type {I_CorsOption} from '../../src/types.js';
@@ -176,6 +176,14 @@ export const waitForEvent = (socket: Socket, eventName: string, timeout = 5000) 
         });
     });
 };
+
+/**
+ * Closes the test server and cleans up OIDC databases
+ */
+export async function closeOidcTestServer(target: NetworkManager | Server): Promise<void> {
+    await closeTestServer(target);
+    await closeOidcDatabases();
+}
 
 /**
  * Closes the test server

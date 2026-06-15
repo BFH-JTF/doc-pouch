@@ -78,6 +78,22 @@ export function resetOidcDatastores(): void {
     datastores.clear();
 }
 
+export async function closeOidcDatabases(): Promise<void> {
+    resetOidcDatastores();
+    if (inMemoryOnly || !dbPath) {
+        return;
+    }
+    const filepath = dbPath;
+    for (const model of OIDC_MODELS) {
+        const filename = path.join(filepath, `oidc-${model}.db`);
+        try {
+            await fs.promises.unlink(filename);
+        } catch {
+            // ignore if file doesn't exist
+        }
+    }
+}
+
 /**
  * Removes all records from every OIDC datastore. Intended for test setup
  * so that each test starts from a clean OIDC state (no sessions, grants,
