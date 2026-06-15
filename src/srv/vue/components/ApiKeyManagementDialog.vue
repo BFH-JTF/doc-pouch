@@ -201,7 +201,7 @@ async function loadKeys() {
   try {
     const response = await fetch('/api-keys/list', {
       headers: {
-        'Authorization': `Bearer ${props.apiClient.getStoredToken()}`
+        'Authorization': `Bearer ${props.apiClient.getToken()}`
       }
     });
     if (response.ok) {
@@ -227,7 +227,7 @@ async function createKey() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${props.apiClient.getStoredToken()}`
+        'Authorization': `Bearer ${props.apiClient.getToken()}`
       },
       body: JSON.stringify({
         name: newKeyName.value.trim(),
@@ -261,7 +261,7 @@ async function deleteKey(keyId: string) {
     const response = await fetch(`/api-keys/${keyId}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${props.apiClient.getStoredToken()}`
+        'Authorization': `Bearer ${props.apiClient.getToken()}`
       }
     });
 

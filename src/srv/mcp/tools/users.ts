@@ -24,7 +24,7 @@ export function registerUserTools(
     validator: SchemaValidator,
 ): void {
     server.registerTool('whoami', {
-        description: 'Return the authenticated user\'s profile information.',
+        description: 'Return the authenticated docPouch user\'s profile information.',
         inputSchema: WhoamiSchema,
     }, async () => {
         const userid = getUserId();
@@ -42,7 +42,7 @@ export function registerUserTools(
     });
 
     server.registerTool('list_users', {
-        description: 'List all users. Admin only; non-admin users receive only their own profile.',
+        description: 'List all docPouch users. Admin only; non-admin users receive only their own profile.',
         inputSchema: ListUsersSchema,
     }, async () => {
         const userid = getUserId();
@@ -63,7 +63,7 @@ export function registerUserTools(
     });
 
     server.registerTool('get_user', {
-        description: 'Get a user by ID. Admin only; regular users can only view themselves.',
+        description: 'Get a docPouch user by ID. Admin only; regular users can only view themselves.',
         inputSchema: GetUserSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -88,7 +88,7 @@ export function registerUserTools(
     });
 
     server.registerTool('create_user', {
-        description: 'Create a new user. Admin only.',
+        description: 'Create a new docPouch user. Admin only.',
         inputSchema: CreateUserSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -122,7 +122,7 @@ export function registerUserTools(
     });
 
     server.registerTool('update_user', {
-        description: 'Update a user. Non-admins can update their own profile (but not the isAdmin field). Admins can update any user.',
+        description: 'Update a docPouch user. Non-admins can update their own profile (but not the isAdmin field). Admins can update any user.',
         inputSchema: UpdateUserSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -161,7 +161,7 @@ export function registerUserTools(
     });
 
     server.registerTool('delete_user', {
-        description: 'Delete a user by ID. Admin only.',
+        description: 'Delete a docPouch user by ID. Admin only.',
         inputSchema: DeleteUserSchema,
     }, async (args) => {
         const userid = getUserId();

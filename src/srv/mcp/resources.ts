@@ -14,7 +14,7 @@ export function registerResources(
         'document',
         new ResourceTemplate('docpouch://documents/{id}', {list: undefined}),
         {
-            description: 'A document accessible to the authenticated user.',
+            description: 'A docPouch document accessible to the authenticated user.',
         },
         async (uri: URL, variables: Variables) => {
             const id = variables['id'] as string;
@@ -66,12 +66,22 @@ export function registerResources(
         'structure',
         new ResourceTemplate('docpouch://structures/{id}', {list: undefined}),
         {
-            description: 'A document structure.',
+            description: 'A docPouch document structure.',
         },
         async (uri: URL, variables: Variables) => {
             const id = variables['id'] as string;
             try {
-                const structure = await dataManager.getStructureByID(Number(id));
+                const structures = await dataManager.getStructures();
+                const structure = structures.find((s: any) => s._id === id);
+                if (!structure) {
+                    return {
+                        contents: [{
+                            uri: uri.href,
+                            mimeType: 'application/json',
+                            text: JSON.stringify({error: 'not found'}),
+                        }],
+                    };
+                }
                 return {
                     contents: [{
                         uri: uri.href,
@@ -96,7 +106,7 @@ export function registerResources(
         'user',
         new ResourceTemplate('docpouch://users/{id}', {list: undefined}),
         {
-            description: 'A user profile. Admin access required for other users.',
+            description: 'A docPouch user profile. Admin access required for other users.',
         },
         async (uri: URL, variables: Variables) => {
             const id = variables['id'] as string;

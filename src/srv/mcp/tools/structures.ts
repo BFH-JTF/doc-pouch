@@ -23,7 +23,7 @@ export function registerStructureTools(
     validator: SchemaValidator,
 ): void {
     server.registerTool('list_structures', {
-        description: 'List all document structures. Available to any authenticated user.',
+        description: 'List all docPouch document structures. Available to any authenticated user.',
         inputSchema: ListStructuresSchema,
     }, async () => {
         const userid = getUserId();
@@ -40,7 +40,7 @@ export function registerStructureTools(
     });
 
     server.registerTool('get_structure', {
-        description: 'Get a single structure by ID. Available to any authenticated user.',
+        description: 'Get a single docPouch document structure by ID. Available to any authenticated user.',
         inputSchema: GetStructureSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -48,7 +48,11 @@ export function registerStructureTools(
             return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
         }
         try {
-            const structure = await dataManager.getStructureByID(Number(args.id));
+            const structures = await dataManager.getStructures();
+            const structure = structures.find((s: any) => s._id === args.id);
+            if (!structure) {
+                return {content: [{type: 'text', text: 'Error: Structure not found'}], isError: true};
+            }
             return {content: [{type: 'text', text: JSON.stringify(structure)}]};
         } catch (error: any) {
             logger.error(`MCP get_structure error: ${error.message}`);
@@ -57,7 +61,7 @@ export function registerStructureTools(
     });
 
     server.registerTool('create_structure', {
-        description: 'Create a new document structure. Admin only.',
+        description: 'Create a new docPouch document structure. Admin only.',
         inputSchema: CreateStructureSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -90,7 +94,7 @@ export function registerStructureTools(
     });
 
     server.registerTool('update_structure', {
-        description: 'Update an existing structure. Admin only.',
+        description: 'Update an existing docPouch document structure. Admin only.',
         inputSchema: UpdateStructureSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -133,7 +137,7 @@ export function registerStructureTools(
     });
 
     server.registerTool('delete_structure', {
-        description: 'Delete a structure by ID. Admin only.',
+        description: 'Delete a docPouch document structure by ID. Admin only.',
         inputSchema: DeleteStructureSchema,
     }, async (args) => {
         const userid = getUserId();

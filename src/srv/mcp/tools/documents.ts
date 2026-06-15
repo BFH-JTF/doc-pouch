@@ -24,7 +24,7 @@ export function registerDocumentTools(
     validator: SchemaValidator,
 ): void {
     server.registerTool('list_documents', {
-        description: 'List documents accessible to the authenticated user. Supports optional filtering by type, subType, owner, public, shareWithGroup, shareWithDepartment, and a limit (default 100, max 500).',
+        description: 'List docPouch documents accessible to the authenticated user. Supports optional filtering by type, subType, owner, public, shareWithGroup, shareWithDepartment, and a limit (default 100, max 500).',
         inputSchema: ListDocumentsSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -55,7 +55,7 @@ export function registerDocumentTools(
     });
 
     server.registerTool('get_document', {
-        description: 'Get a single document by ID. Returns the full document if accessible to the authenticated user.',
+        description: 'Get a single docPouch document by ID. Returns the full document if accessible to the authenticated user.',
         inputSchema: GetDocumentSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -77,7 +77,7 @@ export function registerDocumentTools(
     });
 
     server.registerTool('create_document', {
-        description: 'Create a new document. The authenticated user becomes the owner unless anonymous=true (requires ANONYMOUS_DOCUMENTS_ENABLED).',
+        description: 'Create a new docPouch document. The authenticated user becomes the owner unless anonymous=true (requires ANONYMOUS_DOCUMENTS_ENABLED).',
         inputSchema: CreateDocumentSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -113,7 +113,7 @@ export function registerDocumentTools(
     });
 
     server.registerTool('update_document', {
-        description: 'Update an existing document. Owner/admin can update all fields except owner. Non-owners can only update content.',
+        description: 'Update an existing docPouch document. Owner/admin can update all fields except owner. Non-owners can only update content.',
         inputSchema: UpdateDocumentSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -154,7 +154,7 @@ export function registerDocumentTools(
     });
 
     server.registerTool('delete_document', {
-        description: 'Delete a document by ID. Only the owner or an admin can delete a document.',
+        description: 'Delete a docPouch document by ID. Only the owner or an admin can delete a document.',
         inputSchema: DeleteDocumentSchema,
     }, async (args) => {
         const userid = getUserId();
