@@ -49,5 +49,14 @@ export async function authenticateRequest(
         // OIDC token validation failed
     }
 
+    // Try API key
+    const apiKeyResult = await dataManager.apiKeys.verifyApiKey(token);
+    if (apiKeyResult) {
+        return {
+            userid: apiKeyResult.userId,
+            socketID: req.headers['x-socket-id'] as string | undefined,
+        };
+    }
+
     return null;
 }

@@ -13,6 +13,7 @@ import {
     type I_DocumentUpdate,
     type I_DataStructure,
 } from "docpouch-client";
+import ApiKeyManager from "./ApiKeyManager.js";
 
 // Type declaration to help TypeScript understand Nedb constructor
 declare const NedbConstructor: new (options?: any) => any;
@@ -39,6 +40,7 @@ export default class NeDbWrapper {
     structures: CustomStore
     documents: CustomStore
     types: CustomStore // only for backwards compatibility pre 1.9.0
+    apiKeys: any
     logger: winston.Logger
     saltRounds: number = 10;
     private readonly inMemoryOnly: boolean;
@@ -72,11 +74,12 @@ export default class NeDbWrapper {
             this.types = new CustomStore(undefined,
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
+            this.apiKeys = new ApiKeyManager(undefined);
         } else {
             this.logger.info("Using database files in " + this.dbPath);
             if (this.filenamePrefix === undefined)
                 this.filenamePrefix = "docpouch-"
-            this.logger.info(`Using database files in ${this.dbPath}/${this.filenamePrefix}users.db, ${this.dbPath}/${this.filenamePrefix}structures.db, ${this.dbPath}/${this.filenamePrefix}documents.db, ${this.dbPath}/${this.filenamePrefix}types.db`)
+            this.logger.info(`Using database files in ${this.dbPath}/${this.filenamePrefix}users.db, ${this.dbPath}/${this.filenamePrefix}structures.db, ${this.dbPath}/${this.filenamePrefix}documents.db, ${this.dbPath}/${this.filenamePrefix}types.db, ${this.dbPath}/${this.filenamePrefix}apikeys.db`)
             this.users = new CustomStore(`${this.dbPath}/${this.filenamePrefix}users.db`,
                 "System Users", "Collection of documents describing system users - handle with care")
             this.users.datastore.setAutocompactionInterval(1000 * 60 * 5);
@@ -89,6 +92,7 @@ export default class NeDbWrapper {
             this.types = new CustomStore(`${this.dbPath}/${this.filenamePrefix}types.db`,
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
+            this.apiKeys = new ApiKeyManager(`${this.dbPath}/${this.filenamePrefix}apikeys.db`);
         }
         this.initializationPromise = this.initializeDatabase();
     }
@@ -120,6 +124,7 @@ export default class NeDbWrapper {
         this.structures.datastore.stopAutocompaction();
         this.documents.datastore.stopAutocompaction();
         this.types.datastore.stopAutocompaction();
+        this.apiKeys.stopAutocompaction();
     }
 
     isInMemoryOnly(): boolean {

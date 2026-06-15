@@ -1,11 +1,12 @@
 # Authentication in DocPouch
 
-DocPouch provides two authentication methods that share the same user database (NeDB):
+DocPouch provides three authentication methods that share the same user database (NeDB):
 
 1. **Direct Login (JWT)** - Simple token-based auth, client builds own login UI
 2. **OpenID Connect (OIDC)** - Standard OAuth2/OIDC flow with DocPouch's login page
+3. **API Keys** - Long-lived tokens for MCP clients and scripts
 
-Both methods can coexist simultaneously. Clients choose based on their needs.
+All methods can coexist simultaneously. Clients choose based on their needs.
 
 ---
 
@@ -80,7 +81,94 @@ here for users building their own HTTP clients.
 
 ---
 
-## Option 2: OpenID Connect (OIDC)
+## Option 2: API Keys (Long-Lived)
+
+**Best for**: MCP clients, scripts, and services that need persistent authentication without interactive login.
+
+### How it works
+
+1. User generates an API key via the DocPouch admin UI (Menu → API Keys)
+2. Key is shown once - copy and store it securely
+3. Use the key as Bearer token in `Authorization` header
+
+### Key Format
+
+- Prefix: `docpouch_key_`
+- Format: `docpouch_key_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+- 32 random bytes (64 hex characters) after prefix
+- Stored as bcrypt hash (never plaintext)
+
+### API Usage
+
+```bash
+# Create API key (via UI only - no direct API for security)
+# The key is shown ONCE at creation
+
+# Use API key for MCP or other requests
+curl http://localhost:3030/mcp \
+  -H "Authorization: Bearer docpouch_key_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+### Key Management
+
+Users can:
+
+- Create up to 10 API keys
+- Set optional expiry (30, 90, 180, 365 days, or never)
+- View key metadata (name, prefix, creation date, last used, expiry)
+- Revoke keys at any time
+
+Admins can:
+
+- View all API keys across all users
+- Revoke any user's API keys
+
+### API Endpoints
+
+```bash
+# Create a new API key
+POST /api-keys/create
+Authorization: Bearer <user_token>
+Body: { "name": "My MCP Key", "expiresInDays": 90 }
+
+# Response
+{
+  "key": "docpouch_key_xxxxxxxxxxxxxxxx...",
+  "keyPrefix": "xxxxxxxx",
+  "name": "My MCP Key",
+  "createdAt": 1750000000000,
+  "expiresAt": 1750860000000
+}
+
+# List your API keys
+GET /api-keys/list
+Authorization: Bearer <user_token>
+
+# Response
+[
+  {
+    "_id": "apikey_xxx",
+    "name": "My MCP Key",
+    "keyPrefix": "xxxxxxxx",
+    "createdAt": 1750000000000,
+    "lastUsedAt": 1750010000000,
+    "expiresAt": 1750860000000
+  }
+]
+
+# Delete your API key
+DELETE /api-keys/:keyId
+Authorization: Bearer <user_token>
+```
+
+### Pros/Cons
+
+**Pros**: No expiration concerns, works for services/scripts, no interactive login needed
+**Cons**: Key must be stored securely (no refresh), no built-in revocation without admin help
+
+---
+
+## Option 3: OpenID Connect (OIDC)
 
 **Best for**: Standard compliance, when you want to use DocPouch's login page, or integrate with other OIDC systems.
 
@@ -239,22 +327,24 @@ curl http://localhost:3030/oidc/jwks
 
 ## Security Comparison
 
-| Feature | Direct Login (JWT) | OIDC |
-|---------|-------------------|------|
-| Login UI | Client builds it | **DocPouch provides it** ✓ |
-| Complexity | Simple (1 API call) | Moderate (redirects, token exchange) |
-| Token storage | Client's choice | Standard (access + refresh tokens) |
-| PKCE support | N/A | Yes (recommended for SPAs) |
-| Discovery | None | `.well-known/openid-configuration` ✓ |
-| SSO across apps | No | Yes ✓ |
-| Standard compliance | Custom | OIDC/OAuth2 standard ✓ |
+| Feature             | Direct Login (JWT)  | API Keys                        | OIDC                                 |
+|---------------------|---------------------|---------------------------------|--------------------------------------|
+| Login UI            | Client builds it    | No login needed                 | **DocPouch provides it** ✓           |
+| Complexity          | Simple (1 API call) | Simple (no login)               | Moderate (redirects, token exchange) |
+| Token storage       | Client's choice     | Secure key storage              | Standard (access + refresh tokens)   |
+| PKCE support        | N/A                 | N/A                             | Yes (recommended for SPAs)           |
+| Discovery           | None                | None                            | `.well-known/openid-configuration` ✓ |
+| SSO across apps     | No                  | No                              | Yes ✓                                |
+| Standard compliance | Custom              | Custom                          | OIDC/OAuth2 standard ✓               |
+| Long-lived tokens   | No (24h default)    | Yes (no expiry or up to 1 year) | Yes (refresh tokens)                 |
 
 ---
 
 ## Recommendation
 
+- **MCP clients / scripts / services**: Use **Option 2 (API Keys)**
 - **Simple integrations / want full UI control**: Use **Option 1 (JWT)**
-- **Standard compliance / want our login page / SSO**: Use **Option 2 (OIDC)**
+- **Standard compliance / want our login page / SSO**: Use **Option 3 (OIDC)**
 
 ---
 

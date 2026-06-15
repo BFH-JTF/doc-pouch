@@ -1121,6 +1121,91 @@ export default class NetworkManager {
             })
         })
 
+        // API Key management endpoints
+        this.expressApp.post("/api-keys/create", this.authenticate, async (req, res) => {
+            try {
+                const {name, expiresInDays} = req.body;
+                if (!name || typeof name !== "string" || name.trim().length === 0) {
+                    res.status(400).json({error: "Invalid key name"});
+                    return;
+                }
+                const result = await this.dataManager.apiKeys.createApiKey(req.userid, name.trim(), expiresInDays);
+                res.status(200).json(result);
+            } catch (error: any) {
+                res.status(500).json({error: error.message});
+            }
+        });
+
+        this.expressApp.get("/api-keys/list", this.authenticate, async (req, res) => {
+            try {
+                const keys = await this.dataManager.apiKeys.listApiKeys(req.userid);
+                res.status(200).json(keys);
+            } catch (error: any) {
+                res.status(500).json({error: error.message});
+            }
+        });
+
+        this.expressApp.delete("/api-keys/:keyId", this.authenticate, async (req, res) => {
+            try {
+                const deleted = await this.dataManager.apiKeys.deleteApiKey(req.params.keyId, req.userid);
+                if (deleted) {
+                    res.status(200).json({message: "API key deleted"});
+                } else {
+                    res.status(404).json({error: "API key not found"});
+                }
+            } catch (error: any) {
+                res.status(500).json({error: error.message});
+            }
+        });
+
+        // Admin: list all API keys (for any user)
+        this.expressApp.get("/api-keys/admin/list", this.authenticate, async (req, res) => {
+            try {
+                const isAdmin = await this.dataManager.isAdmin(req.userid);
+                if (!isAdmin) {
+                    res.status(401).json({error: "Not authorized"});
+                    return;
+                }
+                const userId = req.query.userId as string | undefined;
+                if (userId) {
+                    const keys = await this.dataManager.apiKeys.listApiKeys(userId);
+                    res.status(200).json(keys);
+                } else {
+                    const allUsers = await this.dataManager.getUsers(req.userid);
+                    const allKeys: any[] = [];
+                    for (const user of allUsers) {
+                        const userKeys = await this.dataManager.apiKeys.listApiKeys(user._id);
+                        for (const k of userKeys) {
+                            allKeys.push({...k, userId: user._id, userName: user.name});
+                        }
+                    }
+                    res.status(200).json(allKeys);
+                }
+            } catch (error: any) {
+                res.status(500).json({error: error.message});
+            }
+        });
+
+        // Admin: revoke any user's API key
+        this.expressApp.delete("/api-keys/admin/:keyId", this.authenticate, async (req, res) => {
+            try {
+                const isAdmin = await this.dataManager.isAdmin(req.userid);
+                if (!isAdmin) {
+                    res.status(401).json({error: "Not authorized"});
+                    return;
+                }
+                const key = await this.dataManager.apiKeys.getApiKey(req.params.keyId);
+                if (!key) {
+                    res.status(404).json({error: "API key not found"});
+                    return;
+                }
+                await this.dataManager.apiKeys.deleteApiKey(req.params.keyId, key.userId);
+                res.status(200).json({message: "API key revoked"});
+            } catch (error: any) {
+                res.status(500).json({error: error.message});
+            }
+        });
+
         // Document endpoints with access control
         this.expressApp.get("/docs/list", this.authenticate, (req, res) => {
             this.dataManager.getAllDocuments(req.userid)

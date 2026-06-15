@@ -12,6 +12,7 @@ import StructureDisplay from "./components/StructureDisplay.vue";
 import docPouchLogo from './assets/docPouch.png';
 import AboutDialog from "./components/AboutDialog.vue";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog.vue";
+import ApiKeyManagementDialog from "./components/ApiKeyManagementDialog.vue";
 import type {
   I_EventString,
   I_DocumentEntry,
@@ -63,6 +64,7 @@ const showLoginDialog = ref(true)
 const showOidcLogin = ref(false)
 const showAboutDialog = ref(false)
 const showImportDialog = ref(false)
+const showApiKeyDialog = ref(false)
 const realtimeUpdates = ref(false);
 let loadedDocument = ref<I_DocumentEntry | undefined>(undefined);
 let loadedUser = ref<I_UserEntry | undefined>(undefined);
@@ -768,6 +770,13 @@ async function migrateDatabase() {
               <v-list-item-title>Import Database</v-list-item-title>
             </v-list-item>
 
+            <v-list-item @click="showApiKeyDialog = true">
+              <v-list-item-icon>
+                <v-icon>mdi-key</v-icon>
+              </v-list-item-icon>
+              <v-list-item-title>API Keys</v-list-item-title>
+            </v-list-item>
+
             <v-list-item @click="handleLogout">
               <v-list-item-icon>
                 <v-icon>mdi-logout</v-icon>
@@ -906,6 +915,8 @@ async function migrateDatabase() {
       <AboutDialog :show="showAboutDialog" @close="showAboutDialog = false"/>
       <ImportDatabaseDialog :show="showImportDialog" @close="showImportDialog = false" @logout="handleLogout"/>
       <UpdateAvailableDialog :show="showUpdateDialog" @close="showUpdateDialog = false"/>
+      <ApiKeyManagementDialog :api-client="apiClient" :show="showApiKeyDialog"
+                              @update:show="showApiKeyDialog = $event"/>
     </v-main>
   </v-app>
 </template>

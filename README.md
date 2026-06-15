@@ -378,10 +378,21 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 - `GET /version/check` - Returns the result of the latest update check against the GitHub repository.
   Returns `200` with `{ hasUpdate, currentVersion, latestVersion }` or `503` if no check has run yet.
 
-All API endpoints (except login) require authentication using either JWT tokens or OIDC tokens. You can find an OpenAPI
+All API endpoints (except login) require authentication using JWT tokens, OIDC tokens, or API keys. You can find an
+OpenAPI
 specification in the `docpouch_openAPI.yaml` file.
 
 > **Note**: API endpoints use standard HTTP response codes: `200` (OK), `204` (No Content), `403` (Forbidden), etc.
+
+## Authentication
+
+DocPouch supports three authentication methods:
+
+1. **JWT** - Direct login via `/users/login`, tokens expire in 24h by default
+2. **API Keys** - Long-lived tokens for MCP clients and scripts, created via the admin UI
+3. **OIDC** - Standard OAuth2/OIDC flow with built-in login page
+
+See [`docs/authentication.md`](docs/authentication.md) for the full reference.
 
 ## OpenID Connect (OIDC)
 

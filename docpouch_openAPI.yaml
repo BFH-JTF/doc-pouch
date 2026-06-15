@@ -931,6 +931,129 @@ paths:
         400:
           description: "Invalid interaction"
 
+  /api-keys/create:
+    post:
+      summary: Create a new API key
+      description: |
+        Creates a new long-lived API key for MCP clients and scripts.
+        The full key is returned only once - copy it immediately.
+        Maximum 10 keys per user.
+      tags:
+        - administration
+      security:
+        - userAuth: [ ]
+      requestBody:
+        description: "API key creation parameters"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiKeyCreate"
+      responses:
+        200:
+          description: "API key created successfully. Full key is shown only once."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyCreated"
+        400:
+          description: "Invalid request (e.g., missing name)"
+        500:
+          description: "Maximum keys reached or server error"
+
+  /api-keys/list:
+    get:
+      summary: List your API keys
+      description: Get all API keys belonging to the authenticated user. Does not return the full key, only metadata.
+      tags:
+        - administration
+      security:
+        - userAuth: [ ]
+      responses:
+        200:
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiKeyListItem"
+        401:
+          description: "Unauthorized"
+
+  /api-keys/{keyId}:
+    delete:
+      summary: Delete an API key
+      description: Delete one of your own API keys
+      tags:
+        - administration
+      security:
+        - userAuth: [ ]
+      parameters:
+        - in: path
+          description: "Unique API key ID"
+          name: keyId
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: "API key deleted successfully"
+        404:
+          description: "API key not found"
+        401:
+          description: "Not authorized to delete this key"
+
+  /api-keys/admin/list:
+    get:
+      summary: Admin - List all API keys
+      description: List all API keys across all users (admin only)
+      tags:
+        - administration
+      security:
+        - adminAuth: [ ]
+      parameters:
+        - in: query
+          description: "Filter by user ID (optional)"
+          name: userId
+          required: false
+          schema:
+            type: string
+      responses:
+        200:
+          description: List of all API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiKeyListItem"
+        401:
+          description: "Not authorized (admin only)"
+
+  /api-keys/admin/{keyId}:
+    delete:
+      summary: Admin - Revoke any API key
+      description: Revoke any user's API key (admin only)
+      tags:
+        - administration
+      security:
+        - adminAuth: [ ]
+      parameters:
+        - in: path
+          description: "Unique API key ID"
+          name: keyId
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: "API key revoked successfully"
+        404:
+          description: "API key not found"
+        401:
+          description: "Not authorized (admin only)"
+
 components:
   schemas:
     Document:
@@ -1229,6 +1352,85 @@ components:
           example: "Anonymous document creation is disabled on this server."
       required:
         - error
+
+    ApiKeyCreate:
+      type: object
+      description: "Data element needed to create an API key"
+      properties:
+        name:
+          type: string
+          description: "Descriptive name to identify the API key"
+          example: "Home Assistant MCP"
+        expiresInDays:
+          type: integer
+          description: "Number of days until the key expires. Omit or set to undefined for no expiry."
+          example: 90
+      required:
+        - name
+
+    ApiKeyCreated:
+      type: object
+      description: "Response returned immediately after API key creation. The full key is only shown once."
+      properties:
+        key:
+          type: string
+          description: "The full API key. Copy and store securely - it will not be shown again."
+          example: "docpouch_key_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        keyPrefix:
+          type: string
+          description: "First 8 characters of the key for identification"
+          example: "xxxxxxxx"
+        name:
+          type: string
+          description: "The name given to this API key"
+          example: "Home Assistant MCP"
+        createdAt:
+          type: integer
+          description: "Unix timestamp of when the key was created"
+          example: 1750000000000
+        expiresAt:
+          type: integer
+          description: "Unix timestamp of when the key expires. Not present if the key never expires."
+          example: 1750860000000
+      required:
+        - key
+        - keyPrefix
+        - name
+        - createdAt
+
+    ApiKeyListItem:
+      type: object
+      description: "API key metadata returned when listing keys"
+      properties:
+        _id:
+          type: string
+          description: "Unique identifier for this API key"
+          example: "apikey_1234567890_abc"
+        name:
+          type: string
+          description: "The name given to this API key"
+          example: "Home Assistant MCP"
+        keyPrefix:
+          type: string
+          description: "First 8 characters of the key for identification"
+          example: "xxxxxxxx"
+        createdAt:
+          type: integer
+          description: "Unix timestamp of when the key was created"
+          example: 1750000000000
+        lastUsedAt:
+          type: integer
+          description: "Unix timestamp of when the key was last used. Not present if never used."
+          example: 1750010000000
+        expiresAt:
+          type: integer
+          description: "Unix timestamp of when the key expires. Not present if the key never expires."
+          example: 1750860000000
+      required:
+        - _id
+        - name
+        - keyPrefix
+        - createdAt
 
     DataStructure:
       type: object
