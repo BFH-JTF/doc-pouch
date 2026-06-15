@@ -94,9 +94,9 @@ describe('User Management API Tests', () => {
             expect(response.status).toBe(401);
         });
 
-        test('invalid request should return 404', async () => {
+        test('GET /users/login should return 405 Method Not Allowed', async () => {
             const response = await request(server).get('/users/login');
-            expect(response.status).toBe(404);
+            expect(response.status).toBe(405);
         });
 
         test('should return 404 for non-existent user', async () => {

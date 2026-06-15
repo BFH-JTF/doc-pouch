@@ -782,8 +782,8 @@ export default class NetworkManager {
         });
 
         const getSafeUploadPath = (filePath: string): string => {
-            const normalizedPath = path.normalize(filePath);
-            const uploadsDir = path.normalize(path.resolve('uploads'));
+            const normalizedPath = path.resolve(filePath);
+            const uploadsDir = path.resolve('uploads');
             if (!normalizedPath.startsWith(uploadsDir + path.sep) && normalizedPath !== uploadsDir) {
                 throw new Error("Invalid file path: outside uploads directory");
             }
@@ -991,6 +991,10 @@ export default class NetworkManager {
                 })
             } else
                 res.status(400).json({error: "Invalid user data"});
+        })
+
+        this.expressApp.get("/users/login", (req: Request, res: Response) => {
+            res.status(405).json({error: "Method Not Allowed. Use POST for login."});
         })
 
         this.expressApp.post("/users/login", (req: Request, res: Response) => {

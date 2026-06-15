@@ -152,8 +152,14 @@ export async function cleanupTestDatabase(dataManager: NeDbWrapper) {
 export const authenticatedRequest = (server: Server, token: string) => {
     return {
         get: (url: string) => request(server).get(url).set('Authorization', `Bearer ${token}`),
-        post: (url: string, body?: any) => request(server).post(url).set('Authorization', `Bearer ${token}`).send(body),
-        patch: (url: string, body?: any) => request(server).patch(url).set('Authorization', `Bearer ${token}`).send(body),
+        post: (url: string, body?: any) => {
+            const req = request(server).post(url).set('Authorization', `Bearer ${token}`);
+            return body !== undefined ? req.send(body) : req;
+        },
+        patch: (url: string, body?: any) => {
+            const req = request(server).patch(url).set('Authorization', `Bearer ${token}`);
+            return body !== undefined ? req.send(body) : req;
+        },
         delete: (url: string) => request(server).delete(url).set('Authorization', `Bearer ${token}`),
     };
 };
