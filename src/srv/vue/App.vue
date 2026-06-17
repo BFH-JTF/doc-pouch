@@ -712,6 +712,17 @@ async function migrateDatabase() {
         <v-app-bar-title>DocPouch Administration <small>[User: {{ loggedInUsername }}]</small></v-app-bar-title>
         <v-spacer></v-spacer>
         <div v-if="isLoggedIn" class="d-flex align-center mr-4">
+          <v-btn
+              v-if="!realtimeUpdates"
+              class="mr-2"
+              color="white"
+              icon
+              title="Refresh data"
+              variant="text"
+              @click="fetchData"
+          >
+            <v-icon>mdi-refresh</v-icon>
+          </v-btn>
           <v-switch
               v-model="realtimeUpdates"
               color="white"
@@ -868,8 +879,10 @@ async function migrateDatabase() {
                 id="2"
                 :object="loadedDocument"
                 :structure-list="structureArray"
+                :api-client="apiClient"
                 v-show="shownComponent === DisplayComponent.documentViewer"
                 @update:object="handleDocumentUpdate"
+                @document-link-clicked="handleDocumentSelected"
             />
             <UserDisplay
                 :user="loadedUser"

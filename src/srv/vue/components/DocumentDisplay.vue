@@ -6,10 +6,12 @@ const props = defineProps<{
   object: I_DocumentEntry | undefined;
   id: string;
   structureList: I_DataStructure[];
+  'api-client'?: any;
 }>();
 
 const emit = defineEmits<{
   'update:object': [updatedObject: I_DocumentEntry | undefined];
+  'document-link-clicked': [documentId: string];
 }>();
 
 // Track expanded state for each property
@@ -35,6 +37,46 @@ const rawContent = ref('');
 // For editing values
 const editingPath = ref<string[]>([]);
 const editingValue = ref<any>(null);
+
+const hoveredDocId = ref<string | null>(null);
+const hoveredDoc = ref<{ _id: string; title: string } | null>(null);
+let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function couldBeDocumentId(value: any): boolean {
+  return typeof value === 'string' && /^[a-zA-Z0-9]{17,}$/.test(value) && value !== props.object?._id;
+}
+
+function clearHover() {
+  hoveredDocId.value = null;
+  hoveredDoc.value = null;
+  if (hoverTimeout) {
+    clearTimeout(hoverTimeout);
+    hoverTimeout = null;
+  }
+}
+
+async function onHoverDocumentId(docId: string) {
+  if (hoverTimeout) {
+    clearTimeout(hoverTimeout);
+  }
+  hoverTimeout = setTimeout(async () => {
+    if (!props['api-client']) return;
+    try {
+      const docs = await props['api-client'].fetchDocuments({_id: docId} as any);
+      if (docs.length > 0) {
+        hoveredDoc.value = {_id: docs[0]._id, title: docs[0].title};
+      } else {
+        hoveredDoc.value = null;
+      }
+    } catch {
+      hoveredDoc.value = null;
+    }
+  }, 150);
+}
+
+function openDocument(docId: string) {
+  emit('document-link-clicked', docId);
+}
 
 // Check if we're currently editing a path
 const isEditing = (path: string[]) => {
@@ -521,19 +563,31 @@ const getValueAtPath = (obj: any, path: string[]): any => {
               <!-- Normal display with edit button for primitive values -->
               <template v-else>
                 <div class="d-flex align-center">
-                  <span 
-                    v-if="typeof value !== 'object' || value === null"
-                    :class="`type-${typeof value}`"
-                  >
-                    {{ value === null ? 'null' : value }}
-                  </span>
-                  <span v-else>
-                    {{ Array.isArray(value) ? `Array (${value.length})` : 'Object' }}
-                  </span>
+                  <template v-if="couldBeDocumentId(value)">
+                    <a
+                        class="doc-link"
+                        @mouseenter="onHoverDocumentId(value)"
+                        @mouseleave="clearHover"
+                        @click.prevent="openDocument(value)"
+                    >
+                      <v-icon v-if="!hoveredDoc || hoveredDocId !== value" class="mr-1" icon="mdi-lock"
+                              size="small"></v-icon>
+                      {{
+                        hoveredDocId === value && hoveredDoc ? hoveredDoc.title : (value.length > 20 ? value.slice(0, 20) + '...' : value)
+                      }}
+                    </a>
+                  </template>
+                  <template v-else>
+                    <span
+                        :class="`type-${typeof value}`"
+                    >
+                      {{ value === null ? 'null' : value }}
+                    </span>
+                  </template>
 
                   <!-- Edit button for primitive values -->
                   <v-btn
-                    v-if="typeof value !== 'object' || value === null"
+                      v-if="!couldBeDocumentId(value) && (typeof value !== 'object' || value === null)"
                     icon="mdi-pencil"
                     size="x-small"
                     variant="text"
@@ -594,19 +648,35 @@ const getValueAtPath = (obj: any, path: string[]): any => {
                   <!-- Normal display with edit button for primitive values -->
                   <template v-else>
                     <div class="d-flex align-center">
-                      <span 
-                        v-if="typeof item !== 'object' || item === null"
-                        :class="`type-${typeof item}`"
-                      >
-                        {{ item === null ? 'null' : item }}
-                      </span>
-                      <span v-else>
-                        {{ Array.isArray(item) ? `Array (${item.length})` : 'Object' }}
-                      </span>
+                      <template v-if="couldBeDocumentId(item)">
+                        <a
+                            class="doc-link"
+                            @mouseenter="onHoverDocumentId(item)"
+                            @mouseleave="clearHover"
+                            @click.prevent="openDocument(item)"
+                        >
+                          <v-icon v-if="!hoveredDoc || hoveredDocId !== item" class="mr-1" icon="mdi-lock"
+                                  size="small"></v-icon>
+                          {{
+                            hoveredDocId === item && hoveredDoc ? hoveredDoc.title : (item.length > 20 ? item.slice(0, 20) + '...' : item)
+                          }}
+                        </a>
+                      </template>
+                      <template v-else>
+                        <span
+                            v-if="typeof item !== 'object' || item === null"
+                            :class="`type-${typeof item}`"
+                        >
+                          {{ item === null ? 'null' : item }}
+                        </span>
+                        <span v-else>
+                          {{ Array.isArray(item) ? `Array (${item.length})` : 'Object' }}
+                        </span>
+                      </template>
 
                       <!-- Edit button for primitive values -->
                       <v-btn
-                        v-if="typeof item !== 'object' || item === null"
+                          v-if="!couldBeDocumentId(item) && (typeof item !== 'object' || item === null)"
                         icon="mdi-pencil"
                         size="x-small"
                         variant="text"
@@ -665,19 +735,35 @@ const getValueAtPath = (obj: any, path: string[]): any => {
                   <!-- Normal display with edit button for primitive values -->
                   <template v-else>
                     <div class="d-flex align-center">
-                      <span 
-                        v-if="typeof nestedValue !== 'object' || nestedValue === null"
-                        :class="`type-${typeof nestedValue}`"
-                      >
-                        {{ nestedValue === null ? 'null' : nestedValue }}
-                      </span>
-                      <span v-else>
-                        {{ Array.isArray(nestedValue) ? `Array (${nestedValue.length})` : 'Object' }}
-                      </span>
+                      <template v-if="couldBeDocumentId(nestedValue)">
+                        <a
+                            class="doc-link"
+                            @mouseenter="onHoverDocumentId(nestedValue)"
+                            @mouseleave="clearHover"
+                            @click.prevent="openDocument(nestedValue)"
+                        >
+                          <v-icon v-if="!hoveredDoc || hoveredDocId !== nestedValue" class="mr-1" icon="mdi-lock"
+                                  size="small"></v-icon>
+                          {{
+                            hoveredDocId === nestedValue && hoveredDoc ? hoveredDoc.title : (nestedValue.length > 20 ? nestedValue.slice(0, 20) + '...' : nestedValue)
+                          }}
+                        </a>
+                      </template>
+                      <template v-else>
+                        <span
+                            v-if="typeof nestedValue !== 'object' || nestedValue === null"
+                            :class="`type-${typeof nestedValue}`"
+                        >
+                          {{ nestedValue === null ? 'null' : nestedValue }}
+                        </span>
+                        <span v-else>
+                          {{ Array.isArray(nestedValue) ? `Array (${nestedValue.length})` : 'Object' }}
+                        </span>
+                      </template>
 
                       <!-- Edit button for primitive values -->
                       <v-btn
-                        v-if="typeof nestedValue !== 'object' || nestedValue === null"
+                          v-if="!couldBeDocumentId(nestedValue) && (typeof nestedValue !== 'object' || nestedValue === null)"
                         icon="mdi-pencil"
                         size="x-small"
                         variant="text"
@@ -757,5 +843,21 @@ const getValueAtPath = (obj: any, path: string[]): any => {
   white-space: pre-wrap;
   font-family: monospace;
   font-size: 14px;
+}
+
+.doc-link {
+  color: #1976d2;
+  text-decoration: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.doc-link:hover {
+  text-decoration: underline;
+}
+
+.doc-link .v-icon {
+  color: #9e9e9e;
 }
 </style>

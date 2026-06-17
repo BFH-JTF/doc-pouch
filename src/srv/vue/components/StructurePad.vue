@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import {computed, ref, watch} from 'vue';
 import type {I_DataStructure} from "docpouch-client";
 import type DbPouchClient from 'docpouch-client';
 import StructureCreationDialog from './StructureCreationDialog.vue';
@@ -20,6 +20,19 @@ const emit = defineEmits<{
 const nameFilter = ref('');
 const showDeleteConfirmDialog = ref(false);
 const structureToDelete = ref<string | null>(null);
+
+const sortBy = ref(sessionStorage.getItem('structureSortBy') || 'title');
+const sortDesc = ref(sessionStorage.getItem('structureSortDesc') === 'true');
+const sortOptions = [
+  {title: 'Name', value: 'title'},
+  {title: 'Type', value: 'type'},
+  {title: 'SubType', value: 'subType'}
+];
+
+watch([sortBy, sortDesc], () => {
+  sessionStorage.setItem('structureSortBy', sortBy.value);
+  sessionStorage.setItem('structureSortDesc', String(sortDesc.value));
+});
 
 // Check if any filters are active
 const hasActiveFilters = computed(() => {
@@ -65,15 +78,26 @@ const filteredStructures = computed(() => {
     );
   }
 
-  // Map to display format and sort by name
-  return result.map((entry: I_DataStructure) => {
+  // Map to display format
+  const mapped = result.map((entry: I_DataStructure) => {
     return {
       id: entry._id,
       title: entry.name,
       type: entry.type,
       subType: entry.subType
     }
-  }).sort((a, b) => a.title.localeCompare(b.title));
+  });
+
+  // Dynamic sort
+  return mapped.sort((a, b) => {
+    let compareResult: number;
+    if (sortBy.value === 'title') {
+      compareResult = a.title.localeCompare(b.title);
+    } else {
+      compareResult = (a[sortBy.value as keyof typeof a] as number) - (b[sortBy.value as keyof typeof b] as number);
+    }
+    return sortDesc.value ? -compareResult : compareResult;
+  });
 });
 
 const selectedStructureID = ref<string | null>(null);
@@ -142,6 +166,26 @@ const cancelCreation = () => {
         </v-row>
       </v-card-text>
     </v-card>
+
+    <!-- Sort Controls -->
+    <div class="d-flex align-center mb-2">
+      <v-select
+          v-model="sortBy"
+          :items="sortOptions"
+          class="mr-2"
+          density="compact"
+          hide-details
+          label="Sort by"
+          style="max-width: 150px;"
+          variant="outlined"
+      ></v-select>
+      <v-btn
+          :icon="sortDesc ? 'mdi-sort-descending' : 'mdi-sort-ascending'"
+          size="small"
+          variant="text"
+          @click="sortDesc = !sortDesc"
+      ></v-btn>
+    </div>
 
     <div class="structure-list-wrapper">
       <v-list class="structure-list bg-grey-lighten-4" density="compact">

@@ -24,6 +24,21 @@ const ownerFilter = ref('');
 const filterMode = ref<'raw' | 'structure'>('structure');
 const structureFilter = ref<string[]>([]);
 
+const sortBy = ref(sessionStorage.getItem('documentSortBy') || 'title');
+const sortDesc = ref(sessionStorage.getItem('documentSortDesc') === 'true');
+const sortOptions = [
+  {title: 'Title', value: 'title'},
+  {title: 'Structure', value: 'structureName'},
+  {title: 'Owner', value: 'owner'},
+  {title: 'Type', value: 'type'},
+  {title: 'SubType', value: 'subType'}
+];
+
+watchEffect(() => {
+  sessionStorage.setItem('documentSortBy', sortBy.value);
+  sessionStorage.setItem('documentSortDesc', String(sortDesc.value));
+});
+
 const showDeleteConfirmDialog = ref(false);
 const documentToDelete = ref<string | null>(null);
 
@@ -125,7 +140,7 @@ const getStructureLabelForDocument = (document: I_DocumentEntry): string => {
 const documents = computed(() => {
   if (!props.documentList) return [];
 
-  let filteredDocs = props.documentList.sort((a, b) => a.title.localeCompare(b.title));
+  let filteredDocs = [...props.documentList];
 
   // Apply filters
   if (titleFilter.value) {
@@ -159,7 +174,7 @@ const documents = computed(() => {
     filteredDocs = filteredDocs.filter(doc => getUsernameFromID(doc.owner) === ownerFilter.value);
   }
 
-  return filteredDocs.map((entry: I_DocumentEntry) => {
+  const mapped = filteredDocs.map((entry: I_DocumentEntry) => {
     return {
       id: entry._id,
       title: entry.title,
@@ -171,6 +186,19 @@ const documents = computed(() => {
       shareWithGroup: entry.shareWithGroup || false,
       shareWithDepartment: entry.shareWithDepartment || false
     };
+  });
+
+  // Dynamic sort
+  return mapped.sort((a, b) => {
+    let compareResult: number;
+    if (sortBy.value === 'title' || sortBy.value === 'structureName' || sortBy.value === 'owner') {
+      const aVal = a[sortBy.value as keyof typeof a] as string;
+      const bVal = b[sortBy.value as keyof typeof b] as string;
+      compareResult = aVal.localeCompare(bVal);
+    } else {
+      compareResult = (a[sortBy.value as keyof typeof a] as number) - (b[sortBy.value as keyof typeof b] as number);
+    }
+    return sortDesc.value ? -compareResult : compareResult;
   });
 });
 
@@ -381,6 +409,26 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
         </v-row>
       </v-card-text>
     </v-card>
+
+    <!-- Sort Controls -->
+    <div class="d-flex align-center mb-2">
+      <v-select
+          v-model="sortBy"
+          :items="sortOptions"
+          class="mr-2"
+          density="compact"
+          hide-details
+          label="Sort by"
+          style="max-width: 150px;"
+          variant="outlined"
+      ></v-select>
+      <v-btn
+          :icon="sortDesc ? 'mdi-sort-descending' : 'mdi-sort-ascending'"
+          size="small"
+          variant="text"
+          @click="sortDesc = !sortDesc"
+      ></v-btn>
+    </div>
 
     <!-- Document List -->
     <div class="document-list-wrapper">
