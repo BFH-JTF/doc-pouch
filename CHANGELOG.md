@@ -1,3 +1,10 @@
+## [1.20.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.1...v1.20.2) (2026-06-19)
+
+
+### Bug Fixes
+
+* downgrade Vite to ^7.3.5 and update dependencies for compatibility ([1efdfd8](https://github.com/BFH-JTF/doc-pouch/commit/1efdfd8d765a2b19f4fc43e9f5ba25722b6773a6))
+
 ## [1.20.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.0...v1.20.1) (2026-06-19)
 
 
