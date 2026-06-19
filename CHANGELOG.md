@@ -1,3 +1,11 @@
+# [1.20.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.19.0...v1.20.0) (2026-06-19)
+
+
+### Features
+
+* add dynamic sorting, document linking, and hover previews ([43b6f77](https://github.com/BFH-JTF/doc-pouch/commit/43b6f7779b2a25d467837c83fa5537e8cc2aa49d))
+* add structure propagation handling and bulk document update support ([1f5f6f4](https://github.com/BFH-JTF/doc-pouch/commit/1f5f6f4cbba90b654c635eb90991e7104486f37d))
+
 # [1.19.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.18.0...v1.19.0) (2026-06-15)
 
 
