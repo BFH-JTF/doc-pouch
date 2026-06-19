@@ -72,5 +72,6 @@ export const I_DocumentType = {};
 export const I_UserEntry = {};
 export const I_DocumentEntry = {};
 export const I_DataStructure = {};
+export const I_StructureField = {};
 export const I_LoginResponse = {};
 export const I_EventString = {};

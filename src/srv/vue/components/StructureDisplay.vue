@@ -1,15 +1,27 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import type {I_DataStructure, I_StructureField} from "docpouch-client";
+import {
+  diffStructures,
+  isStructureMetadataChange,
+  type IStructureDiff,
+} from "./structurePropagation/index.ts";
 
 const props = defineProps<{
   displayStructure: I_DataStructure | undefined;
   structureList: I_DataStructure[];
   isAdmin: boolean;
+  affectedDocumentsCount: number;
 }>();
 
 const emit = defineEmits<{
   'update:structure': [updatedStructure: I_DataStructure];
+  'save-requested': [payload: {
+    newStructure: I_DataStructure;
+    previousStructure: I_DataStructure | undefined;
+    diff: IStructureDiff;
+    affectedDocumentsCount: number;
+  }];
 }>();
 
 const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure'];
@@ -65,7 +77,22 @@ function updateStructure() {
       }
       delete (field as any)._arrayCategory;
     }
-    emit('update:structure', structure);
+    const previousStructure = props.displayStructure
+        ? JSON.parse(JSON.stringify(props.displayStructure)) as I_DataStructure
+        : undefined;
+    const diffResult = diffStructures(previousStructure, structure);
+    const onlyMetadataChange = !diffResult.hasStructuralChange
+        && isStructureMetadataChange(previousStructure, structure);
+    if (onlyMetadataChange || props.affectedDocumentsCount === 0) {
+      emit('update:structure', structure);
+    } else {
+      emit('save-requested', {
+        newStructure: structure,
+        previousStructure,
+        diff: diffResult,
+        affectedDocumentsCount: props.affectedDocumentsCount,
+      });
+    }
   }
 }
 

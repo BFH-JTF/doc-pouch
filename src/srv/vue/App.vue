@@ -9,6 +9,12 @@ import UserDisplay from "./components/UserDisplay.vue";
 import StructurePad from "./components/StructurePad.vue";
 import DocumentPad from "./components/DocumentPad.vue";
 import StructureDisplay from "./components/StructureDisplay.vue";
+import StructurePropagationDialog from "./components/StructurePropagationDialog.vue";
+import {
+  buildPropagationPlan,
+  type FieldRenameMap,
+  type IStructureDiff
+} from "./components/structurePropagation/index.ts";
 import docPouchLogo from './assets/docPouch.png';
 import AboutDialog from "./components/AboutDialog.vue";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog.vue";
@@ -74,6 +80,13 @@ const snackBarVisible = ref(false);
 const showUpdateDialog = ref(false);
 const faultyDocuments = ref<I_DocumentEntry[]>([]);
 const showConsistencyAlert = ref(false);
+const showPropagationDialog = ref(false);
+const pendingPropagation = ref<{
+  newStructure: I_DataStructure;
+  previousStructure: I_DataStructure | undefined;
+  diff: IStructureDiff;
+  affectedDocumentsCount: number;
+} | null>(null);
 let isAdmin = computed(() => {
   if (authToken.value === null) {
     return false;
@@ -231,6 +244,93 @@ async function handleStructureUpdate(structure: I_DataStructure) {
     fetchData().then(() => {
       handleStructureSelected(structure._id as string);
     });
+  }).catch(error => {
+    console.error("Error updating structure:", error);
+    handleApiError(error, "updating structure");
+  });
+}
+
+const affectedDocumentsForLoadedStructure = computed(() => {
+  if (!loadedStructure.value) {
+    return 0;
+  }
+  const targetType = loadedStructure.value.type;
+  const targetSubType = loadedStructure.value.subType;
+  return docArray.value.filter(doc =>
+      doc.type === targetType && doc.subType === targetSubType
+  ).length;
+});
+
+function handleStructureSaveRequested(payload: {
+  newStructure: I_DataStructure;
+  previousStructure: I_DataStructure | undefined;
+  diff: IStructureDiff;
+  affectedDocumentsCount: number;
+}) {
+  pendingPropagation.value = payload;
+  showPropagationDialog.value = true;
+}
+
+async function handlePropagationCancel() {
+  showPropagationDialog.value = false;
+  pendingPropagation.value = null;
+  if (loadedStructure.value) {
+    handleStructureSelected(loadedStructure.value._id as string);
+  }
+}
+
+async function handlePropagationSaveStructureOnly() {
+  const pending = pendingPropagation.value;
+  showPropagationDialog.value = false;
+  pendingPropagation.value = null;
+  if (!pending) {
+    return;
+  }
+  await handleStructureUpdate(pending.newStructure);
+}
+
+async function handlePropagationSaveAndPropagate(renameMap: FieldRenameMap) {
+  const pending = pendingPropagation.value;
+  showPropagationDialog.value = false;
+  pendingPropagation.value = null;
+  if (!pending || !pending.newStructure._id) {
+    return;
+  }
+
+  const structureID = pending.newStructure._id;
+  const structureType = pending.newStructure.type;
+  const structureSubType = pending.newStructure.subType;
+
+  apiClient.updateStructure(structureID, pending.newStructure).then(async () => {
+    successfullySaved();
+    const affectedDocs = docArray.value.filter(doc =>
+        doc.type === structureType && doc.subType === structureSubType
+    );
+    let successCount = 0;
+    let failureCount = 0;
+    for (const doc of affectedDocs) {
+      const plan = buildPropagationPlan(
+          pending.previousStructure,
+          pending.newStructure,
+          doc.content,
+          renameMap
+      );
+      try {
+        await apiClient.updateDocument(doc._id, {...doc, content: plan.newContent});
+        successCount += 1;
+      } catch (error) {
+        failureCount += 1;
+        console.error(`Error propagating structure to document ${doc._id}:`, error);
+      }
+    }
+    if (failureCount === 0) {
+      snackBarMessage.value = `Structure updated. Propagated to ${successCount} document${successCount === 1 ? "" : "s"}.`;
+    } else {
+      snackBarMessage.value = `Structure updated. Propagated to ${successCount} document${successCount === 1 ? "" : "s"}; ${failureCount} failed.`;
+    }
+    snackBarVisible.value = true;
+    await fetchData();
+    handleStructureSelected(structureID);
   }).catch(error => {
     console.error("Error updating structure:", error);
     handleApiError(error, "updating structure");
@@ -895,7 +995,9 @@ async function migrateDatabase() {
                 :displayStructure="loadedStructure"
                 :structure-list="structureArray"
                 :is-admin="isAdmin"
+                :affected-documents-count="affectedDocumentsForLoadedStructure"
                 @update:structure="handleStructureUpdate"
+                @save-requested="handleStructureSaveRequested"
                 v-if="shownComponent === DisplayComponent.structureViewer"
             />
           </v-col>
@@ -930,6 +1032,15 @@ async function migrateDatabase() {
       <UpdateAvailableDialog :show="showUpdateDialog" @close="showUpdateDialog = false"/>
       <ApiKeyManagementDialog :api-client="apiClient" :show="showApiKeyDialog"
                               @update:show="showApiKeyDialog = $event"/>
+      <StructurePropagationDialog
+          :affected-documents-count="pendingPropagation?.affectedDocumentsCount ?? 0"
+          :new-structure="pendingPropagation?.newStructure"
+          :old-structure="pendingPropagation?.previousStructure"
+          :show="showPropagationDialog"
+          @cancel="handlePropagationCancel"
+          @save-structure-only="handlePropagationSaveStructureOnly"
+          @save-and-propagate="handlePropagationSaveAndPropagate"
+      />
     </v-main>
   </v-app>
 </template>
