@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build:frontend": "vite build",
-    "build:backend": "tsc -p tsconfig.backend.json && node -e \"require('fs').cpSync('src/srv/oidc-login.html', 'dist/srv/oidc-login.html'); require('fs').cpSync('src/srv/oidc-logout.html', 'dist/srv/oidc-logout.html'); require('fs').cpSync('src/srv/vue/assets/docPouch.png', 'dist/srv/docPouch.png')\"",
+    "build:backend": "tsc -p tsconfig.backend.json && node -e \"require('fs').cpSync('src/srv/oidc-login.html', 'dist/srv/oidc-login.html'); require('fs').cpSync('src/srv/oidc-logout.html', 'dist/srv/oidc-logout.html')\"",
     "build": "npm run build:backend && npm run build:frontend",
     "run": "node ./dist/srv/main.js",
     "preview": "vite preview",
@@ -60,7 +60,7 @@
     "@types/semver": "^7.7.1",
     "@types/supertest": "^7.2.0",
     "@types/ws": "^8.18.1",
-    "@vitejs/plugin-vue": "^6.0.7",
+    "@vitejs/plugin-vue": "^7.0.0",
     "@vue/tsconfig": "^0.9.1",
     "babel-jest": "^30.4.1",
     "jest": "^30.4.2",
