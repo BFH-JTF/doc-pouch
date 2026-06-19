@@ -1,3 +1,11 @@
+## [1.20.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.0...v1.20.1) (2026-06-19)
+
+
+### Bug Fixes
+
+* downgrade @vitejs/plugin-vue to ^6.0.7 to resolve compatibility issues ([177e690](https://github.com/BFH-JTF/doc-pouch/commit/177e69068a59bee9848df50cbd0112d496952331))
+* update @vitejs/plugin-vue to v7 for Vite v8 compatibility ([1c0aa53](https://github.com/BFH-JTF/doc-pouch/commit/1c0aa5388dc00f34a32bc708a479092044b06f64))
+
 # [1.20.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.19.0...v1.20.0) (2026-06-19)
 
 
