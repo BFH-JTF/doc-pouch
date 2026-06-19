@@ -1,3 +1,10 @@
+## [1.20.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.2...v1.20.3) (2026-06-19)
+
+
+### Bug Fixes
+
+* add structure propagation utilities and UI for handling document updates ([8f19642](https://github.com/BFH-JTF/doc-pouch/commit/8f19642c83c8cfd4f41a7004e4f337f03d5f574e))
+
 ## [1.20.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.1...v1.20.2) (2026-06-19)
 
 
