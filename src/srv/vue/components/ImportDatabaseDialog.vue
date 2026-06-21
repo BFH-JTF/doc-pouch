@@ -1,13 +1,16 @@
 <script lang="ts" setup>
 import {computed, ref, watch} from 'vue';
+import type DbPouchClient from 'docpouch-client';
 
 const props = defineProps<{
   show: boolean;
+  apiClient?: DbPouchClient;
 }>();
 
 const emit = defineEmits<{
   'close': [value: boolean];
   'logout': [];
+  'imported': [scope: 'all' | 'users' | 'documents' | 'structures' | 'types'];
 }>();
 
 const selectedFile = ref<File | null>(null);
@@ -26,9 +29,9 @@ const importScopeOptions = [
 ];
 
 const importModeOptions = [
-  {title: 'Replace existing documents (same _id)', value: 'replace'},
-  {title: 'Add as new documents (new _id)', value: 'add'},
-  {title: 'Skip existing documents (same _id)', value: 'skip'}
+  {title: 'Replace (keep source _id, overwrites target)', value: 'replace'},
+  {title: 'Add as new (new _id, interlinks rebuilt)', value: 'add'},
+  {title: 'Skip when _id already exists (merge)', value: 'skip'}
 ];
 
 const acceptedFileTypes = computed(() => importScope.value === 'all' ? '.zip,.json' : '.json');
@@ -90,7 +93,7 @@ async function handleImport() {
     formData.append('scope', importScope.value);
     formData.append('mode', importMode.value);
 
-    const token = localStorage.getItem('authToken');
+    const token = props.apiClient?.getToken();
     if (!token) {
       errorMessage.value = 'You must be logged in to import the database.';
       isUploading.value = false;
@@ -109,6 +112,12 @@ async function handleImport() {
       const errorData = await response.json();
       throw new Error(errorData.error || 'Import failed');
     }
+
+    // Notify the parent so it can refresh its local caches. This is the
+    // fallback refresh path for clients that have real-time updates
+    // disabled; when real-time updates are active, the backend also
+    // emits per-record events that the websocket handler will pick up.
+    emit('imported', importScope.value);
 
     const scopeLabel = importScope.value === 'all' ? 'Database' : importScope.value;
     const shouldLogout = importScope.value === 'users' || importScope.value === 'all';
@@ -176,6 +185,15 @@ watch(importScope, () => {
           <p class="text-caption mt-2">
             Scope <code>all</code>: upload a full ZIP backup or a JSON object with collections.
             For single scopes, upload a JSON array (or object containing the selected collection).
+          </p>
+          <p class="text-caption mt-2">
+            <strong>Replace</strong> is a true backup/restore: source <code>_id</code> values are kept and any existing
+            target record with the same id is overwritten.
+            <strong>Add as new</strong> generates fresh <code>_id</code> values and rewrites cross-references (document
+            owner, structure
+            <code>field.items</code>, embedded document links) to match.
+            <strong>Skip</strong> keeps any target record that already has the same <code>_id</code>; otherwise the
+            source record is inserted with its original id.
           </p>
         </div>
 

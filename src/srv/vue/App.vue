@@ -219,6 +219,11 @@ async function handleDocumentSelected(documentID: string) {
   loadedDocument.value = docArray.value.find((document: I_DocumentEntry) => document._id === documentID)
 }
 
+async function handleDocumentLinkMissing(documentID: string) {
+  snackBarMessage.value = `Referenced document not found: ${documentID}`;
+  snackBarVisible.value = true;
+}
+
 async function handleStructureRemoved(structureID: string) {
   apiClient.removeStructure(structureID)
       .then(() => {
@@ -248,6 +253,16 @@ async function handleStructureUpdate(structure: I_DataStructure) {
     console.error("Error updating structure:", error);
     handleApiError(error, "updating structure");
   });
+}
+
+async function handleImportCompleted(_scope: 'all' | 'users' | 'documents' | 'structures' | 'types') {
+  // The dialog already triggers a logout on scope=all/users import, so by
+  // the time we run the user is back at the login screen. For non-user
+  // scopes we still need to refresh local caches so the imported records
+  // show up immediately, even when real-time updates are disabled.
+  if (authToken.value !== null) {
+    await fetchData();
+  }
 }
 
 const affectedDocumentsForLoadedStructure = computed(() => {
@@ -966,6 +981,7 @@ async function migrateDatabase() {
                       :documentList="docArray"
                       :api-client="apiClient"
                       :document-structures="structureArray"
+                      :is-admin="isAdmin"
                       @document-list-changed="fetchData"
                       @document-removed="handleDocumentRemoved"
                   />
@@ -983,6 +999,7 @@ async function migrateDatabase() {
                 v-show="shownComponent === DisplayComponent.documentViewer"
                 @update:object="handleDocumentUpdate"
                 @document-link-clicked="handleDocumentSelected"
+                @document-link-missing="handleDocumentLinkMissing"
             />
             <UserDisplay
                 :user="loadedUser"
@@ -1028,7 +1045,8 @@ async function migrateDatabase() {
                    @oidc-login="startOidcLogin"
                    @update:show="handleDialogUpdate"/>
       <AboutDialog :show="showAboutDialog" @close="showAboutDialog = false"/>
-      <ImportDatabaseDialog :show="showImportDialog" @close="showImportDialog = false" @logout="handleLogout"/>
+      <ImportDatabaseDialog :api-client="apiClient" :show="showImportDialog" @close="showImportDialog = false"
+                            @imported="handleImportCompleted" @logout="handleLogout"/>
       <UpdateAvailableDialog :show="showUpdateDialog" @close="showUpdateDialog = false"/>
       <ApiKeyManagementDialog :api-client="apiClient" :show="showApiKeyDialog"
                               @update:show="showApiKeyDialog = $event"/>

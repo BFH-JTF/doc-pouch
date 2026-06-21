@@ -72,10 +72,14 @@ export default class SchemaValidator {
                     'is-array-or-object',
                     'Content must be either an array or an object',
                     (value) => {
+                        // PATCH bodies may omit content entirely (e.g. an
+                        // owner reassignment) so only validate the shape
+                        // when the caller actually provided a value.
+                        if (value === undefined) return true;
                         return Array.isArray(value) || (typeof value === 'object' && value !== null);
                     }
                 )
-                .required()
+                .optional()
         });
 
         this.structureCreationSchema = object({
@@ -109,7 +113,7 @@ export default class SchemaValidator {
         });
 
         this.documentFetchSchema = object({
-            _id: number().optional(),
+            _id: string().optional(),
             title: string().optional(),
             type: number().optional(),
             subType: number().optional(),

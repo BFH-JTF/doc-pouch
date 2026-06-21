@@ -113,12 +113,11 @@ describe('Document Update Edge Cases', () => {
             .send({owner: adminUser._id});
 
         // The response should never be 200 with the owner field actually
-        // changed. The underlying store rejects owner updates and the API
-        // surfaces an error status. Accept 200, 400 or 404 (depending on
-        // whether the document is found and whether the owner change is
-        // caught at the schema or store layer), but the document's owner
-        // MUST remain the original creator.
-        expect([200, 400, 404, 500]).toContain(response.status);
+        // changed. Owner reassignment is admin-only, so a regular user
+        // gets a 403. The API may also surface 400/404/500 depending on
+        // where the rejection happens, but the document's owner MUST
+        // remain the original creator.
+        expect([200, 400, 403, 404, 500]).toContain(response.status);
 
         // Verify the document's owner was NOT changed
         const fetchResponse = await authenticatedRequest(server, adminToken)

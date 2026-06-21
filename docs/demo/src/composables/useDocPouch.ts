@@ -14,8 +14,22 @@ import DocPouchClient, {
     type I_DocumentEntry,
     type I_DataStructure,
     type I_DocumentQuery,
+    type I_UserEntry,
+    type I_UserCreation,
+    type I_UserUpdate,
+    type I_LoginResponse,
 } from 'docpouch-client';
-import type {DocumentEntry, DataStructure, ServerSettings, OidcClientConfig} from '../types';
+import type {
+    DocumentEntry,
+    DocumentCreation,
+    DataStructure,
+    UserEntry,
+    UserCreation,
+    UserUpdate,
+    LoginResponse,
+    ServerSettings,
+    ServerClientConfig,
+} from '../types';
 
 // ---------------------------------------------------------------------------
 // Reactive state
@@ -23,18 +37,25 @@ import type {DocumentEntry, DataStructure, ServerSettings, OidcClientConfig} fro
 
 const docPouchUrl = ref(localStorage.getItem('docpouch_url') || '');
 const docPouchPort = ref(localStorage.getItem('docpouch_port') || '');
-const isConfigured = computed(() => docPouchUrl.value && docPouchPort.value);
+const isConfigured = computed(() => !!(docPouchUrl.value && docPouchPort.value));
 
 const isAuthenticated = ref(false);
 const authMethod = ref<'none' | 'jwt' | 'oidc'>('none');
 const authError = ref('');
 const loading = ref(false);
+const isAdmin = ref(false);
+const userName = ref('');
 
 const documents = ref<DocumentEntry[]>([]);
 const structures = ref<DataStructure[]>([]);
+const users = ref<UserEntry[]>([]);
 const realtimeEnabled = ref(false);
 
+// Whether to use the server-provided config or the localStorage override
+const useServerConfig = ref(true);
+
 let client: DocPouchClient | null = null;
+let callbacksRegistered = false;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -73,8 +94,66 @@ function is401Error(err: unknown): boolean {
     return false;
 }
 
+function is403Error(err: unknown): boolean {
+    if (err instanceof Error) {
+        const m = err.message.toLowerCase();
+        return m.includes('403') || m.includes('forbidden');
+    }
+    if (typeof err === 'object' && err !== null) {
+        if ('status' in err && (err as any).status === 403) return true;
+        if ('message' in err && typeof (err as any).message === 'string') {
+            const m = (err as any).message.toLowerCase();
+            return m.includes('403') || m.includes('forbidden');
+        }
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
-// Init / configuration
+// Server-driven configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the OIDC/client configuration from the RP's own backend
+ * (/api/oidc-client-config). This is the server-driven path: the deployed
+ * server.js knows where DocPouch lives and hands that info to the browser.
+ *
+ * Returns null if the endpoint is unreachable or reports `configured: false`.
+ */
+async function fetchServerConfig(): Promise<ServerClientConfig | null> {
+    try {
+        const resp = await fetch('/api/oidc-client-config');
+        if (!resp.ok) return null;
+        const data: ServerClientConfig = await resp.json();
+        if (!data.configured) return null;
+        return data;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Resolve which DocPouch base URL to use.
+ *
+ * Strategy:
+ *  1. If useServerConfig is true and /api/oidc-client-config returns a
+ *     valid `apiBaseUrl`, use that (server-driven).
+ *  2. Otherwise fall back to the user-entered localStorage URL/port
+ *     (offline / direct-file-open / override mode).
+ */
+async function resolveBaseUrl(): Promise<{ baseUrl: string, serverConfig: ServerClientConfig | null }> {
+    if (useServerConfig.value) {
+        const serverConfig = await fetchServerConfig();
+        if (serverConfig?.apiBaseUrl) {
+            return {baseUrl: serverConfig.apiBaseUrl.replace(/\/+$/, ''), serverConfig};
+        }
+    }
+    const baseUrl = normalizeBaseUrl(docPouchUrl.value, docPouchPort.value);
+    return {baseUrl, serverConfig: null};
+}
+
+// ---------------------------------------------------------------------------
+// Init / configuration (localStorage settings for fallback/override)
 // ---------------------------------------------------------------------------
 
 export function loadSettings(): ServerSettings {
@@ -103,6 +182,7 @@ export function clearSettings() {
     localStorage.removeItem('docpouch_registration_token');
     localStorage.removeItem('docpouch_oidc_client_id');
     localStorage.removeItem('docpouch_oidc_session');
+    localStorage.removeItem('docpouch_jwt_session');
 }
 
 // ---------------------------------------------------------------------------
@@ -147,17 +227,51 @@ async function ensureOidcClient(
 }
 
 // ---------------------------------------------------------------------------
+// Lifecycle callbacks (registered once per client instance)
+// ---------------------------------------------------------------------------
+
+function registerCallbacks() {
+    if (!client || callbacksRegistered) return;
+    callbacksRegistered = true;
+
+    client.onLogout(() => {
+        isAuthenticated.value = false;
+        authMethod.value = 'none';
+        realtimeEnabled.value = false;
+        isAdmin.value = false;
+        userName.value = '';
+        documents.value = [];
+        structures.value = [];
+        users.value = [];
+    });
+
+    client.onOidcLogout(() => {
+        isAuthenticated.value = false;
+        authMethod.value = 'none';
+        realtimeEnabled.value = false;
+        documents.value = [];
+        structures.value = [];
+        users.value = [];
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Core init
 // ---------------------------------------------------------------------------
 
 export async function initService(): Promise<boolean> {
-    if (!isConfigured.value) return false;
+    if (!isConfigured.value && useServerConfig.value) {
+        // Try server config even if localStorage isn't set
+    } else if (!isConfigured.value) {
+        return false;
+    }
 
-    const baseUrl = normalizeBaseUrl(docPouchUrl.value, docPouchPort.value);
+    const {baseUrl, serverConfig} = await resolveBaseUrl();
     if (!baseUrl) return false;
 
     // Build client with port baked into URL to work around library quirks
     client = new DocPouchClient(baseUrl, 0, handleSocketEvent);
+    registerCallbacks();
 
     // Logout return detection
     if (client.wasJustLoggedOut()) {
@@ -190,9 +304,68 @@ export async function initService(): Promise<boolean> {
         return true;
     }
 
+    // Restore JWT session from localStorage
+    const savedJwt = localStorage.getItem('docpouch_jwt_token');
+    if (savedJwt) {
+        client.setToken(savedJwt);
+        if (client.isAuthenticated()) {
+            isAuthenticated.value = true;
+            authMethod.value = 'jwt';
+            isAdmin.value = localStorage.getItem('docpouch_jwt_is_admin') === 'true';
+            userName.value = localStorage.getItem('docpouch_jwt_username') || '';
+            realtimeEnabled.value = true;
+            client.setRealTimeSync(true);
+            await loadData();
+            return true;
+        } else {
+            // Token expired / invalid
+            localStorage.removeItem('docpouch_jwt_token');
+            localStorage.removeItem('docpouch_jwt_is_admin');
+            localStorage.removeItem('docpouch_jwt_username');
+        }
+    }
+
     isAuthenticated.value = false;
     authMethod.value = 'none';
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// JWT Login
+// ---------------------------------------------------------------------------
+
+export async function loginWithJwt(name: string, password: string): Promise<void> {
+    if (!client) {
+        // Build client on demand if initService hasn't run yet
+        const {baseUrl} = await resolveBaseUrl();
+        if (!baseUrl) throw new Error('DocPouch server URL not configured');
+        client = new DocPouchClient(baseUrl, 0, handleSocketEvent);
+        registerCallbacks();
+    }
+
+    authError.value = '';
+    try {
+        const response: I_LoginResponse | null = await client.login({name, password});
+        if (!response || !response.token) {
+            throw new Error('Login failed: no token returned');
+        }
+
+        // Persist JWT session for reloads
+        localStorage.setItem('docpouch_jwt_token', response.token);
+        localStorage.setItem('docpouch_jwt_is_admin', String(response.isAdmin || false));
+        localStorage.setItem('docpouch_jwt_username', response.userName || name);
+
+        isAuthenticated.value = true;
+        authMethod.value = 'jwt';
+        isAdmin.value = response.isAdmin || false;
+        userName.value = response.userName || name;
+        realtimeEnabled.value = true;
+        client.setRealTimeSync(true);
+        await loadData();
+    } catch (err: any) {
+        authError.value = err.message || 'JWT login failed';
+        throw err;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +377,7 @@ export async function loginWithOidc(registrationToken: string): Promise<void> {
     authError.value = '';
 
     try {
-        const baseUrl = normalizeBaseUrl(docPouchUrl.value, docPouchPort.value);
+        const {baseUrl} = await resolveBaseUrl();
         const redirectUri = window.location.origin + window.location.pathname;
         const clientId = await ensureOidcClient(baseUrl, redirectUri, registrationToken);
         const issuer = getOidcIssuer(baseUrl);
@@ -235,7 +408,7 @@ export async function handleOidcCallback(): Promise<boolean> {
     if (!urlParams.has('code') || !urlParams.has('state')) return false;
 
     try {
-        const baseUrl = normalizeBaseUrl(docPouchUrl.value, docPouchPort.value);
+        const {baseUrl} = await resolveBaseUrl();
         const storedClientId = localStorage.getItem('docpouch_oidc_client_id');
         if (!storedClientId) return false;
 
@@ -269,7 +442,7 @@ export async function handleOidcCallback(): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// Data operations
+// Data operations — Documents
 // ---------------------------------------------------------------------------
 
 export async function loadData(): Promise<void> {
@@ -282,6 +455,9 @@ export async function loadData(): Promise<void> {
             id: d._id,
         })) as DocumentEntry[];
         structures.value = (await client.getStructures()) as DataStructure[];
+        if (isAdmin.value) {
+            await loadUsers();
+        }
     } catch (err: any) {
         if (is401Error(err)) {
             handle401();
@@ -294,7 +470,28 @@ export async function loadData(): Promise<void> {
     }
 }
 
-export async function createDocument(doc: Omit<DocumentEntry, '_id'>): Promise<DocumentEntry | null> {
+export async function loadAllDocuments(): Promise<void> {
+    if (!client || !isAuthenticated.value) return;
+    loading.value = true;
+    try {
+        const docs = await client.listDocuments();
+        documents.value = docs.map((d: I_DocumentEntry) => ({
+            ...d,
+            id: d._id,
+        })) as DocumentEntry[];
+    } catch (err: any) {
+        if (is401Error(err)) {
+            handle401();
+            return;
+        }
+        console.error('Failed to load all documents:', err);
+        authError.value = err.message || 'Failed to load documents';
+    } finally {
+        loading.value = false;
+    }
+}
+
+export async function createDocument(doc: DocumentCreation): Promise<DocumentEntry | null> {
     if (!client) return null;
     try {
         const created = await client.createDocument(doc as I_DocumentEntry);
@@ -337,6 +534,10 @@ export async function removeDocument(id: string): Promise<void> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Data operations — Structures
+// ---------------------------------------------------------------------------
+
 export async function createStructure(structure: DataStructure): Promise<DataStructure | null> {
     if (!client) return null;
     try {
@@ -352,13 +553,102 @@ export async function createStructure(structure: DataStructure): Promise<DataStr
     }
 }
 
+export async function updateStructure(id: string, structure: Partial<DataStructure>): Promise<void> {
+    if (!client) return;
+    try {
+        await client.updateStructure(id, structure as I_DataStructure);
+        await loadData();
+    } catch (err: any) {
+        if (is401Error(err)) {
+            handle401();
+            return;
+        }
+        throw err;
+    }
+}
+
+export async function removeStructure(id: string): Promise<void> {
+    if (!client) return;
+    try {
+        await client.removeStructure(id);
+        await loadData();
+    } catch (err: any) {
+        if (is401Error(err)) {
+            handle401();
+            return;
+        }
+        throw err;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Data operations — Users (admin only)
+// ---------------------------------------------------------------------------
+
+async function loadUsers(): Promise<void> {
+    if (!client || !isAdmin.value) return;
+    try {
+        users.value = (await client.listUsers()) as UserEntry[];
+    } catch (err: any) {
+        if (is401Error(err) || is403Error(err)) {
+            // Not authorized to list users — hide the admin card
+            isAdmin.value = false;
+            return;
+        }
+        console.error('Failed to load users:', err);
+    }
+}
+
+export async function createUser(user: UserCreation): Promise<UserEntry | null> {
+    if (!client) return null;
+    try {
+        const created = await client.createUser(user as I_UserCreation);
+        await loadUsers();
+        return created as unknown as UserEntry;
+    } catch (err: any) {
+        if (is401Error(err)) {
+            handle401();
+            return null;
+        }
+        throw err;
+    }
+}
+
+export async function updateUser(id: string, user: UserUpdate): Promise<void> {
+    if (!client) return;
+    try {
+        await client.updateUser(id, user as I_UserUpdate);
+        await loadUsers();
+    } catch (err: any) {
+        if (is401Error(err)) {
+            handle401();
+            return;
+        }
+        throw err;
+    }
+}
+
+export async function removeUser(id: string): Promise<void> {
+    if (!client) return;
+    try {
+        await client.removeUser(id);
+        await loadUsers();
+    } catch (err: any) {
+        if (is401Error(err)) {
+            handle401();
+            return;
+        }
+        throw err;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Real-time sync
 // ---------------------------------------------------------------------------
 
 function handleSocketEvent(event: string, data: any) {
     console.log(`[WebSocket] ${event}:`, data);
-    // Minimal live-update: refresh list on any document/structure change
+    // Minimal live-update: refresh list on any document/structure/user change
     if (
         event.startsWith('new') ||
         event.startsWith('changed') ||
@@ -383,52 +673,62 @@ function handle401() {
     isAuthenticated.value = false;
     authMethod.value = 'none';
     authError.value = 'Session expired. Please log in again.';
+    isAdmin.value = false;
+    userName.value = '';
     if (client) {
         client.setToken(null);
         client.setRealTimeSync(false);
     }
+    localStorage.removeItem('docpouch_jwt_token');
+    localStorage.removeItem('docpouch_jwt_is_admin');
+    localStorage.removeItem('docpouch_jwt_username');
 }
 
 export function clearAuthError() {
     authError.value = '';
 }
 
+export function setUseServerConfig(enabled: boolean) {
+    useServerConfig.value = enabled;
+}
+
 export async function logout(): Promise<void> {
     if (!client) return;
 
     try {
-        if (client.getAuthMethod() === 'oidc') {
-            const baseUrl = normalizeBaseUrl(docPouchUrl.value, docPouchPort.value);
-            const redirectUri = window.location.origin + window.location.pathname;
-            const postLogoutProxy = `${baseUrl}/oidc/logout-redirect?post_logout_redirect_uri=${encodeURIComponent(redirectUri)}`;
-            let url = `${getOidcIssuer(baseUrl)}/end_session?post_logout_redirect_uri=${encodeURIComponent(postLogoutProxy)}`;
-
-            const sessionStr = localStorage.getItem('docpouch_oidc_session');
-            if (sessionStr) {
-                try {
-                    const session = JSON.parse(sessionStr);
-                    if (session.idToken) {
-                        url += `&id_token_hint=${encodeURIComponent(session.idToken)}`;
-                    }
-                } catch {
-                }
-            }
-
-            sessionStorage.setItem('docpouch_logout_in_progress', 'true');
-            window.location.href = url;
-            return;
-        }
-
+        // logout() auto-detects OIDC vs JWT and does the right thing:
+        //  - OIDC: redirects to /end_session (browser leaves the page)
+        //  - JWT: clears local state and disconnects WebSocket
         await client.logout();
+
+        // For JWT logout (no redirect), clear local reactive state + storage
+        if (authMethod.value === 'jwt') {
+            localStorage.removeItem('docpouch_jwt_token');
+            localStorage.removeItem('docpouch_jwt_is_admin');
+            localStorage.removeItem('docpouch_jwt_username');
+        }
         isAuthenticated.value = false;
         authMethod.value = 'none';
         realtimeEnabled.value = false;
+        isAdmin.value = false;
+        userName.value = '';
+        documents.value = [];
+        structures.value = [];
+        users.value = [];
     } catch (err) {
         console.warn('Logout failed, clearing local state:', err);
-        client.setToken(null);
+        if (client) client.setToken(null);
         isAuthenticated.value = false;
         authMethod.value = 'none';
         realtimeEnabled.value = false;
+        isAdmin.value = false;
+        userName.value = '';
+        documents.value = [];
+        structures.value = [];
+        users.value = [];
+        localStorage.removeItem('docpouch_jwt_token');
+        localStorage.removeItem('docpouch_jwt_is_admin');
+        localStorage.removeItem('docpouch_jwt_username');
     }
 }
 
@@ -442,7 +742,11 @@ export {
     authMethod,
     authError,
     loading,
+    isAdmin,
+    userName,
     documents,
     structures,
+    users,
     realtimeEnabled,
+    useServerConfig,
 };
