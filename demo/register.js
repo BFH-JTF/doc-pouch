@@ -6,15 +6,22 @@
 // The registration token comes from the DocPouch server's
 // OIDC_REGISTRATION_TOKEN environment variable (ask your admin).
 //
-// After running this once, DocPouch returns a client_id and
-// client_secret. Copy them into the OIDC_CONFIG block in
-// server.js (or load them from environment variables).
+// After running this once, DocPouch returns a client_id (and, depending
+// on the configured auth method, a registration_access_token). Copy the
+// client_id into localStorage via the Server Configuration modal, or
+// store it server-side and inject it into your build.
+//
+// Environment variables (all optional — sensible localhost defaults):
+//   OIDC_REGISTRATION_TOKEN  (required) initial access token for /oidc/reg
+//   DOCPOUCH_HOST            default: http://localhost
+//   DOCPOUCH_PORT            default: 3030
+//   RP_PORT                  default: 8080  (the port this demo runs on)
 
-import DbPouchClient from 'docpouch-client';
+import DocPouchClient from 'docpouch-client';
 
-const DOCPOUCH_HOST = 'http://localhost';
-const DOCPOUCH_PORT = 3030;
-const RP_PORT = 8080;
+const DOCPOUCH_HOST = process.env.DOCPOUCH_HOST || 'http://localhost';
+const DOCPOUCH_PORT = parseInt(process.env.DOCPOUCH_PORT || '3030', 10);
+const RP_PORT = parseInt(process.env.RP_PORT || '8080', 10);
 
 const registrationToken = process.env.OIDC_REGISTRATION_TOKEN;
 if (!registrationToken) {
@@ -22,15 +29,20 @@ if (!registrationToken) {
     process.exit(1);
 }
 
-const client = new DbPouchClient(DOCPOUCH_HOST, DOCPOUCH_PORT);
+const client = new DocPouchClient(DOCPOUCH_HOST, DOCPOUCH_PORT);
+
+const redirectUri = `http://localhost:${RP_PORT}/callback`;
+const postLogoutUri = `http://localhost:${RP_PORT}/`;
 
 const registration = {
     client_name: 'DocPouch OIDC RP demo',
-    redirect_uris: [`http://localhost:${RP_PORT}/callback`],
-    post_logout_redirect_uris: [`http://localhost:${RP_PORT}/`],
+    redirect_uris: [redirectUri],
+    post_logout_redirect_uris: [postLogoutUri],
+    grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
-    grant_types: ['authorization_code'],
-    token_endpoint_auth_method: 'client_secret_basic',
+    // 'none' = public client using PKCE (no client_secret). This matches
+    // the SPA flow used by the demo's useDocPouch composable.
+    token_endpoint_auth_method: 'none',
     application_type: 'web',
 };
 
@@ -39,6 +51,5 @@ const registered = await client.registerOidcClient(registration, registrationTok
 console.log('Registered OIDC client. Save these values:');
 console.log(JSON.stringify(registered, null, 2));
 console.log('\nNext steps:');
-console.log(` - Set client_id in docs/demo/server.js (OIDC_CONFIG.clientId)`);
-console.log(` - If you received a client_secret, set it in OIDC_CONFIG.clientSecret`);
-console.log(` - Add http://localhost:${RP_PORT}/ to your DocPouch ALLOWED_ORIGINS`);
+console.log(` - Use client_id "${registered.client_id}" in the demo's Server Configuration modal.`);
+console.log(` - Add http://localhost:${RP_PORT}/ to your DocPouch ALLOWED_ORIGINS.`);
