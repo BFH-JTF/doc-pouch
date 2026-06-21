@@ -20,6 +20,19 @@ export interface DocumentEntry {
     shareWithGroup: boolean;
     shareWithDepartment: boolean;
     public: boolean;
+    anonymous?: boolean;
+}
+
+export interface DocumentCreation {
+    title: string;
+    description?: string;
+    type: number;
+    subType: number;
+    content: any;
+    shareWithGroup: boolean;
+    shareWithDepartment: boolean;
+    public: boolean;
+    anonymous?: boolean;
 }
 
 export interface DocumentQuery {
@@ -49,6 +62,42 @@ export interface StructureField {
     items?: string;
 }
 
+export interface UserEntry {
+    _id: string;
+    name: string;
+    email?: string;
+    department: string;
+    group: string;
+    isAdmin: boolean;
+}
+
+export interface UserCreation {
+    name: string;
+    password: string;
+    email?: string;
+    department: string;
+    group: string;
+    isAdmin: boolean;
+}
+
+export interface UserUpdate {
+    _id?: string;
+    name?: string;
+    password?: string;
+    email?: string;
+    department?: string;
+    group?: string;
+    isAdmin?: boolean;
+}
+
+export interface LoginResponse {
+    _id: string;
+    token: string;
+    isAdmin: boolean;
+    userName: string;
+    expiresIn?: number;
+}
+
 export interface OidcClientConfig {
     issuer: string;
     apiBaseUrl: string;
@@ -56,6 +105,15 @@ export interface OidcClientConfig {
     redirectUri: string;
     postLogoutRedirectUri: string;
     scopes: string[];
+}
+
+export interface ServerClientConfig {
+    configured: boolean;
+    issuer?: string;
+    apiBaseUrl?: string;
+    redirectUri?: string;
+    postLogoutRedirectUri?: string;
+    scopes?: string[];
 }
 
 export interface ServerSettings {

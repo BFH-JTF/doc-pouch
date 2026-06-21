@@ -35,6 +35,17 @@ export interface IDatabaseExportData {
     structures: any[];
 }
 
+/**
+ * Summary of what `importCollections` actually inserted or modified,
+ * grouped by collection. Used by the HTTP import handler to emit
+ * websocket events so connected clients refresh their views.
+ */
+export interface IImportResult {
+    users: { created: any[]; updated: any[] };
+    documents: { created: any[]; updated: any[] };
+    structures: { created: any[]; updated: any[] };
+}
+
 export default class NeDbWrapper {
     users: CustomStore
     structures: CustomStore
@@ -131,8 +142,40 @@ export default class NeDbWrapper {
         return this.inMemoryOnly;
     }
 
-    async importCollections(data: Partial<IDatabaseExportData>, mode: ImportMode = "replace"): Promise<void> {
+    async importCollections(data: Partial<IDatabaseExportData>, mode: ImportMode = "replace"): Promise<IImportResult> {
         const collections: DatabaseCollection[] = ["users", "documents", "structures"];
+
+        const result: IImportResult = {
+            users: {created: [], updated: []},
+            documents: {created: [], updated: []},
+            structures: {created: [], updated: []},
+        };
+
+        // Phase 1: insert every record and, for mode === "add", capture an
+        // oldId -> newId map per collection so cross-collection references
+        // (documents.owner -> users._id, structure field.items ->
+        // structures._id, document content doclinks -> documents._id /
+        // structures._id) can be rewritten in phase 2.
+        const idMaps: Record<DatabaseCollection, Map<string, string>> = {
+            users: new Map(),
+            documents: new Map(),
+            structures: new Map(),
+        };
+        // Track which (collection, newId) we actually inserted in phase 1 so
+        // that phase 2 only updates records that we created, not records that
+        // pre-existed on the target instance.
+        const insertedNewIds: Record<DatabaseCollection, Set<string>> = {
+            users: new Set(),
+            documents: new Set(),
+            structures: new Set(),
+        };
+        // Track ids that were updated in place (mode=replace collision) so
+        // we can re-query the post-update state for the result snapshot.
+        const updatedIds: Record<DatabaseCollection, Set<string>> = {
+            users: new Set(),
+            documents: new Set(),
+            structures: new Set(),
+        };
 
         for (const collection of collections) {
             const collectionData = data[collection];
@@ -147,32 +190,255 @@ export default class NeDbWrapper {
             const store = this.getCollectionStore(collection);
 
             for (const doc of collectionData) {
+                const oldId = typeof doc?._id === "string" ? doc._id : undefined;
+
                 if (mode === "add") {
                     const docToAdd = {...doc};
                     delete docToAdd._id;
-                    await store.add(docToAdd);
+                    const inserted = await store.add(docToAdd) as { _id: string };
+                    if (inserted && inserted._id) {
+                        if (oldId) {
+                            idMaps[collection].set(oldId, inserted._id);
+                            insertedNewIds[collection].add(inserted._id);
+                        }
+                        result[collection].created.push(inserted);
+                    }
                 } else if (mode === "skip") {
-                    if (doc._id) {
-                        const existing = await store.query({_id: doc._id});
+                    if (oldId) {
+                        const existing = await store.query({_id: oldId});
                         if (existing.length === 0) {
-                            await store.add(doc);
+                            const inserted = await store.add(doc) as { _id: string };
+                            if (inserted && inserted._id) {
+                                idMaps[collection].set(oldId, inserted._id);
+                                insertedNewIds[collection].add(inserted._id);
+                                result[collection].created.push(inserted);
+                            }
+                        } else {
+                            idMaps[collection].set(oldId, oldId);
                         }
                     } else {
-                        await store.add(doc);
+                        const inserted = await store.add(doc) as { _id: string };
+                        if (inserted && inserted._id) {
+                            insertedNewIds[collection].add(inserted._id);
+                            result[collection].created.push(inserted);
+                        }
                     }
                 } else if (mode === "replace") {
-                    if (doc._id) {
-                        await new Promise((resolve, reject) => {
+                    if (oldId) {
+                        const existing = await store.query({_id: oldId});
+                        if (existing.length > 0) {
+                            // Local record already exists: in-place update.
                             const cleanDoc = {...doc};
                             delete cleanDoc._id;
-                            store.datastore.update({_id: doc._id}, cleanDoc, {upsert: true}, (err: any) => {
-                                if (err) reject(err);
-                                else resolve(undefined);
+                            await new Promise((resolve, reject) => {
+                                store.datastore.update({_id: oldId}, cleanDoc, {upsert: false}, (err: any) => {
+                                    if (err) reject(err);
+                                    else resolve(undefined);
+                                });
                             });
-                        });
+                            updatedIds[collection].add(oldId);
+                        } else {
+                            // Cross-instance import: no local record yet.
+                            // NeDB's update-upsert inserts the UPDATE
+                            // document as-is (without the query's _id), so
+                            // we must insert with an explicit _id to keep
+                            // the source id stable.
+                            const newDoc = {...doc, _id: oldId};
+                            const inserted = await store.add(newDoc) as { _id: string };
+                            if (inserted && inserted._id) {
+                                result[collection].created.push(inserted);
+                            }
+                        }
+                        idMaps[collection].set(oldId, oldId);
+                        insertedNewIds[collection].add(oldId);
                     } else {
-                        await store.add(doc);
+                        const inserted = await store.add(doc) as { _id: string };
+                        if (inserted && inserted._id) {
+                            insertedNewIds[collection].add(inserted._id);
+                            result[collection].created.push(inserted);
+                        }
                     }
+                }
+            }
+        }
+
+        // Phase 2: rewrite cross-collection references on the records we
+        // inserted in phase 1.
+        await this.rewriteImportedReferences(idMaps, insertedNewIds);
+
+        // Refresh the result snapshot so callers (the HTTP import handler)
+        // emit websocket events with the post-rewrite / post-update state
+        // rather than the stale snapshot taken during phase 1.
+        for (const collection of collections as DatabaseCollection[]) {
+            if (insertedNewIds[collection].size > 0) {
+                const refreshed: any[] = [];
+                for (const id of insertedNewIds[collection]) {
+                    const found = await this.getCollectionStore(collection).query({_id: id}) as any[];
+                    if (found.length > 0) refreshed.push(found[0]);
+                }
+                result[collection].created = refreshed;
+            }
+            if (updatedIds[collection].size > 0) {
+                const refreshed: any[] = [];
+                for (const id of updatedIds[collection]) {
+                    const found = await this.getCollectionStore(collection).query({_id: id}) as any[];
+                    if (found.length > 0) refreshed.push(found[0]);
+                }
+                result[collection].updated = refreshed;
+            }
+        }
+
+        return result;
+    }
+
+    updateDocument(documentID: string, updateData: I_DocumentUpdate, requestingUserID: string): Promise<number> {
+        return new Promise(async (resolve, reject) => {
+            try {
+                // First, get all documents the user has access to
+                const accessibleDocs = await this.listDocAccess(requestingUserID);
+
+                // Find the specific document
+                const document = accessibleDocs.find(doc => doc._id === documentID);
+
+                if (!document) {
+                    reject(404);
+                    return;
+                }
+
+                const isAdmin = await this.isAdmin(requestingUserID);
+
+                // Capture a possible owner change so we can route it through
+                // the raw update path below. CustomStore.update refuses
+                // owner changes by design; the admin-only reassignment path
+                // is the one place we explicitly want to allow it.
+                const ownerChange = (updateData.owner !== undefined && updateData.owner !== document.owner)
+                    ? updateData.owner
+                    : undefined;
+
+                if (ownerChange !== undefined) {
+                    if (!isAdmin) {
+                        reject(403);
+                        return;
+                    }
+                    try {
+                        await this.getUserByID(ownerChange as string);
+                    } catch {
+                        reject(400);
+                        return;
+                    }
+                }
+
+                // Strip the owner field from the regular update payload;
+                // we'll apply it separately via the raw update path so that
+                // it does not collide with CustomStore.update's guard.
+                delete updateData.owner;
+
+                // Check update permissions based on user's relationship to the document
+                if (isAdmin || document.owner === requestingUserID) {
+                    // Admin or owner can update all fields. If we are also
+                    // applying an owner reassignment, the raw update below
+                    // performs it; otherwise the regular update handles
+                    // everything.
+                    if (Object.keys(updateData).length > 0) {
+                        this.documents.update(documentID, updateData).then(async (numUpdated) => {
+                            if (ownerChange !== undefined) {
+                                await this.rawUpdateDocument(documentID, {owner: ownerChange});
+                            }
+                            resolve(numUpdated);
+                        }).catch(reject);
+                    } else if (ownerChange !== undefined) {
+                        this.rawUpdateDocument(documentID, {owner: ownerChange}).then((numUpdated) => {
+                            resolve(numUpdated);
+                        }).catch(reject);
+                    } else {
+                        // Nothing to update and no owner change: treat as a
+                        // no-op so callers don't get a 400 for a benign
+                        // request.
+                        resolve(1);
+                    }
+                } else {
+                    // Users with shared access can only update content.
+                    const allowedUpdates: Partial<I_DocumentEntry> = {};
+
+                    // Only allow updating content
+                    if (updateData.content !== undefined) {
+                        allowedUpdates.content = updateData.content;
+                    }
+
+                    if (Object.keys(allowedUpdates).length > 0) {
+                        this.documents.update(documentID, allowedUpdates).then((numUpdated) => {
+                            resolve(numUpdated);
+                        }).catch(reject);
+                    } else {
+                        reject(400);
+                    }
+                }
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    /**
+     * Walks every record that was inserted by `importCollections` and rewrites
+     * any cross-collection _id reference to the new (target-instance) value.
+     * No-op for records that did not change id (e.g. mode === "replace" where
+     * the imported id already matched a local id, or records we did not
+     * create).
+     */
+    private async rewriteImportedReferences(
+        idMaps: Record<DatabaseCollection, Map<string, string>>,
+        insertedNewIds: Record<DatabaseCollection, Set<string>>,
+    ): Promise<void> {
+        const usersMap = idMaps.users;
+        const structuresMap = idMaps.structures;
+        const documentsMap = idMaps.documents;
+
+        // --- Structures: rewrite field.items when it references another
+        //     structure by its old _id.
+        if (insertedNewIds.structures.size > 0) {
+            const structureRecords = await this.structures.query({}) as any[];
+            for (const record of structureRecords) {
+                if (!insertedNewIds.structures.has(record._id)) continue;
+                const fields = Array.isArray(record.fields) ? record.fields : [];
+                let changed = false;
+                const newFields = fields.map((field: any) => {
+                    if (field && typeof field.items === "string" && structuresMap.has(field.items)) {
+                        changed = true;
+                        return {...field, items: structuresMap.get(field.items)};
+                    }
+                    return field;
+                });
+                if (changed) {
+                    await this.structures.update(record._id, {fields: newFields});
+                }
+            }
+        }
+
+        // --- Documents: rewrite owner + content doclinks.
+        if (insertedNewIds.documents.size > 0) {
+            const documentRecords = await this.documents.query({}) as any[];
+            for (const record of documentRecords) {
+                if (!insertedNewIds.documents.has(record._id)) continue;
+
+                const update: Record<string, unknown> = {};
+
+                if (typeof record.owner === "string" && usersMap.has(record.owner)) {
+                    update.owner = usersMap.get(record.owner);
+                }
+
+                if (record.content !== undefined) {
+                    const rewritten = remapDocLinkStrings(record.content, documentsMap, structuresMap, record._id);
+                    if (rewritten.changed) {
+                        update.content = rewritten.value;
+                    }
+                }
+
+                if (Object.keys(update).length > 0) {
+                    // We bypass CustomStore.update because it refuses owner
+                    // changes; during import remap we are explicitly
+                    // rewriting owner to the matching target-instance id.
+                    await this.rawUpdateDocument(record._id, update);
                 }
             }
         }
@@ -699,55 +965,31 @@ export default class NeDbWrapper {
         };
     }
 
-    updateDocument(documentID: string, updateData: I_DocumentUpdate, requestingUserID: string): Promise<number> {
-        return new Promise(async (resolve, reject) => {
-            try {
-                // First, get all documents the user has access to
-                const accessibleDocs = await this.listDocAccess(requestingUserID);
-
-                // Find the specific document
-                const document = accessibleDocs.find(doc => doc._id === documentID);
-
-                if (!document) {
-                    reject(404);
-                    return;
+    /**
+     * Low-level update used only by import-remap to set the document owner
+     * (and any other field) without the normal owner-change guard. The
+     * guard exists to prevent the regular API from transferring ownership
+     * of a document between users; that restriction does not apply to
+     * import remap, which already ran the access-control check during
+     * phase 1.
+     */
+    private rawUpdateDocument(documentID: string, updateInfo: Record<string, unknown>): Promise<number> {
+        return new Promise((resolve, reject) => {
+            const payload: Record<string, unknown> = {...updateInfo};
+            for (const k of Object.keys(payload)) {
+                if (k.startsWith("$")) {
+                    return reject(new Error("Update contains disallowed operator keys"));
                 }
-
-                const isAdmin = await this.isAdmin(requestingUserID);
-
-                // Don't allow changing the owner
-                if (updateData.owner !== undefined && updateData.owner !== document.owner) {
-                    reject(400);
-                    return;
-                }
-
-                // Check update permissions based on user's relationship to the document
-                if (isAdmin || document.owner === requestingUserID) {
-                    // Admin or owner can update all fields except owner
-                    delete updateData.owner;
-                    this.documents.update(documentID, updateData).then((numUpdated) => {
-                        resolve(numUpdated);
-                    }).catch(reject);
-                } else {
-                    // Users with shared access can only update content
-                    const allowedUpdates: Partial<I_DocumentEntry> = {};
-
-                    // Only allow updating content
-                    if (updateData.content !== undefined) {
-                        allowedUpdates.content = updateData.content;
-                    }
-
-                    if (Object.keys(allowedUpdates).length > 0) {
-                        this.documents.update(documentID, allowedUpdates).then((numUpdated) => {
-                            resolve(numUpdated);
-                        }).catch(reject);
-                    } else {
-                        reject(400);
-                    }
-                }
-            } catch (error) {
-                reject(error);
             }
+            this.documents.datastore.update(
+                {_id: documentID},
+                {$set: payload},
+                {multi: false, upsert: false, returnUpdatedDocs: true},
+                (err: any, numAffected: number) => {
+                    if (err) return reject(err);
+                    resolve(numAffected);
+                }
+            );
         });
     }
 
@@ -851,6 +1093,66 @@ export default class NeDbWrapper {
     }
 
 
+}
+
+/**
+ * Mirrors the frontend `DOCPOUCH_ID_REGEX` in
+ * `src/srv/vue/components/DocumentDisplay.vue`. We only treat strings that
+ * look like an auto-generated NeDB id (16 alphanumerics) as potential
+ * document or structure references inside `content`.
+ */
+const DOCPOUCH_ID_REGEX = /^[A-Za-z0-9]{16}$/;
+
+/**
+ * Recursively walks an arbitrary `content` value and rewrites any string
+ * that matches `DOCPOUCH_ID_REGEX` AND is present in either the documents
+ * or structures id-map. Strings that happen to look like ids but do not
+ * correspond to a known imported record are left untouched, so unrelated
+ * 16-char strings inside free-form content are never corrupted.
+ *
+ * @param value the content value to walk (object, array, or primitive)
+ * @param documentsMap oldId -> newId for imported documents
+ * @param structuresMap oldId -> newId for imported structures
+ * @param currentDocId the id of the document owning this content, so we
+ *                      never rewrite a self-reference
+ */
+function remapDocLinkStrings(
+    value: unknown,
+    documentsMap: Map<string, string>,
+    structuresMap: Map<string, string>,
+    currentDocId: string,
+): { value: unknown; changed: boolean } {
+    if (typeof value === "string") {
+        if (DOCPOUCH_ID_REGEX.test(value) && value !== currentDocId) {
+            if (documentsMap.has(value)) {
+                return {value: documentsMap.get(value), changed: true};
+            }
+            if (structuresMap.has(value)) {
+                return {value: structuresMap.get(value), changed: true};
+            }
+        }
+        return {value, changed: false};
+    }
+    if (Array.isArray(value)) {
+        let changed = false;
+        const out = value.map((item) => {
+            const r = remapDocLinkStrings(item, documentsMap, structuresMap, currentDocId);
+            if (r.changed) changed = true;
+            return r.value;
+        });
+        return {value: changed ? out : value, changed};
+    }
+    if (value !== null && typeof value === "object") {
+        let changed = false;
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            const r = remapDocLinkStrings(v, documentsMap, structuresMap, currentDocId);
+            if (r.changed) changed = true;
+            out[k] = r.value;
+        }
+        return {value: changed ? out : value, changed};
+    }
+    return {value, changed: false};
 }
 
 class CustomStore {

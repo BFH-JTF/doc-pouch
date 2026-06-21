@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import {ref, watch, computed, onBeforeUnmount, reactive} from "vue";
 import type {I_DataStructure, I_DocumentEntry} from "docpouch-client";
 
 const props = defineProps<{
   object: I_DocumentEntry | undefined;
   id: string;
   structureList: I_DataStructure[];
-  'api-client'?: any;
+  apiClient?: any;
 }>();
+
+// eslint-disable-next-line no-console
+console.warn('[docLink] DocumentDisplay setup: apiClient present=', !!props.apiClient, 'type=', typeof props.apiClient?.fetchDocuments);
 
 const emit = defineEmits<{
   'update:object': [updatedObject: I_DocumentEntry | undefined];
   'document-link-clicked': [documentId: string];
+  'document-link-missing': [documentId: string];
 }>();
 
 // Track expanded state for each property
@@ -38,45 +42,146 @@ const rawContent = ref('');
 const editingPath = ref<string[]>([]);
 const editingValue = ref<any>(null);
 
-const hoveredDocId = ref<string | null>(null);
-const hoveredDoc = ref<{ _id: string; title: string } | null>(null);
-let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+// Copy-to-clipboard state for the _id chip in the header
+const idCopied = ref(false);
+let idCopiedResetTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function copyIdToClipboard() {
+  const id = props.object?._id;
+  if (!id) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(id);
+      } else {
+        // Fallback for environments without the async Clipboard API.
+        const ta = document.createElement("textarea");
+        ta.value = id;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      idCopied.value = true;
+      if (idCopiedResetTimer) clearTimeout(idCopiedResetTimer);
+      idCopiedResetTimer = setTimeout(() => {
+        idCopied.value = false;
+      }, 1500);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("Could not copy document id to clipboard:", err);
+    }
+}
+
+type DocLinkState = 'unknown' | 'found' | 'missing';
+
+interface DocLinkEntry {
+  state: DocLinkState;
+  title?: string;
+}
+
+const DOCPOUCH_ID_REGEX = /^[A-Za-z0-9]{16}$/;
+
+const docLinkCache = reactive<Record<string, DocLinkEntry>>({});
+const pendingLookups: Record<string, ReturnType<typeof setTimeout>> = {};
+const cacheVersion = ref(0);
 
 function couldBeDocumentId(value: any): boolean {
-  return typeof value === 'string' && /^[a-zA-Z0-9]{17,}$/.test(value) && value !== props.object?._id;
+  return typeof value === 'string'
+      && DOCPOUCH_ID_REGEX.test(value)
+      && value !== props.object?._id;
 }
 
-function clearHover() {
-  hoveredDocId.value = null;
-  hoveredDoc.value = null;
-  if (hoverTimeout) {
-    clearTimeout(hoverTimeout);
-    hoverTimeout = null;
-  }
+function getDocLinkEntry(docId: string): DocLinkEntry {
+  // touch cacheVersion so the template re-renders when the cache changes
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  cacheVersion.value;
+  return docLinkCache[docId] ?? {state: 'unknown'};
 }
 
-async function onHoverDocumentId(docId: string) {
-  if (hoverTimeout) {
-    clearTimeout(hoverTimeout);
+function setDocLinkEntry(docId: string, entry: DocLinkEntry) {
+  docLinkCache[docId] = entry;
+  cacheVersion.value += 1;
+}
+
+function resolveDocLink(docId: string): Promise<DocLinkEntry> {
+  // eslint-disable-next-line no-console
+  console.warn('[docLink] resolveDocLink start', docId, 'apiClient=', !!props.apiClient, 'apiClientType=', typeof props.apiClient, 'hasFetch=', typeof props.apiClient?.fetchDocuments);
+  if (!props.apiClient) {
+    // eslint-disable-next-line no-console
+    console.warn('[docLink] apiClient missing, returning unknown');
+    return Promise.resolve({state: 'unknown'});
   }
-  hoverTimeout = setTimeout(async () => {
-    if (!props['api-client']) return;
-    try {
-      const docs = await props['api-client'].fetchDocuments({_id: docId} as any);
-      if (docs.length > 0) {
-        hoveredDoc.value = {_id: docs[0]._id, title: docs[0].title};
-      } else {
-        hoveredDoc.value = null;
-      }
-    } catch {
-      hoveredDoc.value = null;
-    }
+  return props.apiClient
+      .fetchDocuments({_id: docId} as any)
+      .then(docs => {
+        // eslint-disable-next-line no-console
+        console.warn('[docLink] fetchDocuments returned', docId, 'docs.length=', docs?.length);
+        const entry: DocLinkEntry = docs.length > 0
+            ? {state: 'found', title: docs[0].title}
+            : {state: 'missing'};
+        setDocLinkEntry(docId, entry);
+        return entry;
+      })
+      .catch(err => {
+        // eslint-disable-next-line no-console
+        console.warn('[docLink] fetchDocuments threw', docId, err);
+        const entry: DocLinkEntry = {state: 'missing'};
+        setDocLinkEntry(docId, entry);
+        return entry;
+      });
+}
+
+function scheduleLookup(docId: string) {
+  // eslint-disable-next-line no-console
+  console.warn('[docLink] scheduleLookup', docId, 'cached=', docLinkCache[docId]?.state);
+  if (docLinkCache[docId]) return;
+  if (pendingLookups[docId]) return;
+  pendingLookups[docId] = setTimeout(() => {
+    delete pendingLookups[docId];
+    resolveDocLink(docId)
+        .then(entry => {
+          // eslint-disable-next-line no-console
+          console.warn('[docLink] resolveDocLink resolved', docId, entry);
+        })
+        .catch(err => {
+          // eslint-disable-next-line no-console
+          console.warn('[docLink] resolveDocLink rejected', docId, err);
+        });
   }, 150);
 }
 
-function openDocument(docId: string) {
-  emit('document-link-clicked', docId);
+async function openDocument(docId: string) {
+  // eslint-disable-next-line no-console
+  console.warn('[docLink] openDocument called', docId, 'cached=', docLinkCache[docId]?.state);
+  const cached = docLinkCache[docId];
+  if (!cached) {
+    const entry = await resolveDocLink(docId);
+    if (entry.state === 'found') {
+      emit('document-link-clicked', docId);
+    } else if (entry.state === 'missing') {
+      emit('document-link-missing', docId);
+    }
+    return;
+  }
+  if (cached.state === 'found') {
+    emit('document-link-clicked', docId);
+  } else if (cached.state === 'missing') {
+    emit('document-link-missing', docId);
+  }
 }
+
+onBeforeUnmount(() => {
+  for (const id of Object.keys(pendingLookups)) {
+    clearTimeout(pendingLookups[id]);
+    delete pendingLookups[id];
+  }
+  if (idCopiedResetTimer) {
+    clearTimeout(idCopiedResetTimer);
+    idCopiedResetTimer = null;
+  }
+});
 
 // Check if we're currently editing a path
 const isEditing = (path: string[]) => {
@@ -302,8 +407,29 @@ const getValueAtPath = (obj: any, path: string[]): any => {
 
 <template>
   <v-card class="doc-viewer">
-    <v-card-title class="text-h6">
-      {{ props.object?.title }}
+    <v-card-title class="text-h6 d-flex align-center flex-wrap">
+      <span>{{ props.object?.title }}</span>
+      <v-tooltip v-if="props.object?._id" location="top">
+        <template v-slot:activator="{ props: tipProps }">
+          <v-chip
+              class="ml-3"
+              density="compact"
+              prepend-icon="mdi-identifier"
+              size="small"
+              v-bind="tipProps"
+              variant="tonal"
+              @click="copyIdToClipboard"
+          >
+            <span class="text-caption">_id: {{ props.object._id }}</span>
+            <v-icon
+                :icon="idCopied ? 'mdi-check' : 'mdi-content-copy'"
+                class="ml-1"
+                size="x-small"
+            ></v-icon>
+          </v-chip>
+        </template>
+        Click to copy the document id to the clipboard
+      </v-tooltip>
     </v-card-title>
 
     <v-card-text>
@@ -565,16 +691,32 @@ const getValueAtPath = (obj: any, path: string[]): any => {
                 <div class="d-flex align-center">
                   <template v-if="couldBeDocumentId(value)">
                     <a
-                        class="doc-link"
-                        @mouseenter="onHoverDocumentId(value)"
-                        @mouseleave="clearHover"
-                        @click.prevent="openDocument(value)"
+                        v-if="getDocLinkEntry(value).state === 'found'"
+                        :title="getDocLinkEntry(value).title"
+                        class="doc-link doc-link--ok"
+                        @mouseenter="scheduleLookup(value)"
+                        @mousedown.stop.prevent="openDocument(value)"
                     >
-                      <v-icon v-if="!hoveredDoc || hoveredDocId !== value" class="mr-1" icon="mdi-lock"
-                              size="small"></v-icon>
-                      {{
-                        hoveredDocId === value && hoveredDoc ? hoveredDoc.title : (value.length > 20 ? value.slice(0, 20) + '...' : value)
-                      }}
+                      <v-icon class="mr-1" color="success" icon="mdi-link-variant" size="small"></v-icon>
+                      {{ getDocLinkEntry(value).title || value }}
+                    </a>
+                    <span
+                        v-else-if="getDocLinkEntry(value).state === 'missing'"
+                        class="doc-link doc-link--missing"
+                        title="Document not found"
+                    >
+                      <v-icon class="mr-1" color="error" icon="mdi-link-off" size="small"></v-icon>
+                      {{ value }}
+                    </span>
+                    <a
+                        v-else
+                        class="doc-link"
+                        :title="value"
+                        @mouseenter="scheduleLookup(value)"
+                        @mousedown.stop.prevent="openDocument(value)"
+                    >
+                      <v-icon class="mr-1" icon="mdi-link-variant" size="small"></v-icon>
+                      {{ value.length > 20 ? value.slice(0, 20) + '...' : value }}
                     </a>
                   </template>
                   <template v-else>
@@ -650,16 +792,32 @@ const getValueAtPath = (obj: any, path: string[]): any => {
                     <div class="d-flex align-center">
                       <template v-if="couldBeDocumentId(item)">
                         <a
-                            class="doc-link"
-                            @mouseenter="onHoverDocumentId(item)"
-                            @mouseleave="clearHover"
-                            @click.prevent="openDocument(item)"
+                            v-if="getDocLinkEntry(item).state === 'found'"
+                            :title="getDocLinkEntry(item).title"
+                            class="doc-link doc-link--ok"
+                            @mouseenter="scheduleLookup(item)"
+                            @mousedown.stop.prevent="openDocument(item)"
                         >
-                          <v-icon v-if="!hoveredDoc || hoveredDocId !== item" class="mr-1" icon="mdi-lock"
-                                  size="small"></v-icon>
-                          {{
-                            hoveredDocId === item && hoveredDoc ? hoveredDoc.title : (item.length > 20 ? item.slice(0, 20) + '...' : item)
-                          }}
+                          <v-icon class="mr-1" color="success" icon="mdi-link-variant" size="small"></v-icon>
+                          {{ getDocLinkEntry(item).title || item }}
+                        </a>
+                        <span
+                            v-else-if="getDocLinkEntry(item).state === 'missing'"
+                            class="doc-link doc-link--missing"
+                            title="Document not found"
+                        >
+                          <v-icon class="mr-1" color="error" icon="mdi-link-off" size="small"></v-icon>
+                          {{ item }}
+                        </span>
+                        <a
+                            v-else
+                            class="doc-link"
+                            :title="item"
+                            @mouseenter="scheduleLookup(item)"
+                            @mousedown.stop.prevent="openDocument(item)"
+                        >
+                          <v-icon class="mr-1" icon="mdi-link-variant" size="small"></v-icon>
+                          {{ item.length > 20 ? item.slice(0, 20) + '...' : item }}
                         </a>
                       </template>
                       <template v-else>
@@ -737,16 +895,32 @@ const getValueAtPath = (obj: any, path: string[]): any => {
                     <div class="d-flex align-center">
                       <template v-if="couldBeDocumentId(nestedValue)">
                         <a
-                            class="doc-link"
-                            @mouseenter="onHoverDocumentId(nestedValue)"
-                            @mouseleave="clearHover"
-                            @click.prevent="openDocument(nestedValue)"
+                            v-if="getDocLinkEntry(nestedValue).state === 'found'"
+                            :title="getDocLinkEntry(nestedValue).title"
+                            class="doc-link doc-link--ok"
+                            @mouseenter="scheduleLookup(nestedValue)"
+                            @mousedown.stop.prevent="openDocument(nestedValue)"
                         >
-                          <v-icon v-if="!hoveredDoc || hoveredDocId !== nestedValue" class="mr-1" icon="mdi-lock"
-                                  size="small"></v-icon>
-                          {{
-                            hoveredDocId === nestedValue && hoveredDoc ? hoveredDoc.title : (nestedValue.length > 20 ? nestedValue.slice(0, 20) + '...' : nestedValue)
-                          }}
+                          <v-icon class="mr-1" color="success" icon="mdi-link-variant" size="small"></v-icon>
+                          {{ getDocLinkEntry(nestedValue).title || nestedValue }}
+                        </a>
+                        <span
+                            v-else-if="getDocLinkEntry(nestedValue).state === 'missing'"
+                            class="doc-link doc-link--missing"
+                            title="Document not found"
+                        >
+                          <v-icon class="mr-1" color="error" icon="mdi-link-off" size="small"></v-icon>
+                          {{ nestedValue }}
+                        </span>
+                        <a
+                            v-else
+                            class="doc-link"
+                            :title="nestedValue"
+                            @mouseenter="scheduleLookup(nestedValue)"
+                            @mousedown.stop.prevent="openDocument(nestedValue)"
+                        >
+                          <v-icon class="mr-1" icon="mdi-link-variant" size="small"></v-icon>
+                          {{ nestedValue.length > 20 ? nestedValue.slice(0, 20) + '...' : nestedValue }}
                         </a>
                       </template>
                       <template v-else>
@@ -859,5 +1033,26 @@ const getValueAtPath = (obj: any, path: string[]): any => {
 
 .doc-link .v-icon {
   color: #9e9e9e;
+}
+
+.doc-link--ok {
+  color: #1976d2;
+}
+
+.doc-link--ok .v-icon {
+  color: #2e7d32;
+}
+
+.doc-link--missing {
+  color: #d32f2f;
+  cursor: not-allowed;
+}
+
+.doc-link--missing .v-icon {
+  color: #d32f2f;
+}
+
+.doc-link--missing:hover {
+  text-decoration: none;
 }
 </style>

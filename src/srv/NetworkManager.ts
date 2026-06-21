@@ -5,7 +5,7 @@ import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
 import type {I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
-import NeDbWrapper, {type DatabaseCollection, type ImportMode} from "./NeDbWrapper.js";
+import NeDbWrapper, {type DatabaseCollection, type ImportMode, type IImportResult} from "./NeDbWrapper.js";
 import winston from "winston";
 import SchemaValidator from "./SchemaValidator.js";
 import IoSocketServer from "./IoSocketServer.js";
@@ -1303,8 +1303,23 @@ export default class NetworkManager {
                 this.dataManager.updateDocument(req.params.documentID as string, req.body, req.userid)
                     .then((numUpdated) => {
                         if (numUpdated > 0 && req.params.documentID !== undefined) {
-                            req.body._id = req.params.documentID;
-                            this.socketServer.sendEventToDocumentAccessors(req.socketID, req.params.documentID as string, "changedDocument", {changedDocument: req.body});
+                            const documentID = req.params.documentID as string;
+                            // Make sure the broadcast payload includes the
+                            // document id so receivers can correlate the
+                            // event with their local state.
+                            req.body._id = documentID;
+                            // When the owner was reassigned, the access set
+                            // has changed. Send changedDocument to every
+                            // connected client (admins always see it; the
+                            // new owner needs to learn about the doc; the
+                            // previous owner may need to lose access
+                            // depending on share flags).
+                            const ownerChanged = typeof req.body.owner === "string" && req.body.owner.length > 0;
+                            if (ownerChanged) {
+                                this.socketServer.sendEventToAllClients(req.socketID, "changedDocument", {changedDocument: req.body});
+                            } else {
+                                this.socketServer.sendEventToDocumentAccessors(req.socketID, documentID, "changedDocument", {changedDocument: req.body});
+                            }
                             res.status(200).json({message: "Document updated successfully"});
                         } else {
                             res.status(404).json({error: "Document not found"});
@@ -1527,12 +1542,13 @@ export default class NetworkManager {
                                 return res.status(400).json({error: "Invalid JSON payload. Expected an object with one or more collections."});
                             }
 
-                            await this.dataManager.importCollections(parsed as {
+                            const importResult = await this.dataManager.importCollections(parsed as {
                                 users?: any[];
                                 documents?: any[];
                                 structures?: any[];
                                 types?: any[];
                             }, mode);
+                            this.emitImportChangeEvents(req.socketID, importResult);
 
                             safeDeleteFile(uploadedFile.path);
                             this.logger.info(`Database JSON import successful for scope=all, mode=${mode}`);
@@ -1550,7 +1566,9 @@ export default class NetworkManager {
                             return res.status(400).json({error: `Invalid JSON payload for scope '${scope}'. Expected an array or an object containing '${scope}'.`});
                         }
 
-                        await this.dataManager.importCollections({[scope]: scopedData}, mode);
+                        const importResult = await this.dataManager.importCollections({[scope]: scopedData}, mode);
+                        this.emitImportChangeEvents(req.socketID, importResult);
+
                         safeDeleteFile(uploadedFile.path);
                         this.logger.info(`Database JSON import successful for scope=${scope}, mode=${mode}`);
                         return res.status(200).json({message: `${scope} imported successfully`});
@@ -1593,7 +1611,9 @@ export default class NetworkManager {
                         return res.status(400).json({error: "ZIP file does not contain any valid database files (.json or .db)"});
                     }
 
-                    await this.dataManager.importCollections(collectionsData, mode);
+                    const importResult = await this.dataManager.importCollections(collectionsData, mode);
+                    this.emitImportChangeEvents(req.socketID, importResult);
+
                     safeDeleteFile(uploadedFile.path);
 
                     this.logger.info(`Database ZIP import successful, mode=${mode}`);
@@ -1694,5 +1714,35 @@ export default class NetworkManager {
             return;
         }
     };
+
+    /**
+     * Emits websocket events for every record that was inserted or updated
+     * by `importCollections`, so connected clients refresh their views
+     * without requiring a manual reload. The event semantics mirror the
+     * regular CRUD endpoints: structures go to all clients, users go to
+     * admins, and documents go to their accessors plus admins.
+     */
+    private emitImportChangeEvents(sourceID: string | undefined, result: IImportResult): void {
+        for (const structure of result.structures.created) {
+            this.socketServer.sendEventToAllClients(sourceID, "newStructure", {newStructure: structure});
+        }
+        for (const structure of result.structures.updated) {
+            this.socketServer.sendEventToAllClients(sourceID, "changedStructure", {changedStructure: structure});
+        }
+        for (const user of result.users.created) {
+            this.socketServer.sendEventToAdmins(sourceID, "newUser", {newUser: user});
+        }
+        for (const user of result.users.updated) {
+            this.socketServer.sendEventToAdmins(sourceID, "changedUser", {changedUser: user});
+        }
+        for (const document of result.documents.created) {
+            this.socketServer.sendEventToDocumentAccessors(sourceID, document._id, "newDocument", {newDocument: document})
+                .catch(err => this.logger.error("Error sending import newDocument event:", err));
+        }
+        for (const document of result.documents.updated) {
+            this.socketServer.sendEventToDocumentAccessors(sourceID, document._id, "changedDocument", {changedDocument: document})
+                .catch(err => this.logger.error("Error sending import changedDocument event:", err));
+        }
+    }
 
 }

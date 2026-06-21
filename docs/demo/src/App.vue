@@ -4,8 +4,10 @@ import {
   initService,
   handleOidcCallback,
   loginWithOidc,
+  loginWithJwt,
   logout,
   loadData,
+  loadAllDocuments,
   loadSettings,
   saveSettings,
   clearSettings,
@@ -13,18 +15,28 @@ import {
   updateDocument,
   removeDocument,
   createStructure,
+  updateStructure,
+  removeStructure,
+  createUser,
+  updateUser,
+  removeUser,
   toggleRealtime,
   clearAuthError,
+  setUseServerConfig,
   isConfigured,
   isAuthenticated,
   authMethod,
   authError,
   loading,
+  isAdmin,
+  userName,
   documents,
   structures,
+  users,
   realtimeEnabled,
+  useServerConfig,
 } from './composables/useDocPouch';
-import type {DocumentEntry, DataStructure, ServerSettings} from './types';
+import type {DocumentEntry, DocumentCreation, DataStructure, UserEntry, UserCreation, ServerSettings} from './types';
 
 // ---------------------------------------------------------------------------
 // UI state
@@ -34,22 +46,31 @@ const showConfigModal = ref(!isConfigured.value);
 const showLoginModal = ref(false);
 const showDocModal = ref(false);
 const showStructureModal = ref(false);
+const showUserModal = ref(false);
 const editingDoc = ref<DocumentEntry | null>(null);
+const editingStructure = ref<DataStructure | null>(null);
+const editingUser = ref<UserEntry | null>(null);
+const loginTab = ref<'oidc' | 'jwt'>('oidc');
+const docFilterMode = ref<'typed' | 'all'>('typed');
 
 const configUrl = ref('');
 const configPort = ref('');
 const configToken = ref('');
 
-const docForm = ref<any>({
+// JWT login form
+const jwtName = ref('');
+const jwtPassword = ref('');
+
+const docForm = ref<DocumentCreation & { content: any }>({
   title: '',
   description: '',
   type: 0,
   subType: 0,
   content: '{}',
-  owner: '',
   shareWithGroup: false,
   shareWithDepartment: false,
   public: false,
+  anonymous: false,
 });
 
 const structureForm = ref<Partial<DataStructure>>({
@@ -62,12 +83,25 @@ const structureForm = ref<Partial<DataStructure>>({
 
 const fieldForm = ref({name: '', displayName: '', type: 'string', items: ''});
 
+const userForm = ref<UserCreation>({
+  name: '',
+  password: '',
+  email: '',
+  department: '',
+  group: '',
+  isAdmin: false,
+});
+
 // ---------------------------------------------------------------------------
 // Computed
 // ---------------------------------------------------------------------------
 
 const sortedDocuments = computed(() =>
     [...documents.value].sort((a, b) => a.title.localeCompare(b.title))
+);
+
+const sortedUsers = computed(() =>
+    [...users.value].sort((a, b) => a.name.localeCompare(b.name))
 );
 
 // ---------------------------------------------------------------------------
@@ -81,8 +115,20 @@ onMounted(async () => {
   configToken.value = settings.registrationToken;
 
   if (!isConfigured.value) {
-    showConfigModal.value = true;
-    return;
+    // Try server-driven config first — initService will fetch /api/oidc-client-config
+    const authenticated = await initService();
+    if (!authenticated) {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.has('code') && urlParams.has('state')) {
+        const handled = await handleOidcCallback();
+        if (handled) return;
+      }
+      if (!isConfigured.value) {
+        showConfigModal.value = true;
+        return;
+      }
+    }
+    if (authenticated) return;
   }
 
   const authenticated = await initService();
@@ -95,9 +141,6 @@ onMounted(async () => {
         showLoginModal.value = false;
         return;
       }
-    }
-    if (urlParams.has('error') || urlParams.has('logout')) {
-      // wasJustLoggedOut handled inside initService
     }
     showLoginModal.value = true;
   }
@@ -137,12 +180,29 @@ function resetConfig() {
 // Login
 // ---------------------------------------------------------------------------
 
-async function handleLogin() {
+async function handleOidcLogin() {
   try {
     await loginWithOidc(configToken.value);
   } catch {
     // error is captured in authError ref
   }
+}
+
+async function handleJwtLogin() {
+  if (!jwtName.value || !jwtPassword.value) return;
+  try {
+    await loginWithJwt(jwtName.value, jwtPassword.value);
+    jwtName.value = '';
+    jwtPassword.value = '';
+    showLoginModal.value = false;
+  } catch {
+    // error is captured in authError ref
+  }
+}
+
+function switchLoginTab(tab: 'oidc' | 'jwt') {
+  loginTab.value = tab;
+  clearAuthError();
 }
 
 // ---------------------------------------------------------------------------
@@ -156,11 +216,11 @@ function openAddDocument() {
     description: '',
     type: 0,
     subType: 0,
-    content: '{}' as any,
-    owner: '',
+    content: '{}',
     shareWithGroup: false,
     shareWithDepartment: false,
     public: false,
+    anonymous: false,
   };
   showDocModal.value = true;
 }
@@ -168,18 +228,42 @@ function openAddDocument() {
 function editDocument(doc: DocumentEntry) {
   editingDoc.value = doc;
   docForm.value = {
-    ...doc,
+    title: doc.title,
+    description: doc.description || '',
+    type: doc.type,
+    subType: doc.subType,
     content: typeof doc.content === 'string' ? doc.content : JSON.stringify(doc.content, null, 2),
+    shareWithGroup: doc.shareWithGroup,
+    shareWithDepartment: doc.shareWithDepartment,
+    public: doc.public,
+    anonymous: (doc as any).anonymous || false,
   };
   showDocModal.value = true;
 }
 
+function parseContent(raw: any): any {
+  if (typeof raw !== 'string') return raw;
+  const trimmed = raw.trim();
+  if (!trimmed) return {};
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // If it's not valid JSON, send it as a plain string wrapped in an object
+    // so it satisfies the server's "content must be object or array" rule.
+    return {text: raw};
+  }
+}
+
 async function saveDocument() {
   try {
+    const payload: DocumentCreation = {
+      ...docForm.value,
+      content: parseContent(docForm.value.content),
+    };
     if (editingDoc.value) {
-      await updateDocument(editingDoc.value._id, docForm.value);
+      await updateDocument(editingDoc.value._id, payload);
     } else {
-      await createDocument(docForm.value as Omit<DocumentEntry, '_id'>);
+      await createDocument(payload);
     }
     showDocModal.value = false;
   } catch (err: any) {
@@ -196,12 +280,36 @@ async function deleteDocument(id: string) {
   }
 }
 
+async function switchDocFilter(mode: 'typed' | 'all') {
+  docFilterMode.value = mode;
+  if (mode === 'all') {
+    await loadAllDocuments();
+  } else {
+    await loadData();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Structure CRUD
 // ---------------------------------------------------------------------------
 
 function openAddStructure() {
+  editingStructure.value = null;
   structureForm.value = {name: '', description: '', type: 0, subType: 0, fields: []};
+  fieldForm.value = {name: '', displayName: '', type: 'string', items: ''};
+  showStructureModal.value = true;
+}
+
+function editStructure(structure: DataStructure) {
+  editingStructure.value = structure;
+  structureForm.value = {
+    _id: structure._id,
+    name: structure.name,
+    description: structure.description,
+    type: structure.type,
+    subType: structure.subType,
+    fields: [...(structure.fields || [])],
+  };
   fieldForm.value = {name: '', displayName: '', type: 'string', items: ''};
   showStructureModal.value = true;
 }
@@ -220,10 +328,85 @@ function removeField(index: number) {
 
 async function saveStructure() {
   try {
-    await createStructure(structureForm.value as DataStructure);
+    if (editingStructure.value && editingStructure.value._id) {
+      await updateStructure(editingStructure.value._id, structureForm.value);
+    } else {
+      await createStructure(structureForm.value as DataStructure);
+    }
     showStructureModal.value = false;
   } catch (err: any) {
     alert(err.message || 'Save failed');
+  }
+}
+
+async function deleteStructure(id: string) {
+  if (!confirm('Are you sure you want to delete this structure?')) return;
+  try {
+    await removeStructure(id);
+  } catch (err: any) {
+    alert(err.message || 'Delete failed');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// User CRUD (admin only)
+// ---------------------------------------------------------------------------
+
+function openAddUser() {
+  editingUser.value = null;
+  userForm.value = {
+    name: '',
+    password: '',
+    email: '',
+    department: '',
+    group: '',
+    isAdmin: false,
+  };
+  showUserModal.value = true;
+}
+
+function editUser(user: UserEntry) {
+  editingUser.value = user;
+  userForm.value = {
+    name: user.name,
+    password: '',
+    email: user.email || '',
+    department: user.department,
+    group: user.group,
+    isAdmin: user.isAdmin,
+  };
+  showUserModal.value = true;
+}
+
+async function saveUser() {
+  try {
+    if (editingUser.value) {
+      const updates: any = {
+        name: userForm.value.name,
+        email: userForm.value.email,
+        department: userForm.value.department,
+        group: userForm.value.group,
+        isAdmin: userForm.value.isAdmin,
+      };
+      if (userForm.value.password) {
+        updates.password = userForm.value.password;
+      }
+      await updateUser(editingUser.value._id, updates);
+    } else {
+      await createUser(userForm.value);
+    }
+    showUserModal.value = false;
+  } catch (err: any) {
+    alert(err.message || 'Save failed');
+  }
+}
+
+async function deleteUser(id: string) {
+  if (!confirm('Are you sure you want to delete this user?')) return;
+  try {
+    await removeUser(id);
+  } catch (err: any) {
+    alert(err.message || 'Delete failed');
   }
 }
 </script>
@@ -236,8 +419,9 @@ async function saveStructure() {
         <h1>DocPouch RP Template</h1>
         <div class="header-actions">
           <span v-if="isAuthenticated" class="auth-badge">
-            {{ authMethod }}
+            {{ authMethod }}{{ isAdmin ? ' · admin' : '' }}
           </span>
+          <span v-if="isAuthenticated && userName" class="user-name">{{ userName }}</span>
           <button v-if="isAuthenticated" :title="realtimeEnabled ? 'Disable realtime sync' : 'Enable realtime sync'" class="icon-btn"
                   @click="toggleRealtime(!realtimeEnabled)">
             {{ realtimeEnabled ? '🔴' : '⚪' }}
@@ -250,10 +434,16 @@ async function saveStructure() {
 
     <!-- Main -->
     <main class="main-content">
+      <!-- Documents card -->
       <div v-if="isAuthenticated" class="card">
         <div class="card-header">
           <h2>Documents</h2>
           <div class="header-actions">
+            <div class="filter-toggle">
+              <button :class="{active: docFilterMode === 'typed'}" @click="switchDocFilter('typed')">Typed (0/0)
+              </button>
+              <button :class="{active: docFilterMode === 'all'}" @click="switchDocFilter('all')">All</button>
+            </div>
             <button class="secondary-btn" @click="openAddStructure">+ Structure</button>
             <button class="primary-btn" @click="openAddDocument">+ Document</button>
           </div>
@@ -287,9 +477,11 @@ async function saveStructure() {
         </div>
       </div>
 
+      <!-- Data Structures card -->
       <div v-if="isAuthenticated && structures.length > 0" class="card">
         <div class="card-header">
           <h2>Data Structures</h2>
+          <button class="secondary-btn" @click="openAddStructure">+ Structure</button>
         </div>
         <div class="table-container">
           <table>
@@ -298,13 +490,53 @@ async function saveStructure() {
               <th>Name</th>
               <th>Type</th>
               <th>Fields</th>
+              <th class="actions-col">Actions</th>
             </tr>
             </thead>
             <tbody>
             <tr v-for="s in structures" :key="s._id">
               <td>{{ s.name }}</td>
               <td>{{ s.type }} / {{ s.subType }}</td>
-              <td>{{ s.fields.length }} fields</td>
+              <td>{{ (s.fields || []).length }} fields</td>
+              <td class="actions-col">
+                <button class="icon-btn" title="Edit" @click="editStructure(s)">✏️</button>
+                <button class="icon-btn" title="Delete" @click="deleteStructure(s._id!)">🗑️</button>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Users card (admin only) -->
+      <div v-if="isAuthenticated && isAdmin" class="card">
+        <div class="card-header">
+          <h2>Users</h2>
+          <button class="primary-btn" @click="openAddUser">+ User</button>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Department</th>
+              <th>Group</th>
+              <th>Admin</th>
+              <th class="actions-col">Actions</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="u in sortedUsers" :key="u._id">
+              <td>{{ u.name }}</td>
+              <td>{{ u.email || '—' }}</td>
+              <td>{{ u.department }}</td>
+              <td>{{ u.group }}</td>
+              <td>{{ u.isAdmin ? '✓' : '' }}</td>
+              <td class="actions-col">
+                <button class="icon-btn" title="Edit" @click="editUser(u)">✏️</button>
+                <button class="icon-btn" title="Delete" @click="deleteUser(u._id)">🗑️</button>
+              </td>
             </tr>
             </tbody>
           </table>
@@ -316,6 +548,10 @@ async function saveStructure() {
     <div v-if="showConfigModal" class="modal-overlay" @click.self="showConfigModal = false">
       <div class="modal card">
         <h2>Server Configuration</h2>
+        <p class="modal-hint">
+          These values are used as a fallback when the server-provided
+          <code>/api/oidc-client-config</code> endpoint is unavailable.
+        </p>
         <div class="form-group">
           <label>DocPouch URL</label>
           <input v-model="configUrl" placeholder="e.g. localhost or https://example.com"/>
@@ -328,6 +564,13 @@ async function saveStructure() {
           <label>OIDC Registration Token</label>
           <input v-model="configToken" placeholder="Ask your DocPouch admin" type="password"/>
         </div>
+        <div class="form-group checkbox-group">
+          <label>
+            <input :checked="useServerConfig" type="checkbox"
+                   @change="setUseServerConfig(($event.target as HTMLInputElement).checked)"/>
+            Use server-provided config (<code>/api/oidc-client-config</code>) first
+          </label>
+        </div>
         <div class="modal-actions">
           <button v-if="isConfigured" class="secondary-btn" @click="showConfigModal = false">Cancel</button>
           <button class="primary-btn" @click="saveConfig">Save</button>
@@ -335,17 +578,42 @@ async function saveStructure() {
       </div>
     </div>
 
-    <!-- Login Modal -->
+    <!-- Login Modal (tabbed) -->
     <div v-if="showLoginModal && !showConfigModal" class="modal-overlay">
       <div class="modal card">
         <h2>Login</h2>
         <div v-if="authError" class="error-msg">{{ authError }}</div>
-        <div class="modal-actions">
-          <button class="secondary-btn" @click="openConfig">Server Settings</button>
-          <button :disabled="!configToken" class="primary-btn" @click="handleLogin">Login with OIDC</button>
+
+        <div class="tab-bar">
+          <button :class="{active: loginTab === 'oidc'}" @click="switchLoginTab('oidc')">OIDC</button>
+          <button :class="{active: loginTab === 'jwt'}" @click="switchLoginTab('jwt')">Username / Password</button>
         </div>
-        <div v-if="!configToken" class="info-msg">
-          You need an OIDC registration token. Click <strong>Server Settings</strong> to enter one.
+
+        <!-- OIDC tab -->
+        <div v-if="loginTab === 'oidc'" class="login-tab">
+          <div class="modal-actions">
+            <button class="secondary-btn" @click="openConfig">Server Settings</button>
+            <button :disabled="!configToken" class="primary-btn" @click="handleOidcLogin">Login with OIDC</button>
+          </div>
+          <div v-if="!configToken" class="info-msg">
+            You need an OIDC registration token. Click <strong>Server Settings</strong> to enter one.
+          </div>
+        </div>
+
+        <!-- JWT tab -->
+        <div v-if="loginTab === 'jwt'" class="login-tab">
+          <div class="form-group">
+            <label>Username</label>
+            <input v-model="jwtName" placeholder="e.g. admin" @keyup.enter="handleJwtLogin"/>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input v-model="jwtPassword" placeholder="Password" type="password" @keyup.enter="handleJwtLogin"/>
+          </div>
+          <div class="modal-actions">
+            <button class="secondary-btn" @click="openConfig">Server Settings</button>
+            <button :disabled="!jwtName || !jwtPassword" class="primary-btn" @click="handleJwtLogin">Login</button>
+          </div>
         </div>
       </div>
     </div>
@@ -374,13 +642,16 @@ async function saveStructure() {
         </div>
         <div class="form-group">
           <label>Content (JSON)</label>
-          <textarea v-model="docForm.content" placeholder="Enter valid JSON"
-                    rows="4"/>
+          <textarea v-model="docForm.content" placeholder="Enter valid JSON" rows="4"/>
         </div>
         <div class="form-row checkboxes">
           <label><input v-model="docForm.shareWithGroup" type="checkbox"/> Share with Group</label>
           <label><input v-model="docForm.shareWithDepartment" type="checkbox"/> Share with Department</label>
           <label><input v-model="docForm.public" type="checkbox"/> Public</label>
+          <label v-if="!editingDoc"><input v-model="docForm.anonymous" type="checkbox"/> Anonymous</label>
+        </div>
+        <div v-if="docForm.anonymous && !editingDoc" class="info-msg">
+          Anonymous documents are owned by the admin user — the <code>owner</code> field is overridden server-side.
         </div>
         <div class="modal-actions">
           <button class="secondary-btn" @click="showDocModal = false">Cancel</button>
@@ -392,7 +663,7 @@ async function saveStructure() {
     <!-- Structure Modal -->
     <div v-if="showStructureModal" class="modal-overlay" @click.self="showStructureModal = false">
       <div class="modal card structure-modal">
-        <h2>New Data Structure</h2>
+        <h2>{{ editingStructure ? 'Edit Structure' : 'New Data Structure' }}</h2>
         <div class="form-group">
           <label>Name</label>
           <input v-model="structureForm.name"/>
@@ -439,6 +710,42 @@ async function saveStructure() {
         </div>
       </div>
     </div>
+
+    <!-- User Modal (admin) -->
+    <div v-if="showUserModal" class="modal-overlay" @click.self="showUserModal = false">
+      <div class="modal card user-modal">
+        <h2>{{ editingUser ? 'Edit User' : 'New User' }}</h2>
+        <div class="form-group">
+          <label>Username</label>
+          <input v-model="userForm.name" :disabled="!!editingUser"/>
+        </div>
+        <div class="form-group">
+          <label>Password {{ editingUser ? '(leave blank to keep)' : '' }}</label>
+          <input v-model="userForm.password" type="password"/>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input v-model="userForm.email" placeholder="optional"/>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Department</label>
+            <input v-model="userForm.department"/>
+          </div>
+          <div class="form-group">
+            <label>Group</label>
+            <input v-model="userForm.group"/>
+          </div>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input v-model="userForm.isAdmin" type="checkbox"/> Administrator</label>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary-btn" @click="showUserModal = false">Cancel</button>
+          <button class="primary-btn" @click="saveUser">Save</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -479,6 +786,11 @@ async function saveStructure() {
   border-radius: 12px;
   font-size: 0.75rem;
   text-transform: uppercase;
+}
+
+.user-name {
+  font-size: 0.85rem;
+  opacity: 0.8;
 }
 
 .main-content {
@@ -629,6 +941,11 @@ td {
   box-sizing: border-box;
 }
 
+.form-group input:disabled {
+  background: #f5f5f5;
+  color: #888;
+}
+
 .form-row {
   display: flex;
   gap: calc(2 * var(--spacing));
@@ -641,12 +958,21 @@ td {
 .checkboxes {
   gap: calc(2 * var(--spacing));
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .checkboxes label {
   display: flex;
   align-items: center;
   gap: 4px;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: normal;
   cursor: pointer;
 }
@@ -675,12 +1001,29 @@ td {
   color: #1976d2;
 }
 
+.modal-hint {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: calc(2 * var(--spacing));
+}
+
+.modal-hint code, .info-msg code {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+
 .doc-modal {
   max-width: 600px;
 }
 
 .structure-modal {
   max-width: 600px;
+}
+
+.user-modal {
+  max-width: 500px;
 }
 
 .field-row {
@@ -711,5 +1054,52 @@ td {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: calc(2 * var(--spacing));
+}
+
+.tab-bar button {
+  background: none;
+  border: none;
+  padding: calc(1.5 * var(--spacing)) calc(2 * var(--spacing));
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #666;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-bar button.active {
+  color: var(--purple);
+  border-bottom-color: var(--purple);
+  font-weight: 500;
+}
+
+.login-tab {
+  min-height: 80px;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.filter-toggle button {
+  background: none;
+  border: none;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.filter-toggle button.active {
+  background: var(--purple);
+  color: white;
 }
 </style>

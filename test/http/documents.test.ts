@@ -507,6 +507,82 @@ describe('Document Management API Tests', () => {
         });
     });
 
+    describe('PATCH /docs/update/{documentID} owner reassignment (admin)', () => {
+        test('admin can reassign the owner of a document to another existing user', async () => {
+            // The user owns testDocumentId, the admin is the other party.
+            const response = await authenticatedRequest(server, adminToken)
+                .patch(`/docs/update/${testDocumentId}`)
+                .send({owner: adminUser._id} as I_DocumentUpdate);
+
+            expect(response.status).toBe(200);
+
+            // The new owner (admin) should now see the document, and the
+            // previous owner (regular user) should NOT see it any more
+            // because the document is private.
+            const adminView = await authenticatedRequest(server, adminToken)
+                .post('/docs/fetch').send({_id: testDocumentId});
+            expect(adminView.body.length).toBe(1);
+            expect(adminView.body[0].owner).toBe(adminUser._id);
+
+            const userView = await authenticatedRequest(server, userToken)
+                .post('/docs/fetch').send({_id: testDocumentId});
+            expect(userView.body.length).toBe(0);
+        });
+
+        test('non-admin cannot reassign owner', async () => {
+            const targetId = testDocumentId;
+            const response = await authenticatedRequest(server, userToken)
+                .patch(`/docs/update/${targetId}`)
+                .send({owner: adminUser._id} as I_DocumentUpdate);
+
+            expect(response.status).toBe(403);
+
+            // Owner should not have changed.
+            const fetchResponse = await authenticatedRequest(server, adminToken)
+                .post('/docs/fetch').send({_id: targetId});
+            expect(fetchResponse.body[0].owner).toBe(regularUser._id);
+        });
+
+        test('admin cannot reassign to a non-existent user', async () => {
+            const response = await authenticatedRequest(server, adminToken)
+                .patch(`/docs/update/${testDocumentId}`)
+                .send({owner: 'NonExistentUser0001'} as I_DocumentUpdate);
+
+            expect(response.status).toBe(400);
+
+            const fetchResponse = await authenticatedRequest(server, adminToken)
+                .post('/docs/fetch').send({_id: testDocumentId});
+            expect(fetchResponse.body[0].owner).toBe(regularUser._id);
+        });
+
+        test('admin can reassign owner of a document whose previous owner is unknown', async () => {
+            // Simulate an orphan document by inserting it directly into
+            // NeDB with an owner id that does not reference any user.
+            const orphan = await dataManager.documents.add({
+                title: 'Orphan',
+                type: 1,
+                subType: 1,
+                shareWithGroup: false,
+                shareWithDepartment: false,
+                public: false,
+                owner: 'GhostUser000000001',
+                content: {note: 'no real owner'},
+            });
+            expect(orphan._id).toBeDefined();
+
+            const response = await authenticatedRequest(server, adminToken)
+                .patch(`/docs/update/${orphan._id}`)
+                .send({owner: adminUser._id} as I_DocumentUpdate);
+
+            expect(response.status).toBe(200);
+
+            const fetchResponse = await authenticatedRequest(server, adminToken)
+                .post('/docs/fetch').send({_id: orphan._id});
+            expect(fetchResponse.body.length).toBe(1);
+            expect(fetchResponse.body[0].owner).toBe(adminUser._id);
+        });
+    });
+
     describe('DELETE /docs/remove/{documentID}', () => {
         test('owner should be able to remove their document', async () => {
             const response = await authenticatedRequest(server, userToken)

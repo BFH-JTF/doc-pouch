@@ -8,6 +8,7 @@ const props = defineProps<{
   userlist: I_UserEntry[]; // Added userlist prop to map owner IDs to usernames
   apiClient: DbPouchClient;
   documentStructures?: I_DataStructure[];
+  isAdmin?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -46,6 +47,15 @@ const documentToDelete = ref<string | null>(null);
 const selectedDocuments = ref<Set<string>>(new Set());
 const isSelectMode = ref(false);
 
+// Owner reassignment
+const showReassignOwnerDialog = ref(false);
+const reassignTargetDocumentID = ref<string | null>(null);
+const reassignTargetDocumentIDs = ref<string[]>([]);
+const reassignNewOwner = ref<string>('');
+const isReassigningOwner = ref(false);
+const reassignError = ref('');
+const reassignSuccess = ref('');
+
 // Create a map of user IDs to usernames
 const userMap = computed(() => {
   const map = new Map();
@@ -54,6 +64,10 @@ const userMap = computed(() => {
   });
   return map;
 });
+
+function isUnknownOwner(ownerID: string): boolean {
+  return !userMap.value.has(ownerID);
+}
 
 // Function to get username from user ID
 const getUsernameFromID = (userID: string): string => {
@@ -114,6 +128,97 @@ const availableOwners = computed(() => {
 
   return [...new Set(ownerUsernames)].sort();
 });
+
+// All users, sorted by name, for the reassign-owner dropdown.
+const availableUsersForReassign = computed(() => {
+  return props.userlist
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(u => ({title: u.name, value: u._id}));
+});
+
+// The documents the reassign dialog will act on, plus a friendly count.
+const reassignTargetCount = computed(() => {
+  if (reassignTargetDocumentID.value) return 1;
+  return reassignTargetDocumentIDs.value.length;
+});
+
+const reassignTargetTitles = computed(() => {
+  if (!props.documentList) return [];
+  const ids = reassignTargetDocumentID.value
+      ? [reassignTargetDocumentID.value]
+      : reassignTargetDocumentIDs.value;
+  return ids
+      .map(id => props.documentList.find(d => d._id === id)?.title ?? id);
+});
+
+function openReassignOwnerDialogSingle(documentID: string) {
+  reassignError.value = '';
+  reassignSuccess.value = '';
+  reassignTargetDocumentID.value = documentID;
+  reassignTargetDocumentIDs.value = [];
+  reassignNewOwner.value = '';
+  showReassignOwnerDialog.value = true;
+}
+
+function openReassignOwnerDialogBulk() {
+  reassignError.value = '';
+  reassignSuccess.value = '';
+  reassignTargetDocumentID.value = null;
+  reassignTargetDocumentIDs.value = Array.from(selectedDocuments.value);
+  reassignNewOwner.value = '';
+  showReassignOwnerDialog.value = true;
+}
+
+function closeReassignOwnerDialog() {
+  if (isReassigningOwner.value) return;
+  showReassignOwnerDialog.value = false;
+  reassignTargetDocumentID.value = null;
+  reassignTargetDocumentIDs.value = [];
+  reassignNewOwner.value = '';
+  reassignError.value = '';
+  reassignSuccess.value = '';
+}
+
+async function performReassignOwner() {
+  const ids = reassignTargetDocumentID.value
+      ? [reassignTargetDocumentID.value]
+      : reassignTargetDocumentIDs.value.slice();
+  if (ids.length === 0 || !reassignNewOwner.value) return;
+
+  isReassigningOwner.value = true;
+  reassignError.value = '';
+  reassignSuccess.value = '';
+
+  let succeeded = 0;
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      await props.apiClient.updateDocument(id, {owner: reassignNewOwner.value} as any);
+      succeeded += 1;
+    } catch (err: any) {
+      failed += 1;
+      // eslint-disable-next-line no-console
+      console.warn(`Failed to reassign owner of ${id}:`, err);
+    }
+  }
+
+  isReassigningOwner.value = false;
+
+  if (failed === 0) {
+    reassignSuccess.value = `Owner reassigned for ${succeeded} document(s).`;
+    emit('documentListChanged');
+    // Exit multi-select mode since the user just acted on the selection.
+    if (!reassignTargetDocumentID.value) {
+      selectedDocuments.value.clear();
+    }
+    setTimeout(() => {
+      closeReassignOwnerDialog();
+    }, 1200);
+  } else {
+    reassignError.value = `Reassigned ${succeeded} document(s); ${failed} failed. See browser console for details.`;
+  }
+}
 
 const hasDefinedDocumentStructures = computed(() => {
   return props.documentStructures && props.documentStructures.length > 0;
@@ -465,7 +570,32 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
               </span>
               <span class="mr-3">
                 <v-icon icon="mdi-account" size="small" class="mr-1"></v-icon>
-                {{ document.owner }}
+                <span :class="{'text-error font-weight-medium': isUnknownOwner(document.ownerId)}">
+                  {{ document.owner }}
+                </span>
+                <v-tooltip v-if="isUnknownOwner(document.ownerId)" location="top">
+                  <template v-slot:activator="{ props: tipProps }">
+                    <v-icon
+                        class="ml-1"
+                        color="error"
+                        icon="mdi-alert-circle-outline"
+                        size="x-small"
+                        v-bind="tipProps"
+                    ></v-icon>
+                  </template>
+                  <span>The owner <code>{{ document.ownerId }}</code> no longer exists.</span>
+                </v-tooltip>
+                <v-btn
+                    v-if="props.isAdmin && isUnknownOwner(document.ownerId) && !isSelectMode"
+                    class="ml-1"
+                    color="primary"
+                    density="compact"
+                    size="x-small"
+                    variant="text"
+                    @click.stop="openReassignOwnerDialogSingle(document.id)"
+                >
+                  Reassign
+                </v-btn>
               </span>
               <span v-if="document.shareWithGroup" class="mr-2">
                 <v-tooltip location="top">
@@ -515,6 +645,16 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
           @click="toggleSelectMode"
       >
         Cancel
+      </v-btn>
+
+      <v-btn
+          v-if="isSelectMode && props.isAdmin && selectedDocuments.size > 0"
+          class="mr-2"
+          color="primary"
+          prepend-icon="mdi-account-switch"
+          @click="openReassignOwnerDialogBulk"
+      >
+        Reassign Owner
       </v-btn>
 
       <v-btn
@@ -594,6 +734,68 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
         <v-spacer></v-spacer>
         <v-btn color="grey-darken-1" variant="text" @click="cancelDelete">Cancel</v-btn>
         <v-btn color="error" variant="text" @click="executeDelete">Delete</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
+  <!-- Owner reassignment dialog (admin only). Works for a single
+       document and for the multi-select selection. -->
+  <v-dialog v-model="showReassignOwnerDialog" max-width="500">
+    <v-card>
+      <v-card-title class="text-h6">
+        <v-icon class="mr-2" icon="mdi-account-switch"></v-icon>
+        Reassign Owner
+      </v-card-title>
+      <v-card-text>
+        <p v-if="reassignTargetCount > 1" class="mb-2">
+          Reassigning owner for <strong>{{ reassignTargetCount }}</strong> selected document(s):
+        </p>
+        <p v-else class="mb-2">
+          Reassigning owner for <strong>{{ reassignTargetTitles[0] }}</strong>.
+        </p>
+
+        <ul v-if="reassignTargetCount > 1" class="mb-3" style="max-height: 160px; overflow-y: auto;">
+          <li v-for="title in reassignTargetTitles" :key="title">
+            <code>{{ title }}</code>
+          </li>
+        </ul>
+
+        <v-select
+            v-model="reassignNewOwner"
+            :disabled="isReassigningOwner"
+            :items="availableUsersForReassign"
+            density="compact"
+            label="New owner"
+            prepend-inner-icon="mdi-account"
+            variant="outlined"
+        ></v-select>
+
+        <v-alert v-if="reassignError" class="mt-2" density="compact" type="error" variant="tonal">
+          {{ reassignError }}
+        </v-alert>
+        <v-alert v-if="reassignSuccess" class="mt-2" density="compact" type="success" variant="tonal">
+          {{ reassignSuccess }}
+        </v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn
+            :disabled="isReassigningOwner"
+            color="grey-darken-1"
+            variant="text"
+            @click="closeReassignOwnerDialog"
+        >
+          Cancel
+        </v-btn>
+        <v-btn
+            :disabled="!reassignNewOwner || isReassigningOwner"
+            :loading="isReassigningOwner"
+            color="primary"
+            variant="elevated"
+            @click="performReassignOwner"
+        >
+          Reassign
+        </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
