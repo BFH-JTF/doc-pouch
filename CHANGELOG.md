@@ -1,3 +1,10 @@
+## [1.20.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.3...v1.20.4) (2026-06-21)
+
+
+### Bug Fixes
+
+* remove outdated HTTP request templates and enhance example app** ([9585635](https://github.com/BFH-JTF/doc-pouch/commit/958563520933334cfc113c4419a0eaa552cca014))
+
 ## [1.20.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.2...v1.20.3) (2026-06-19)
 
 
