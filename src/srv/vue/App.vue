@@ -15,7 +15,7 @@ import {
   type FieldRenameMap,
   type IStructureDiff
 } from "./components/structurePropagation/index.ts";
-import docPouchLogo from './assets/docPouch.png';
+import docPouchLogo from '@/srv/assets/docPouch.png';
 import AboutDialog from "./components/AboutDialog.vue";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog.vue";
 import ApiKeyManagementDialog from "./components/ApiKeyManagementDialog.vue";
