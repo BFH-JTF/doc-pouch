@@ -1,3 +1,10 @@
+## [1.20.5](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.4...v1.20.5) (2026-06-24)
+
+
+### Bug Fixes
+
+* adjust asset path resolution and extend backend build script ([0a42cee](https://github.com/BFH-JTF/doc-pouch/commit/0a42cee6ed7a17c2974c7540bbedd0f927b80d31))
+
 ## [1.20.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.3...v1.20.4) (2026-06-21)
 
 
