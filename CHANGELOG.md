@@ -1,3 +1,10 @@
+## [1.20.6](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.5...v1.20.6) (2026-06-24)
+
+
+### Bug Fixes
+
+* add docPouch.png asset to project ([31cff34](https://github.com/BFH-JTF/doc-pouch/commit/31cff34ede17e38572f88cfd686db02401059b31))
+
 ## [1.20.5](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.4...v1.20.5) (2026-06-24)
 
 
