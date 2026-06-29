@@ -1,3 +1,10 @@
+## [1.20.7](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.6...v1.20.7) (2026-06-29)
+
+
+### Bug Fixes
+
+* enforce required fields for structure schemas and update dependencies ([9b5f5d8](https://github.com/BFH-JTF/doc-pouch/commit/9b5f5d8337a8ca3fb504b26c813bd680bdcdb812))
+
 ## [1.20.6](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.5...v1.20.6) (2026-06-24)
 
 
