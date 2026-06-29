@@ -250,15 +250,6 @@ export default class NetworkManager {
                         ctx.body = html;
                     },
                     postLogoutSuccessSource: async function renderLogoutSuccessPage(ctx: any) {
-                        // Note: when this function is reached, oidc-provider has
-                        // already destroyed the server-side session in
-                        // end_session.confirm() (see
-                        // node_modules/oidc-provider/lib/actions/end_session.js,
-                        // line 160). The session adapter destroy() call below
-                        // was a no-op at best and confusing at worst — remove
-                        // it. The only thing we need to do here is clear the
-                        // browser cookies (the proxy for the OIDC provider's
-                        // own cookie clearing) and render the success page.
                         const cookieNames = ['_session', '_interaction', '_interaction_resume'];
                         const cookieOptions = {
                             path: '/',

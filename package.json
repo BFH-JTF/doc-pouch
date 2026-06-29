@@ -23,7 +23,7 @@
     "@mdi/font": "^7.4.47",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@seald-io/nedb": "^4.1.2",
-    "adm-zip": "^0.5.17",
+    "adm-zip": "^0.5.18",
     "archiver": "^8.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
@@ -34,11 +34,11 @@
     "jsonwebtoken": "9.0.3",
     "multer": "2.1.1",
     "node-fetch": "^3.3.2",
-    "oidc-provider": "^9.8.4",
-    "semver": "^7.8.4",
+    "oidc-provider": "^9.8.6",
+    "semver": "^7.8.5",
     "socket.io": "^4.8.3",
-    "vue": "^3.5.38",
-    "vuetify": "^4.1.1",
+    "vue": "^3.5.39",
+    "vuetify": "^4.1.2",
     "winston": "^3.19.0",
     "yup": "^1.7.1"
   },
@@ -64,12 +64,12 @@
     "@vue/tsconfig": "^0.9.1",
     "babel-jest": "^30.4.1",
     "jest": "^30.4.2",
-    "semantic-release": "^25.0.3",
+    "semantic-release": "^25.0.5",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.11",
     "typescript": "^6.0.3",
-    "vite": "^7.3.5",
-    "vue-tsc": "^3.3.4"
+    "vite": "^7.3.6",
+    "vue-tsc": "^3.3.5"
   }
 }

@@ -151,6 +151,65 @@ describe('Data Structure API Tests', () => {
             expect(response.status).toBe(400);
         });
 
+        test('should reject creation without type', async () => {
+            const noType = {
+                name: 'Missing Type Structure',
+                subType: 1,
+                fields: [
+                    {
+                        name: 'Field',
+                        displayName: 'Field',
+                        type: 'string'
+                    }
+                ]
+            };
+
+            const response = await authenticatedRequest(server, adminToken)
+                .post('/structures/create')
+                .send(noType);
+
+            expect(response.status).toBe(400);
+        });
+
+        test('should reject creation without subType', async () => {
+            const noSubType = {
+                name: 'Missing SubType Structure',
+                type: 1,
+                fields: [
+                    {
+                        name: 'Field',
+                        displayName: 'Field',
+                        type: 'string'
+                    }
+                ]
+            };
+
+            const response = await authenticatedRequest(server, adminToken)
+                .post('/structures/create')
+                .send(noSubType);
+
+            expect(response.status).toBe(400);
+        });
+
+        test('should reject creation without type and subType', async () => {
+            const noTypeOrSubType = {
+                name: 'Missing Both Structure',
+                fields: [
+                    {
+                        name: 'Field',
+                        displayName: 'Field',
+                        type: 'string'
+                    }
+                ]
+            };
+
+            const response = await authenticatedRequest(server, adminToken)
+                .post('/structures/create')
+                .send(noTypeOrSubType);
+
+            expect(response.status).toBe(400);
+        });
+
         test('should return 401 for unauthenticated request', async () => {
             const newStructure = {
                 name: 'Unauthenticated Structure',
@@ -337,6 +396,59 @@ describe('Data Structure API Tests', () => {
                 .send(updateData);
 
             expect(response.status).toBe(401);
+        });
+
+        test('should reject update without type', async () => {
+            const response = await authenticatedRequest(server, adminToken)
+                .patch(`/structures/update/${testStructureId}`)
+                .send({
+                    name: 'Updated Without Type',
+                    subType: 9,
+                    fields: [
+                        {
+                            name: 'Field',
+                            displayName: 'Field',
+                            type: 'string'
+                        }
+                    ]
+                });
+
+            expect(response.status).toBe(400);
+        });
+
+        test('should reject update without subType', async () => {
+            const response = await authenticatedRequest(server, adminToken)
+                .patch(`/structures/update/${testStructureId}`)
+                .send({
+                    name: 'Updated Without SubType',
+                    type: 9,
+                    fields: [
+                        {
+                            name: 'Field',
+                            displayName: 'Field',
+                            type: 'string'
+                        }
+                    ]
+                });
+
+            expect(response.status).toBe(400);
+        });
+
+        test('should reject update without type and subType', async () => {
+            const response = await authenticatedRequest(server, adminToken)
+                .patch(`/structures/update/${testStructureId}`)
+                .send({
+                    name: 'Updated Without Both',
+                    fields: [
+                        {
+                            name: 'Field',
+                            displayName: 'Field',
+                            type: 'string'
+                        }
+                    ]
+                });
+
+            expect(response.status).toBe(400);
         });
     });
 

@@ -51,8 +51,8 @@ export const GetStructureSchema = z.object({
 export const CreateStructureSchema = z.object({
     name: z.string().min(1),
     description: z.string().optional(),
-    type: z.number().optional(),
-    subType: z.number().optional(),
+    type: z.number(),
+    subType: z.number(),
     fields: z.array(z.object({
         name: z.string().min(1),
         displayName: z.string().optional(),
@@ -65,8 +65,8 @@ export const UpdateStructureSchema = z.object({
     id: z.string().min(1),
     name: z.string().optional(),
     description: z.string().optional(),
-    type: z.number().optional(),
-    subType: z.number().optional(),
+    type: z.number(),
+    subType: z.number(),
     fields: z.array(z.object({
         name: z.string().min(1),
         displayName: z.string().optional(),

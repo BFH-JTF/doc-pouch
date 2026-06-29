@@ -85,8 +85,8 @@ export default class SchemaValidator {
         this.structureCreationSchema = object({
             name: string().required(),
             description: string().optional(),
-            type: number().optional(),
-            subType: number().optional(),
+            type: number().required(),
+            subType: number().required(),
             fields: array().of(
                 object({
                     name: string().required(),
@@ -100,8 +100,8 @@ export default class SchemaValidator {
         this.structureUpdateSchema = object({
             name: string().optional(),
             description: string().optional(),
-            type: number().optional(),
-            subType: number().optional(),
+            type: number().required(),
+            subType: number().required(),
             fields: array().of(
                 object({
                     name: string().required(),

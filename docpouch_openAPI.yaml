@@ -1469,6 +1469,12 @@ components:
           type: string
           description: "The description of the structure"
           example: "Data resulting from Vision-Mission-Value-Canvas"
+        type:
+          type: number
+          description: "Numeric type of the structure (must be provided together with subType)"
+        subType:
+          type: number
+          description: "Numeric subtype of the structure (must be provided together with type)"
         fields:
           type: array
           description: "Array of fields defining the structure"
@@ -1476,6 +1482,8 @@ components:
             $ref: "#/components/schemas/DataField"
       required:
         - name
+        - type
+        - subType
         - fields
 
     DataField:
