@@ -1432,6 +1432,29 @@ export default class NetworkManager {
             }
         });
 
+        this.expressApp.post("/structures/create-defaults", this.authenticate, (req, res) => {
+            this.dataManager.isAdmin(req.userid).then(async (isAdmin) => {
+                if (!isAdmin) {
+                    return res.status(403).json({error: "Only admins can create default structures"});
+                }
+
+                try {
+                    const createdStructures = await this.dataManager.createDefaultStructures();
+                    for (const structure of createdStructures) {
+                        this.socketServer.sendEventToAllClients(req.socketID, "newStructure", {newStructure: structure});
+                    }
+                    res.status(200).json({
+                        message: `Created ${createdStructures.length} default structure(s)`,
+                        structures: createdStructures
+                    });
+                } catch (error) {
+                    res.status(500).json({error: (error as Error).message || error});
+                }
+            }).catch((error) => {
+                res.status(500).json({error: error.message || error});
+            });
+        });
+
         this.expressApp.get("/version/check", (req, res) => {
             const updateResult = getCachedUpdateResult();
             if (updateResult) {
