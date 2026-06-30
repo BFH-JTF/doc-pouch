@@ -1,3 +1,10 @@
+## [1.20.8](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.7...v1.20.8) (2026-06-30)
+
+
+### Bug Fixes
+
+* update default structure creation and improve admin state handling ([f036ed8](https://github.com/BFH-JTF/doc-pouch/commit/f036ed8cdaea84be49bc4343e899a0dffdc8475f))
+
 ## [1.20.7](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.6...v1.20.7) (2026-06-29)
 
 
