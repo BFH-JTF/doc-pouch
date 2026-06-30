@@ -87,12 +87,16 @@ const pendingPropagation = ref<{
   diff: IStructureDiff;
   affectedDocumentsCount: number;
 } | null>(null);
-let isAdmin = computed(() => {
-  if (authToken.value === null) {
-    return false;
+let isAdmin = ref(localStorage.getItem('isAdmin') === 'true');
+
+function setIsAdmin(value: boolean) {
+  isAdmin.value = value;
+  if (value) {
+    localStorage.setItem('isAdmin', 'true');
+  } else {
+    localStorage.removeItem('isAdmin');
   }
-  return localStorage.getItem('isAdmin') === 'true';
-})
+}
 
 function setToken(token: string | null) {
   console.log("Setting token:", token ? "token present" : "null");
@@ -421,11 +425,11 @@ async function fetchData() {
 function handleLoginSuccess(loginInformation: I_LoginResponse | null) {
   if (loginInformation !== null) {
     console.log("Login success, setting token");
+    if (loginInformation.isAdmin !== undefined) {
+      setIsAdmin(loginInformation.isAdmin);
+    }
     setToken(loginInformation.token ?? null);
     loggedInUsername.value = loginInformation.userName;
-    if (loginInformation.isAdmin !== undefined) {
-      localStorage.setItem('isAdmin', String(loginInformation.isAdmin));
-    }
     fetchData();
   } else {
     console.log("Login failed, token not set");
@@ -457,7 +461,7 @@ async function syncOidcUserInfo() {
     if (meResponse.ok) {
       const me = await meResponse.json();
       loggedInUsername.value = me.name;
-      localStorage.setItem('isAdmin', String(me.isAdmin));
+      setIsAdmin(me.isAdmin);
       return true;
     }
   } catch {
@@ -635,7 +639,7 @@ async function handleLogout() {
   apiClient.logout();
   authToken.value = null;
   localStorage.removeItem('authToken');
-  localStorage.removeItem('isAdmin');
+  setIsAdmin(false);
   userArray.value = [];
   docArray.value = [];
   structureArray.value = [];
@@ -658,7 +662,7 @@ function handleApiError(error: unknown, context: string = "API operation") {
       authToken.value = null;
       localStorage.removeItem('authToken');
       localStorage.removeItem('docpouch_oidc_session');
-      localStorage.removeItem('isAdmin');
+      setIsAdmin(false);
       localStorage.removeItem('authMethod');
       showLoginDialog.value = true;
     } else if (error.message.includes('204')) {

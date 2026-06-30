@@ -15,6 +15,7 @@ import {
 } from "docpouch-client";
 import ApiKeyManager from "./ApiKeyManager.js";
 
+
 // Type declaration to help TypeScript understand Nedb constructor
 declare const NedbConstructor: new (options?: any) => any;
 type NedbInstance = InstanceType<typeof NedbConstructor>;
@@ -1038,55 +1039,60 @@ export default class NeDbWrapper {
             this.logger.info(`Created new admin user: ${JSON.stringify(addedUser)}`);
         }
 
-        const docCount = await this.documents.count({});
-        if (docCount < 1) {
-            const admin = await this.getAdminUser();
-            if (admin._id) {
-                const defaultDocument: I_DocumentCreationOwned = {
-                    shareWithDepartment: false,
-                    shareWithGroup: false,
-                    title: "Demo Document",
-                    owner: admin._id,
-                    description: "This is just a demo, delete when you don't need it anymore",
-                    subType: 99,
-                    type: 99,
-                    public: false,
-                    content: [{
-                        label: "This is a demo document not following any document structure",
-                        importance: 0
-                    }]
-                };
-                const document = await this.documents.add(defaultDocument);
-                this.logger.info(`Created new document: ${JSON.stringify(document)}`);
-            }
-        }
-
         const structCount = await this.structures.count({});
         if (structCount < 1) {
-            const admin = await this.getAdminUser();
-            if (admin._id) {
-                const defaultStructure: I_DataStructure = {
-                    _id: "tt5vo04DN3jm8Bqe",
-                    description: "This is a demo structure.",
-                    name: "City Info",
-                    type: 99,
-                    subType: 99,
-                    fields: [
-                        {
-                            name: "cityName",
-                            displayName: "City Name",
-                            type: "string",
-                        },
-                        {
-                            name: "inhabitants",
-                            displayName: "# of Inhabitants",
-                            type: "number"
-                        }
-                    ]
-                };
-                const structure = await this.structures.add(defaultStructure);
-                this.logger.info(`Created new structure: ${JSON.stringify(structure)}`);
-            }
+            const defaultStructure: I_DataStructure = {
+                name: "Tool Definition",
+                description: "Configuration document for toolchain tools.",
+                type: 0,
+                subType: 0,
+                fields: [
+                    {
+                        name: "name",
+                        displayName: "Name",
+                        type: "string",
+                    },
+                    {
+                        name: "description",
+                        displayName: "Description",
+                        type: "string",
+                    },
+                    {
+                        name: "url",
+                        displayName: "URL",
+                        type: "string",
+                    },
+                    {
+                        name: "responsible",
+                        displayName: "Responsible",
+                        type: "string",
+                    },
+                    {
+                        name: "icon",
+                        displayName: "Icon",
+                        type: "string",
+                    },
+                    {
+                        name: "incomingDataStructureIDs",
+                        displayName: "Incoming Structures",
+                        type: "array",
+                        items: "string",
+                    },
+                    {
+                        name: "outgoingDataStructureIDs",
+                        displayName: "Outgoing Structures",
+                        type: "array",
+                        items: "string",
+                    },
+                    {
+                        name: "assignments",
+                        displayName: "Assignments",
+                        type: "object",
+                    }
+                ]
+            };
+            const structure = await this.structures.add(defaultStructure);
+            this.logger.info(`Created new structure: ${JSON.stringify(structure)}`);
         }
 
         this.logger.info("Database initialization complete");
