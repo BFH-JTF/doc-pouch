@@ -515,6 +515,14 @@ export default class NetworkManager {
             this.logger.log("info", `Server is running on ${hostAddress}:${this.port}`);
             this.logger.info(`Session timeout: ${JWTOptions.settings.expiresIn} (JWT), ${parseDurationToSeconds(JWTOptions.settings.expiresIn as string)}s (OIDC TTLs)`);
         });
+        this.webServer.on('error', (err: NodeJS.ErrnoException) => {
+            if (err.code === 'EADDRINUSE') {
+                this.logger.error(`Port ${this.port} is already in use. Is another DocPouch instance or a Docker container holding it? Exiting.`);
+            } else {
+                this.logger.error(`HTTP server error: ${err.message}`);
+            }
+            process.exit(1);
+        });
         this.socketServer = new IoSocketServer(this, {
             secret: JWTOptions.secret,
             algorithm: JWTOptions.settings.algorithm
@@ -548,7 +556,13 @@ export default class NetworkManager {
         this.logger.info(`Serving static files from: ${vuePath}`);
 
         this.expressApp.use(cors(this.corsOptions));
-        this.expressApp.use(express.static(vuePath));
+        this.expressApp.use(express.static(vuePath, {
+            setHeaders: (res, filePath) => {
+                if (filePath.endsWith('index.html')) {
+                    res.setHeader('Cache-Control', 'no-cache');
+                }
+            }
+        }));
         // Serve OIDC login page and static assets
         const oidcStaticPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv'))
             ? path.resolve(process.cwd(), 'dist/srv')
@@ -1675,6 +1689,7 @@ export default class NetworkManager {
 
         this.expressApp.use((req, res, next) => {
             // For all other routes, serve the index.html file
+            res.setHeader('Cache-Control', 'no-cache');
             res.sendFile(path.join(vuePath, 'index.html'));
         });
 
