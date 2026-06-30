@@ -212,7 +212,7 @@ const emit = defineEmits<{
   (e: 'structureCreated', structure: I_DataStructure): void;
 }>();
 
-const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure'];
+const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure', 'object'];
 const primitiveTypes = ['string', 'number', 'boolean'];
 const arrayItemTypes = ['string', 'number', 'boolean', 'structure'];
 
@@ -317,13 +317,30 @@ function cancelDialog() {
   emit('cancelDialog');
 }
 
+function findFreeTypeSubtype(): { type: number; subType: number } {
+  if (props.structureList.length === 0) {
+    return {type: 0, subType: 0};
+  }
+  const used = new Set(props.structureList.map(s => `${s.type}:${s.subType}`));
+  const maxType = Math.max(...props.structureList.map(s => s.type));
+  for (let t = 0; t <= maxType + 1; t++) {
+    for (let st = 0; st <= maxType + 1; st++) {
+      if (!used.has(`${t}:${st}`)) {
+        return {type: t, subType: st};
+      }
+    }
+  }
+  return {type: maxType + 1, subType: 0};
+}
+
 watch(() => props.show, (newVal) => {
   if (newVal) {
+    const {type, subType} = findFreeTypeSubtype();
     newStructure.value = {
       _id: undefined,
       name: "",
-      type: props.structureList.length === 0 ? 0 : Math.max(...props.structureList.map(s => s.type)) + 1,
-      subType: 0,
+      type,
+      subType,
       description: "",
       fields: []
     };

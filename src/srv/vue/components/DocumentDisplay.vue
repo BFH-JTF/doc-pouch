@@ -115,7 +115,7 @@ function resolveDocLink(docId: string): Promise<DocLinkEntry> {
   }
   return props.apiClient
       .fetchDocuments({_id: docId} as any)
-      .then(docs => {
+      .then((docs: I_DocumentEntry[]) => {
         // eslint-disable-next-line no-console
         console.warn('[docLink] fetchDocuments returned', docId, 'docs.length=', docs?.length);
         const entry: DocLinkEntry = docs.length > 0
@@ -124,7 +124,7 @@ function resolveDocLink(docId: string): Promise<DocLinkEntry> {
         setDocLinkEntry(docId, entry);
         return entry;
       })
-      .catch(err => {
+      .catch((err: unknown) => {
         // eslint-disable-next-line no-console
         console.warn('[docLink] fetchDocuments threw', docId, err);
         const entry: DocLinkEntry = {state: 'missing'};

@@ -24,7 +24,7 @@ const emit = defineEmits<{
   }];
 }>();
 
-const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure'];
+const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure', 'object'];
 const primitiveTypes = ['string', 'number', 'boolean'];
 const arrayItemTypes = ['string', 'number', 'boolean', 'structure'];
 
@@ -161,6 +161,7 @@ const typeIcons: Record<string, IconEntry> = {
   boolean: { icon: 'mdi-toggle-switch-outline', color: 'purple' },
   array: { icon: 'mdi-format-list-bulleted-square', color: 'warning' },
   structure: { icon: 'mdi-database', color: 'primary' },
+  object: {icon: 'mdi-folder', color: 'amber'},
   default: { icon: 'mdi-help-circle-outline', color: 'grey' }
 };
 
@@ -240,7 +241,7 @@ function createFieldNode(field: I_StructureField): I_StructureTreeItem {
     case 'structure':
       node.icon = typeIcons.structure.icon;
       node.color = typeIcons.structure.color;
-      
+
       if (field.items) {
         const referencedStructure = props.structureList.find(s => s._id === field.items);
         if (referencedStructure) {
@@ -265,7 +266,13 @@ function createFieldNode(field: I_StructureField): I_StructureTreeItem {
         node.name = `${field.displayName} [${field.name}]`;
       }
       break;
-      
+
+    case 'object':
+      node.icon = typeIcons.object.icon;
+      node.color = typeIcons.object.color;
+      node.name = `${field.displayName} [${field.name}]`;
+      break;
+
     default:
       node.icon = typeIcons.default.icon;
       node.color = typeIcons.default.color;
@@ -373,6 +380,10 @@ watch(treeItems, (newItems) => {
                 <div class="legend-item">
                   <v-icon size="small" color="primary">{{ typeIcons.structure.icon }}</v-icon>
                   <span class="legend-label">Structure</span>
+                </div>
+                <div class="legend-item">
+                  <v-icon color="amber" size="small">{{ typeIcons.object.icon }}</v-icon>
+                  <span class="legend-label">Object</span>
                 </div>
               </div>
             </div>
