@@ -916,11 +916,6 @@ async function migrateDatabase() {
           </v-list>
         </v-menu>
       </v-app-bar>
-      <v-alert v-if="isLoggedIn" type="info" variant="tonal" closable class="ma-4">
-        <strong>Welcome to DocPouch Administration</strong> — an open-source document management system that allows you
-        to organize, edit, and share structured data. This panel lets you manage users, data structures, and documents.
-      </v-alert>
-
       <v-alert v-if="showConsistencyAlert" class="ma-4" closable type="error" variant="tonal"
                @click:close="showConsistencyAlert = false">
         <strong>Database Inconsistency Detected!</strong>

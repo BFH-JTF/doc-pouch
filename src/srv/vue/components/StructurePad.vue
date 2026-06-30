@@ -21,6 +21,10 @@ const nameFilter = ref('');
 const showDeleteConfirmDialog = ref(false);
 const structureToDelete = ref<string | null>(null);
 
+// Multi-select functionality
+const selectedStructures = ref<Set<string>>(new Set());
+const isSelectMode = ref(false);
+
 const sortBy = ref(sessionStorage.getItem('structureSortBy') || 'title');
 const sortDesc = ref(sessionStorage.getItem('structureSortDesc') === 'true');
 const sortOptions = [
@@ -45,14 +49,19 @@ const clearFilters = () => {
 };
 
 const confirmDelete = () => {
-  if (selectedStructureID.value) {
+  if (isSelectMode.value && selectedStructures.value.size > 0) {
+    showDeleteConfirmDialog.value = true;
+  } else if (selectedStructureID.value) {
     structureToDelete.value = selectedStructureID.value;
     showDeleteConfirmDialog.value = true;
   }
 };
 
 const executeDelete = () => {
-  if (structureToDelete.value) {
+  if (isSelectMode.value && selectedStructures.value.size > 0) {
+    removeSelectedStructures();
+    showDeleteConfirmDialog.value = false;
+  } else if (structureToDelete.value) {
     emit('structureRemoved', structureToDelete.value);
     selectedStructureID.value = null;
     showDeleteConfirmDialog.value = false;
@@ -63,6 +72,29 @@ const executeDelete = () => {
 const cancelDelete = () => {
   showDeleteConfirmDialog.value = false;
   structureToDelete.value = null;
+};
+
+const toggleStructureSelection = (structureID: string) => {
+  if (selectedStructures.value.has(structureID)) {
+    selectedStructures.value.delete(structureID);
+  } else {
+    selectedStructures.value.add(structureID);
+  }
+};
+
+const toggleSelectMode = () => {
+  isSelectMode.value = !isSelectMode.value;
+  if (!isSelectMode.value) {
+    selectedStructures.value.clear();
+  }
+};
+
+const removeSelectedStructures = () => {
+  selectedStructures.value.forEach(structureID => {
+    emit('structureRemoved', structureID);
+  });
+  selectedStructures.value.clear();
+  selectedStructureID.value = null;
 };
 
 // Enhanced filtered structures
@@ -106,9 +138,13 @@ const showCreationDialog = ref(false);
 
 const selectStructure = (structureID: string | undefined) => {
   if (structureID !== undefined) {
-    selectedStructureID.value = structureID;
-    console.log('StructurePad: Emitting structureSelected with ID:', structureID);
-    emit('structureSelected', structureID);
+    if (isSelectMode.value) {
+      toggleStructureSelection(structureID);
+    } else {
+      selectedStructureID.value = structureID;
+      console.log('StructurePad: Emitting structureSelected with ID:', structureID);
+      emit('structureSelected', structureID);
+    }
   }
   else
     selectedStructureID.value = null;
@@ -195,8 +231,18 @@ const cancelCreation = () => {
           :active="selectedStructureID !== null && selectedStructureID === structure.id"
           @click="selectStructure(structure.id)"
           class="structure-list-item"
+            :class="{ 'selected-item': selectedStructures.has(structure.id) }"
         >
           <template v-slot:prepend>
+            <!-- Checkbox for multi-select mode -->
+            <v-checkbox
+                v-if="isSelectMode"
+                :model-value="selectedStructures.has(structure.id)"
+                class="mr-2"
+                hide-details
+                @click.stop="toggleStructureSelection(structure.id)"
+            ></v-checkbox>
+
             <v-avatar color="primary" size="32">
               <v-icon icon="mdi-table"></v-icon>
             </v-avatar>
@@ -226,8 +272,66 @@ const cancelCreation = () => {
     </div>
 
     <div v-if="isAdmin" class="d-flex justify-end mt-3">
-      <v-btn class="mr-2" color="primary" prepend-icon="mdi-plus" @click="showCreationDialog = true">New</v-btn>
-      <v-btn color="error" prepend-icon="mdi-delete" @click="confirmDelete" :disabled="!selectedStructureID || !props.isAdmin">Remove</v-btn>
+      <!-- Multi-select controls -->
+      <v-btn
+          v-if="isSelectMode"
+          class="mr-2"
+          color="primary"
+          variant="text"
+          @click="toggleSelectMode"
+      >
+        Cancel
+      </v-btn>
+
+      <v-btn
+          v-if="isSelectMode && selectedStructures.size > 0"
+          class="mr-2"
+          color="error"
+          prepend-icon="mdi-delete"
+          @click="showDeleteConfirmDialog = true"
+      >
+        Remove {{ selectedStructures.size }} Structure(s)
+      </v-btn>
+
+      <v-btn
+          v-if="isSelectMode"
+          color="primary"
+          prepend-icon="mdi-select-multiple"
+          @click="toggleSelectMode"
+      >
+        Select Mode
+      </v-btn>
+
+      <!-- Standard controls -->
+      <v-btn
+          v-if="!isSelectMode"
+          class="mr-2"
+          color="primary"
+          prepend-icon="mdi-plus"
+          @click="showCreationDialog = true"
+      >
+        New
+      </v-btn>
+
+      <v-btn
+          v-if="!isSelectMode"
+          class="mr-2"
+          color="primary"
+          prepend-icon="mdi-select-multiple"
+          @click="toggleSelectMode"
+      >
+        Select Multiple
+      </v-btn>
+
+      <v-btn
+          v-if="!isSelectMode"
+          :disabled="!selectedStructureID || !props.isAdmin"
+          color="error"
+          prepend-icon="mdi-delete"
+          @click="confirmDelete"
+      >
+        Remove
+      </v-btn>
     </div>
 
     <!-- Creation Dialog -->
@@ -264,7 +368,12 @@ const cancelCreation = () => {
         <v-alert type="warning" variant="tonal" density="compact" class="mb-3">
           Warning: Deleting a data structure may impact documents that use this structure. This action cannot be undone.
         </v-alert>
-        Are you sure you want to delete this structure?
+        <div v-if="isSelectMode && selectedStructures.size > 0">
+          Are you sure you want to delete {{ selectedStructures.size }} selected structure(s)?
+        </div>
+        <div v-else>
+          Are you sure you want to delete this structure?
+        </div>
       </v-card-text>
       <v-card-actions>
         <v-spacer></v-spacer>
@@ -292,5 +401,9 @@ const cancelCreation = () => {
 
 .structure-list-item:last-child {
   border-bottom: none;
+}
+
+.selected-item {
+  background-color: rgba(33, 150, 243, 0.1) !important;
 }
 </style>

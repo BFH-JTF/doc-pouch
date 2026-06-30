@@ -26,12 +26,13 @@ const emit = defineEmits<{
 
 const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure', 'object'];
 const primitiveTypes = ['string', 'number', 'boolean'];
-const arrayItemTypes = ['string', 'number', 'boolean', 'structure'];
+const arrayItemTypes = ['string', 'number', 'boolean', 'structure', 'object'];
 
 function getArrayItemCategory(field: I_StructureField): string {
   if ((field as any)._arrayCategory) return (field as any)._arrayCategory;
   if (field.items === undefined || field.items === null) return 'string';
   if (field.items === '') return 'structure';
+  if (field.items === 'object') return 'object';
   if (primitiveTypes.includes(field.items)) return field.items;
   return 'structure';
 }
