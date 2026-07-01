@@ -605,12 +605,20 @@ const switchFilterMode = (newMode: 'raw' | 'structure') => {
                   <span>Shared with group</span>
                 </v-tooltip>
               </span>
-              <span v-if="document.shareWithDepartment">
+              <span v-if="document.shareWithDepartment" class="mr-2">
                 <v-tooltip location="top">
                   <template v-slot:activator="{ props }">
                     <v-icon color="primary" icon="mdi-office-building" size="small" v-bind="props"></v-icon>
                   </template>
                   <span>Shared with department</span>
+                </v-tooltip>
+              </span>
+              <span v-if="document.public">
+                <v-tooltip location="top">
+                  <template v-slot:activator="{ props }">
+                    <v-icon color="primary" icon="mdi-earth" size="small" v-bind="props"></v-icon>
+                  </template>
+                  <span>Public document</span>
                 </v-tooltip>
               </span>
             </div>
