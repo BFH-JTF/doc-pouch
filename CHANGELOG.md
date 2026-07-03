@@ -1,3 +1,14 @@
+## [1.20.9](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.8...v1.20.9) (2026-07-03)
+
+
+### Bug Fixes
+
+* add "Public document" UI indicator in DocumentPad.vue ([db888e2](https://github.com/BFH-JTF/doc-pouch/commit/db888e2b4d6884ebcf027d01f6303215fc8e17b1))
+* add multi-select and bulk delete functionality to structure UI ([c5d5fcd](https://github.com/BFH-JTF/doc-pouch/commit/c5d5fcdfb76b4c61fdae4bc8a4a5bdbdd73a6cc8))
+* add support for "object" field type in structure UI components ([b5cdd20](https://github.com/BFH-JTF/doc-pouch/commit/b5cdd202f24023e0efd3f4622307435805533c8d))
+* handle server errors, improve caching, and add dynamic version checking ([e928651](https://github.com/BFH-JTF/doc-pouch/commit/e928651b5ccb59c226857401280bf1987480bdf0))
+* implement default structure creation functionality ([0f00492](https://github.com/BFH-JTF/doc-pouch/commit/0f0049297e55d9a7ec7e9fbfddb5dcf82b5aea2d))
+
 ## [1.20.8](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.7...v1.20.8) (2026-06-30)
 
 
