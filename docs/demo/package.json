@@ -12,7 +12,7 @@
     "register": "node register.js"
   },
   "dependencies": {
-    "docpouch-client": "^1.1.4",
+    "docpouch-client": "^1.2.0",
     "express": "^4.19.2",
     "vue": "^3.5.0"
   },

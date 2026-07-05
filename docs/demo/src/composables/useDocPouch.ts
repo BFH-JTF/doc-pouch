@@ -18,6 +18,7 @@ import DocPouchClient, {
     type I_UserCreation,
     type I_UserUpdate,
     type I_LoginResponse,
+    type I_OidcClientConfig,
 } from 'docpouch-client';
 import type {
     DocumentEntry,
@@ -75,10 +76,6 @@ function normalizeBaseUrl(url: string, port: string): string {
     return base;
 }
 
-function getOidcIssuer(baseUrl: string): string {
-    return `${baseUrl}/oidc`;
-}
-
 function is401Error(err: unknown): boolean {
     if (err instanceof Error) {
         const m = err.message.toLowerCase();
@@ -115,18 +112,34 @@ function is403Error(err: unknown): boolean {
 
 /**
  * Fetch the OIDC/client configuration from the RP's own backend
- * (/api/oidc-client-config). This is the server-driven path: the deployed
- * server.js knows where DocPouch lives and hands that info to the browser.
+ * (/api/oidc-client-config). Uses the client library's
+ * fetchOidcClientConfig() when available, falls back to a raw fetch
+ * when the client hasn't been initialized yet.
  *
  * Returns null if the endpoint is unreachable or reports `configured: false`.
  */
 async function fetchServerConfig(): Promise<ServerClientConfig | null> {
     try {
-        const resp = await fetch('/api/oidc-client-config');
-        if (!resp.ok) return null;
-        const data: ServerClientConfig = await resp.json();
-        if (!data.configured) return null;
-        return data;
+        let config: I_OidcClientConfig | null;
+        if (client) {
+            config = await client.fetchOidcClientConfig();
+        } else {
+            // Fallback: raw fetch before client is initialized
+            const resp = await fetch('/api/oidc-client-config');
+            if (!resp.ok) return null;
+            const data = await resp.json();
+            if (data.configured === false || !data.issuer) return null;
+            config = data;
+        }
+        if (!config) return null;
+        return {
+            configured: config.configured ?? true,
+            issuer: config.issuer,
+            apiBaseUrl: config.apiBaseUrl,
+            redirectUri: config.redirectUri,
+            postLogoutRedirectUri: config.postLogoutRedirectUri,
+            scopes: config.scope ? config.scope.split(' ') : config.scopes,
+        };
     } catch {
         return null;
     }
@@ -180,13 +193,19 @@ export function clearSettings() {
     localStorage.removeItem('docpouch_url');
     localStorage.removeItem('docpouch_port');
     localStorage.removeItem('docpouch_registration_token');
-    localStorage.removeItem('docpouch_oidc_client_id');
-    localStorage.removeItem('docpouch_oidc_session');
-    localStorage.removeItem('docpouch_jwt_session');
+    if (client) {
+        client.clearPersistedAuthState();
+    } else {
+        localStorage.removeItem('docpouch_oidc_client_id');
+        localStorage.removeItem('docpouch_oidc_session');
+        localStorage.removeItem('docpouch_jwt_session');
+    }
 }
 
 // ---------------------------------------------------------------------------
 // OIDC client registration (dynamic registration pattern)
+// Uses the client library's ensureOidcClient() method which handles
+// localStorage caching of the client ID, update-vs-register logic, etc.
 // ---------------------------------------------------------------------------
 
 async function ensureOidcClient(
@@ -195,35 +214,11 @@ async function ensureOidcClient(
     registrationToken: string
 ): Promise<string> {
     if (!client) throw new Error('Client not initialized');
-
-    const storedClientId = localStorage.getItem('docpouch_oidc_client_id');
     const postLogoutProxy = `${baseUrl}/oidc/logout-redirect?post_logout_redirect_uri=${encodeURIComponent(redirectUri)}`;
-
-    const payload = {
-        client_name: 'DocPouch RP Template',
-        redirect_uris: [redirectUri],
-        post_logout_redirect_uris: [redirectUri, postLogoutProxy],
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-        token_endpoint_auth_method: 'none' as const,
-        application_type: 'web' as const,
-    };
-
-    if (storedClientId) {
-        try {
-            await client.updateOidcClient(storedClientId, payload, registrationToken);
-            return storedClientId;
-        } catch (e) {
-            console.log('Client update failed, will re-register:', e);
-        }
-    }
-
-    const response = await client.registerOidcClient(payload, registrationToken);
-    localStorage.setItem('docpouch_oidc_client_id', response.client_id);
-    if (response.registration_access_token) {
-        localStorage.setItem('docpouch_registration_token', response.registration_access_token);
-    }
-    return response.client_id;
+    return await client.ensureOidcClient(redirectUri, registrationToken, {
+        clientName: 'DocPouch RP Template',
+        postLogoutRedirectUri: postLogoutProxy,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -273,56 +268,26 @@ export async function initService(): Promise<boolean> {
     client = new DocPouchClient(baseUrl, 0, handleSocketEvent);
     registerCallbacks();
 
-    // Logout return detection
-    if (client.wasJustLoggedOut()) {
-        client.setToken(null);
-        isAuthenticated.value = false;
-        authMethod.value = 'none';
-        return false;
+    // If server config provided OIDC settings, set them on the client
+    if (serverConfig) {
+        client.setOidcConfig({
+            issuer: serverConfig.issuer || client.getOidcIssuer(),
+            clientId: serverConfig.clientId || '',
+            redirectUri: serverConfig.redirectUri || window.location.origin + window.location.pathname,
+            postLogoutRedirectUri: serverConfig.postLogoutRedirectUri,
+            scope: serverConfig.scopes?.join(' ') || 'openid profile email offline_access',
+        });
     }
 
-    // Restore existing OIDC session
-    if (client.restoreOidcSession()) {
-        const storedClientId = localStorage.getItem('docpouch_oidc_client_id');
-        if (storedClientId) {
-            const redirectUri = window.location.origin + window.location.pathname;
-            const issuer = getOidcIssuer(baseUrl);
-            const postLogoutProxy = `${baseUrl}/oidc/logout-redirect?post_logout_redirect_uri=${encodeURIComponent(redirectUri)}`;
-            client.setOidcConfig({
-                issuer,
-                clientId: storedClientId,
-                redirectUri,
-                postLogoutRedirectUri: postLogoutProxy,
-                scope: 'openid profile email offline_access',
-            });
-        }
+    // Use the client library's initAuth() to handle all session restoration
+    const authState = await client.initAuth();
+    if (authState.method !== 'none' && authState.token) {
         isAuthenticated.value = true;
-        authMethod.value = client.getAuthMethod();
+        authMethod.value = authState.method;
         realtimeEnabled.value = true;
         client.setRealTimeSync(true);
         await loadData();
         return true;
-    }
-
-    // Restore JWT session from localStorage
-    const savedJwt = localStorage.getItem('docpouch_jwt_token');
-    if (savedJwt) {
-        client.setToken(savedJwt);
-        if (client.isAuthenticated()) {
-            isAuthenticated.value = true;
-            authMethod.value = 'jwt';
-            isAdmin.value = localStorage.getItem('docpouch_jwt_is_admin') === 'true';
-            userName.value = localStorage.getItem('docpouch_jwt_username') || '';
-            realtimeEnabled.value = true;
-            client.setRealTimeSync(true);
-            await loadData();
-            return true;
-        } else {
-            // Token expired / invalid
-            localStorage.removeItem('docpouch_jwt_token');
-            localStorage.removeItem('docpouch_jwt_is_admin');
-            localStorage.removeItem('docpouch_jwt_username');
-        }
     }
 
     isAuthenticated.value = false;
@@ -354,6 +319,7 @@ export async function loginWithJwt(name: string, password: string): Promise<void
         localStorage.setItem('docpouch_jwt_token', response.token);
         localStorage.setItem('docpouch_jwt_is_admin', String(response.isAdmin || false));
         localStorage.setItem('docpouch_jwt_username', response.userName || name);
+        client.persistAuthMethod('jwt');
 
         isAuthenticated.value = true;
         authMethod.value = 'jwt';
@@ -380,7 +346,7 @@ export async function loginWithOidc(registrationToken: string): Promise<void> {
         const {baseUrl} = await resolveBaseUrl();
         const redirectUri = window.location.origin + window.location.pathname;
         const clientId = await ensureOidcClient(baseUrl, redirectUri, registrationToken);
-        const issuer = getOidcIssuer(baseUrl);
+        const issuer = client.getOidcIssuer();
         const postLogoutProxy = `${baseUrl}/oidc/logout-redirect?post_logout_redirect_uri=${encodeURIComponent(redirectUri)}`;
         const config = {
             issuer,
@@ -408,20 +374,33 @@ export async function handleOidcCallback(): Promise<boolean> {
     if (!urlParams.has('code') || !urlParams.has('state')) return false;
 
     try {
-        const {baseUrl} = await resolveBaseUrl();
-        const storedClientId = localStorage.getItem('docpouch_oidc_client_id');
-        if (!storedClientId) return false;
+        const {baseUrl, serverConfig} = await resolveBaseUrl();
 
-        const redirectUri = window.location.origin + window.location.pathname;
-        const issuer = getOidcIssuer(baseUrl);
-        const postLogoutProxy = `${baseUrl}/oidc/logout-redirect?post_logout_redirect_uri=${encodeURIComponent(redirectUri)}`;
-        client.setOidcConfig({
-            issuer,
-            clientId: storedClientId,
-            redirectUri,
-            postLogoutRedirectUri: postLogoutProxy,
-            scope: 'openid profile email offline_access',
-        });
+        // Rebuild OIDC config for the callback
+        if (serverConfig) {
+            const redirectUri = window.location.origin + window.location.pathname;
+            client.setOidcConfig({
+                issuer: serverConfig.issuer || client.getOidcIssuer(),
+                clientId: serverConfig.clientId || '',
+                redirectUri: serverConfig.redirectUri || redirectUri,
+                postLogoutRedirectUri: serverConfig.postLogoutRedirectUri,
+                scope: serverConfig.scopes?.join(' ') || 'openid profile email offline_access',
+            });
+        } else {
+            // Fallback: use localStorage clientId and derive issuer
+            const storedClientId = localStorage.getItem('docpouch_oidc_client_id');
+            if (!storedClientId) return false;
+            const redirectUri = window.location.origin + window.location.pathname;
+            const issuer = client.getOidcIssuer();
+            const postLogoutProxy = `${baseUrl}/oidc/logout-redirect?post_logout_redirect_uri=${encodeURIComponent(redirectUri)}`;
+            client.setOidcConfig({
+                issuer,
+                clientId: storedClientId,
+                redirectUri,
+                postLogoutRedirectUri: postLogoutProxy,
+                scope: 'openid profile email offline_access',
+            });
+        }
 
         const handled = await client.handleOidcCallback();
         if (handled && client.isAuthenticated()) {
@@ -676,12 +655,9 @@ function handle401() {
     isAdmin.value = false;
     userName.value = '';
     if (client) {
-        client.setToken(null);
+        client.clearAuth();
         client.setRealTimeSync(false);
     }
-    localStorage.removeItem('docpouch_jwt_token');
-    localStorage.removeItem('docpouch_jwt_is_admin');
-    localStorage.removeItem('docpouch_jwt_username');
 }
 
 export function clearAuthError() {
@@ -703,9 +679,7 @@ export async function logout(): Promise<void> {
 
         // For JWT logout (no redirect), clear local reactive state + storage
         if (authMethod.value === 'jwt') {
-            localStorage.removeItem('docpouch_jwt_token');
-            localStorage.removeItem('docpouch_jwt_is_admin');
-            localStorage.removeItem('docpouch_jwt_username');
+            client.clearPersistedAuthState();
         }
         isAuthenticated.value = false;
         authMethod.value = 'none';
@@ -717,7 +691,7 @@ export async function logout(): Promise<void> {
         users.value = [];
     } catch (err) {
         console.warn('Logout failed, clearing local state:', err);
-        if (client) client.setToken(null);
+        if (client) client.clearAuth();
         isAuthenticated.value = false;
         authMethod.value = 'none';
         realtimeEnabled.value = false;
@@ -726,9 +700,6 @@ export async function logout(): Promise<void> {
         documents.value = [];
         structures.value = [];
         users.value = [];
-        localStorage.removeItem('docpouch_jwt_token');
-        localStorage.removeItem('docpouch_jwt_is_admin');
-        localStorage.removeItem('docpouch_jwt_username');
     }
 }
 

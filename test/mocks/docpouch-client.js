@@ -61,6 +61,79 @@ class DbPouchClient {
     }
 
     // add more no-op methods as needed by your code under test
+
+    // OIDC convenience methods
+    async fetchOidcClientConfig() {
+        return null;
+    }
+
+    async getCurrentUser() {
+        return null;
+    }
+
+    async ensureOidcClient(/* redirectUri, registrationToken, options */) {
+        return 'mock-client-id';
+    }
+
+    async initAuth() {
+        return {method: 'none', token: null, isAdmin: false, userName: ''};
+    }
+
+    clearAuth() {
+        // no-op
+    }
+
+    persistAuthMethod(/* method */) {
+        // no-op
+    }
+
+    clearPersistedAuthState() {
+        // no-op
+    }
+
+    async startOidcLogin(/* registrationToken */) {
+        // no-op
+    }
+
+    getOidcIssuer() {
+        return 'http://localhost:3030/oidc';
+    }
+
+    async handleOidcCallback() {
+        return false;
+    }
+
+    restoreOidcSession() {
+        return false;
+    }
+
+    setOidcConfig(/* config */) {
+        // no-op
+    }
+
+    async loginWithOidc(/* config */) {
+        // no-op
+    }
+
+    async logout(/* options */) {
+        // no-op
+    }
+
+    wasJustLoggedOut() {
+        return false;
+    }
+
+    getAuthMethod() {
+        return 'none';
+    }
+
+    isAuthenticated() {
+        return false;
+    }
+
+    getToken() {
+        return null;
+    }
 }
 
 export default DbPouchClient;

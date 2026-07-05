@@ -24,7 +24,8 @@ import type {
   I_DocumentEntry,
   I_UserEntry,
   I_DataStructure,
-  I_LoginResponse
+  I_LoginResponse,
+  I_OidcClientConfig
 } from "docpouch-client";
 
 interface I_LegacyDocumentType {
@@ -39,15 +40,6 @@ interface I_LegacyDocumentType {
 }
 
 const serverPort = 3030;
-
-interface I_OidcClientConfig {
-  configured: boolean;
-  issuer: string;
-  clientId: string;
-  redirectUri: string;
-  postLogoutRedirectUri?: string;
-  scope: string;
-}
 
 const oidcConfig = ref<I_OidcClientConfig | null>(null);
 enum DisplayComponent {
@@ -103,10 +95,12 @@ function setToken(token: string | null) {
   authToken.value = token;
   apiClient.setToken(token);
 
-  if (token)
+  if (token) {
     localStorage.setItem('authToken', token);
-  else
+    apiClient.persistAuthMethod('jwt');
+  } else {
     localStorage.removeItem('authToken');
+  }
 }
 
 watch(authToken, (newToken) => {
@@ -452,14 +446,9 @@ async function checkForUpdates() {
 }
 
 async function syncOidcUserInfo() {
-  const token = apiClient.getToken();
-  if (!token) return false;
   try {
-    const meResponse = await fetch('/users/whoami', {
-      headers: {'Authorization': `Bearer ${token}`}
-    });
-    if (meResponse.ok) {
-      const me = await meResponse.json();
+    const me = await apiClient.getCurrentUser();
+    if (me) {
       loggedInUsername.value = me.name;
       setIsAdmin(me.isAdmin);
       return true;
@@ -472,67 +461,23 @@ async function syncOidcUserInfo() {
 onMounted(async () => {
   // Fetch OIDC config for later use
   try {
-    const configResponse = await fetch('/api/oidc-client-config');
-    if (configResponse.ok) {
-      const config = await configResponse.json();
-      if (config.configured) {
-        oidcConfig.value = config;
-        showOidcLogin.value = true;
-        apiClient.setOidcConfig(config);
-      }
+    const config = await apiClient.fetchOidcClientConfig();
+    if (config) {
+      oidcConfig.value = config;
+      showOidcLogin.value = true;
+      apiClient.setOidcConfig(config);
     }
   } catch {
   }
 
-  // 1. Check if we just returned from a completed logout
-  if (apiClient.wasJustLoggedOut()) {
-    console.log("OIDC logout completed, clearing all auth state");
-    setToken(null);
-    localStorage.removeItem('docpouch_oidc_session');
-    localStorage.removeItem('authMethod');
-    return;
-  }
-
-  // 2. Try OIDC callback (URL has code/state from OIDC redirect)
-  try {
-    const handled = await apiClient.handleOidcCallback();
-    if (handled) {
-      const token = apiClient.getToken();
-      if (token) {
-        console.log("OIDC callback handled, authenticating with OIDC token");
-        authToken.value = token;
-        showLoginDialog.value = false;
-        localStorage.setItem('authMethod', 'oidc');
-        await syncOidcUserInfo();
-        await fetchData();
-        await checkForUpdates();
-        return;
-      }
-    }
-  } catch (e) {
-    console.error("OIDC callback error:", e);
-  }
-
-  // 2. Try OIDC session restore
-  if (apiClient.restoreOidcSession()) {
-    const token = apiClient.getToken();
-    if (token) {
-      console.log("OIDC session restored");
-      authToken.value = token;
-      showLoginDialog.value = false;
-      localStorage.setItem('authMethod', 'oidc');
+  // Use initAuth() to handle all session restoration
+  const authState = await apiClient.initAuth();
+  if (authState.method !== 'none' && authState.token) {
+    authToken.value = authState.token;
+    showLoginDialog.value = false;
+    if (authState.method === 'oidc') {
       await syncOidcUserInfo();
-      await fetchData();
-      await checkForUpdates();
-      return;
     }
-  }
-
-  // 3. Fallback to JWT token
-  const storedToken = localStorage.getItem('authToken');
-  if (storedToken) {
-    console.log("Found token in local storage. Setting it.");
-    setToken(storedToken);
     await fetchData();
     await checkForUpdates();
   }
@@ -541,9 +486,9 @@ onMounted(async () => {
 async function startOidcLogin() {
   try {
     if (!oidcConfig.value) {
-      const configResponse = await fetch('/api/oidc-client-config');
-      if (configResponse.ok) {
-        oidcConfig.value = await configResponse.json();
+      const config = await apiClient.fetchOidcClientConfig();
+      if (config) {
+        oidcConfig.value = config;
       }
     }
     if (oidcConfig.value) {
@@ -620,9 +565,9 @@ async function handleLogout() {
   //    act on the post-redirect URL.
   //  - Tell the apiClient to redirect to the OIDC end_session endpoint
   //    (or, for JWT, clear the JWT token client-side immediately).
-  //  - Optimistically clear the in-memory UI state and the JWT in
-  //    localStorage so any in-flight API calls fail and the spinner
-  //    shows up while the OIDC redirect is being prepared.
+  //  - Optimistically clear the in-memory UI state so any in-flight
+  //    API calls fail and the spinner shows up while the OIDC redirect
+  //    is being prepared.
   //
   // Critically, we do NOT clear docpouch_oidc_session or authMethod
   // from localStorage here. If the user clicks "No, stay signed in" on
@@ -633,12 +578,11 @@ async function handleLogout() {
   //
   // If the user confirms the logout, the OIDC provider destroys the
   // server-side session and redirects back. wasJustLoggedOut() then
-  // returns true and explicitly clears the OIDC session from
-  // localStorage in onMounted (lines 367-373).
+  // returns true and initAuth()/clearAuth() explicitly clears the OIDC
+  // session from localStorage.
   sessionStorage.setItem('docpouch_logout_in_progress', 'true');
   apiClient.logout();
   authToken.value = null;
-  localStorage.removeItem('authToken');
   setIsAdmin(false);
   userArray.value = [];
   docArray.value = [];
@@ -660,10 +604,8 @@ function handleApiError(error: unknown, context: string = "API operation") {
         error.message.includes('403') || error.message.includes('Forbidden')) {
       apiClient.logout();
       authToken.value = null;
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('docpouch_oidc_session');
+      apiClient.clearPersistedAuthState();
       setIsAdmin(false);
-      localStorage.removeItem('authMethod');
       showLoginDialog.value = true;
     } else if (error.message.includes('204')) {
       if (context.includes("specific document")) {
