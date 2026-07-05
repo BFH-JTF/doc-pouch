@@ -268,7 +268,7 @@ export async function setupOidcTestServer() {
 
     const corsOptions: I_CorsOption = {
         origin: '*',
-        allowedHeaders: 'Content-Type, Authorization'
+        allowedHeaders: 'Content-Type, Authorization, X-Socket-ID'
     };
     const networkManager = new NetworkManager(testLogger, dataManager, OIDC_TEST_PORT, corsOptions);
     await new Promise(resolve => setTimeout(resolve, 100));

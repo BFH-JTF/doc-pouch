@@ -17,6 +17,17 @@ function getUserId(): string | null {
     return store?.userid ?? null;
 }
 
+function parseContent(content: unknown): unknown {
+    if (typeof content === 'string') {
+        try {
+            return JSON.parse(content);
+        } catch {
+            return content;
+        }
+    }
+    return content;
+}
+
 export function registerDocumentTools(
     server: McpServer,
     dataManager: NeDbWrapper,
@@ -90,7 +101,7 @@ export function registerDocumentTools(
                 subType: args.subType,
                 title: args.title,
                 description: args.description,
-                content: args.content,
+                content: parseContent(args.content),
                 public: args.public,
                 shareWithGroup: args.shareWithGroup,
                 shareWithDepartment: args.shareWithDepartment,
@@ -124,7 +135,7 @@ export function registerDocumentTools(
             const updateData: Record<string, unknown> = {};
             if (args.title !== undefined) updateData.title = args.title;
             if (args.description !== undefined) updateData.description = args.description;
-            if (args.content !== undefined) updateData.content = args.content;
+            if (args.content !== undefined) updateData.content = parseContent(args.content);
             if (args.public !== undefined) updateData.public = args.public;
             if (args.shareWithGroup !== undefined) updateData.shareWithGroup = args.shareWithGroup;
             if (args.shareWithDepartment !== undefined) updateData.shareWithDepartment = args.shareWithDepartment;

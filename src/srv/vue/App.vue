@@ -998,6 +998,7 @@ async function migrateDatabase() {
                 v-show="shownComponent === DisplayComponent.documentViewer"
                 @update:object="handleDocumentUpdate"
                 @document-link-clicked="handleDocumentSelected"
+                @structure-link-clicked="handleStructureSelected"
                 @document-link-missing="handleDocumentLinkMissing"
             />
             <UserDisplay

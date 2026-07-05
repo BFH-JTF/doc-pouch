@@ -15,6 +15,7 @@ console.warn('[docLink] DocumentDisplay setup: apiClient present=', !!props.apiC
 const emit = defineEmits<{
   'update:object': [updatedObject: I_DocumentEntry | undefined];
   'document-link-clicked': [documentId: string];
+  'structure-link-clicked': [structureId: string];
   'document-link-missing': [documentId: string];
 }>();
 
@@ -75,9 +76,11 @@ async function copyIdToClipboard() {
 }
 
 type DocLinkState = 'unknown' | 'found' | 'missing';
+type DocLinkKind = 'document' | 'structure';
 
 interface DocLinkEntry {
   state: DocLinkState;
+  kind?: DocLinkKind;
   title?: string;
 }
 
@@ -108,6 +111,14 @@ function setDocLinkEntry(docId: string, entry: DocLinkEntry) {
 function resolveDocLink(docId: string): Promise<DocLinkEntry> {
   // eslint-disable-next-line no-console
   console.warn('[docLink] resolveDocLink start', docId, 'apiClient=', !!props.apiClient, 'apiClientType=', typeof props.apiClient, 'hasFetch=', typeof props.apiClient?.fetchDocuments);
+
+  const matchingStructure = props.structureList.find(s => s._id === docId);
+  if (matchingStructure) {
+    const entry: DocLinkEntry = {state: 'found', kind: 'structure', title: matchingStructure.name};
+    setDocLinkEntry(docId, entry);
+    return Promise.resolve(entry);
+  }
+
   if (!props.apiClient) {
     // eslint-disable-next-line no-console
     console.warn('[docLink] apiClient missing, returning unknown');
@@ -119,7 +130,7 @@ function resolveDocLink(docId: string): Promise<DocLinkEntry> {
         // eslint-disable-next-line no-console
         console.warn('[docLink] fetchDocuments returned', docId, 'docs.length=', docs?.length);
         const entry: DocLinkEntry = docs.length > 0
-            ? {state: 'found', title: docs[0].title}
+            ? {state: 'found', kind: 'document', title: docs[0].title}
             : {state: 'missing'};
         setDocLinkEntry(docId, entry);
         return entry;
@@ -159,14 +170,22 @@ async function openDocument(docId: string) {
   if (!cached) {
     const entry = await resolveDocLink(docId);
     if (entry.state === 'found') {
-      emit('document-link-clicked', docId);
+      if (entry.kind === 'structure') {
+        emit('structure-link-clicked', docId);
+      } else {
+        emit('document-link-clicked', docId);
+      }
     } else if (entry.state === 'missing') {
       emit('document-link-missing', docId);
     }
     return;
   }
   if (cached.state === 'found') {
-    emit('document-link-clicked', docId);
+    if (cached.kind === 'structure') {
+      emit('structure-link-clicked', docId);
+    } else {
+      emit('document-link-clicked', docId);
+    }
   } else if (cached.state === 'missing') {
     emit('document-link-missing', docId);
   }
@@ -692,18 +711,23 @@ const getValueAtPath = (obj: any, path: string[]): any => {
                   <template v-if="couldBeDocumentId(value)">
                     <a
                         v-if="getDocLinkEntry(value).state === 'found'"
-                        :title="getDocLinkEntry(value).title"
-                        class="doc-link doc-link--ok"
+                        :class="getDocLinkEntry(value).kind === 'structure' ? 'doc-link doc-link--structure' : 'doc-link doc-link--ok'"
+                        :title="getDocLinkEntry(value).kind === 'structure' ? 'Structure: ' + getDocLinkEntry(value).title : getDocLinkEntry(value).title"
                         @mouseenter="scheduleLookup(value)"
                         @mousedown.stop.prevent="openDocument(value)"
                     >
-                      <v-icon class="mr-1" color="success" icon="mdi-link-variant" size="small"></v-icon>
-                      {{ getDocLinkEntry(value).title || value }}
+                      <v-icon :color="getDocLinkEntry(value).kind === 'structure' ? 'deep-purple' : 'success'"
+                              :icon="getDocLinkEntry(value).kind === 'structure' ? 'mdi-form-dropdown' : 'mdi-link-variant'"
+                              class="mr-1"
+                              size="small"></v-icon>
+                      {{
+                        getDocLinkEntry(value).kind === 'structure' ? getDocLinkEntry(value).title + ' (structure)' : getDocLinkEntry(value).title || value
+                      }}
                     </a>
                     <span
                         v-else-if="getDocLinkEntry(value).state === 'missing'"
                         class="doc-link doc-link--missing"
-                        title="Document not found"
+                        title="Referenced document not found"
                     >
                       <v-icon class="mr-1" color="error" icon="mdi-link-off" size="small"></v-icon>
                       {{ value }}
@@ -793,18 +817,23 @@ const getValueAtPath = (obj: any, path: string[]): any => {
                       <template v-if="couldBeDocumentId(item)">
                         <a
                             v-if="getDocLinkEntry(item).state === 'found'"
-                            :title="getDocLinkEntry(item).title"
-                            class="doc-link doc-link--ok"
+                            :class="getDocLinkEntry(item).kind === 'structure' ? 'doc-link doc-link--structure' : 'doc-link doc-link--ok'"
+                            :title="getDocLinkEntry(item).kind === 'structure' ? 'Structure: ' + getDocLinkEntry(item).title : getDocLinkEntry(item).title"
                             @mouseenter="scheduleLookup(item)"
                             @mousedown.stop.prevent="openDocument(item)"
                         >
-                          <v-icon class="mr-1" color="success" icon="mdi-link-variant" size="small"></v-icon>
-                          {{ getDocLinkEntry(item).title || item }}
+                          <v-icon :color="getDocLinkEntry(item).kind === 'structure' ? 'deep-purple' : 'success'"
+                                  :icon="getDocLinkEntry(item).kind === 'structure' ? 'mdi-form-dropdown' : 'mdi-link-variant'"
+                                  class="mr-1"
+                                  size="small"></v-icon>
+                          {{
+                            getDocLinkEntry(item).kind === 'structure' ? getDocLinkEntry(item).title + ' (structure)' : getDocLinkEntry(item).title || item
+                          }}
                         </a>
                         <span
                             v-else-if="getDocLinkEntry(item).state === 'missing'"
                             class="doc-link doc-link--missing"
-                            title="Document not found"
+                            title="Referenced document not found"
                         >
                           <v-icon class="mr-1" color="error" icon="mdi-link-off" size="small"></v-icon>
                           {{ item }}
@@ -896,18 +925,23 @@ const getValueAtPath = (obj: any, path: string[]): any => {
                       <template v-if="couldBeDocumentId(nestedValue)">
                         <a
                             v-if="getDocLinkEntry(nestedValue).state === 'found'"
-                            :title="getDocLinkEntry(nestedValue).title"
-                            class="doc-link doc-link--ok"
+                            :class="getDocLinkEntry(nestedValue).kind === 'structure' ? 'doc-link doc-link--structure' : 'doc-link doc-link--ok'"
+                            :title="getDocLinkEntry(nestedValue).kind === 'structure' ? 'Structure: ' + getDocLinkEntry(nestedValue).title : getDocLinkEntry(nestedValue).title"
                             @mouseenter="scheduleLookup(nestedValue)"
                             @mousedown.stop.prevent="openDocument(nestedValue)"
                         >
-                          <v-icon class="mr-1" color="success" icon="mdi-link-variant" size="small"></v-icon>
-                          {{ getDocLinkEntry(nestedValue).title || nestedValue }}
+                          <v-icon :color="getDocLinkEntry(nestedValue).kind === 'structure' ? 'deep-purple' : 'success'"
+                                  :icon="getDocLinkEntry(nestedValue).kind === 'structure' ? 'mdi-form-dropdown' : 'mdi-link-variant'"
+                                  class="mr-1"
+                                  size="small"></v-icon>
+                          {{
+                            getDocLinkEntry(nestedValue).kind === 'structure' ? getDocLinkEntry(nestedValue).title + ' (structure)' : getDocLinkEntry(nestedValue).title || nestedValue
+                          }}
                         </a>
                         <span
                             v-else-if="getDocLinkEntry(nestedValue).state === 'missing'"
                             class="doc-link doc-link--missing"
-                            title="Document not found"
+                            title="Referenced document not found"
                         >
                           <v-icon class="mr-1" color="error" icon="mdi-link-off" size="small"></v-icon>
                           {{ nestedValue }}
@@ -1041,6 +1075,14 @@ const getValueAtPath = (obj: any, path: string[]): any => {
 
 .doc-link--ok .v-icon {
   color: #2e7d32;
+}
+
+.doc-link--structure {
+  color: #5e35b1;
+}
+
+.doc-link--structure .v-icon {
+  color: #5e35b1;
 }
 
 .doc-link--missing {

@@ -10,23 +10,15 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || "*";
-const ALLOWED_HEADERS = process.env.ALLOWED_HEADERS || "";
+const ALLOWED_HEADERS = process.env.ALLOWED_HEADERS || "Content-Type, Authorization, X-Socket-ID";
 
 const origins = ALLOWED_ORIGINS.split(",").map(o => o.trim());
-// If the operator did not configure ALLOWED_HEADERS, leave the option
-// unset so the cors middleware reflects the browser's
-// Access-Control-Request-Headers on preflight. This is the safe
-// default for token-auth APIs (no cookies) and avoids breaking
-// clients that send additional custom headers (e.g. docpouch-client
-// sends X-Socket-ID whenever the socket.io connection is up).
-//
-// If ALLOWED_HEADERS is set, restrict the preflight to exactly that
-// list — the operator's intent is explicit and we should honor it.
+// Default allowed headers include X-Socket-ID which docpouch-client
+// sends whenever the socket.io connection is up. Operators can override
+// the list via the ALLOWED_HEADERS env var (comma-separated).
 const corsOptions: I_CorsOption = {
     origin: origins.length === 1 ? origins[0] : origins,
-    allowedHeaders: ALLOWED_HEADERS
-        ? ALLOWED_HEADERS.split(",").map(h => h.trim())
-        : undefined
+    allowedHeaders: ALLOWED_HEADERS.split(",").map(h => h.trim())
 }
 
 // use environment variables to configure settings
