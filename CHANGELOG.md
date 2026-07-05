@@ -1,3 +1,11 @@
+# [1.21.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.9...v1.21.0) (2026-07-05)
+
+
+### Features
+
+* add structure link support and parse document content as JSON ([8dbca6c](https://github.com/BFH-JTF/doc-pouch/commit/8dbca6ced2bf595532869bf2c038c97cfabdff0b))
+* upgrade docpouch-client to v1.2.0 and delegate auth logic to library ([8b3ebcc](https://github.com/BFH-JTF/doc-pouch/commit/8b3ebcc49c790963a72bb21e37c1966d1c5e0e1b))
+
 ## [1.20.9](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.8...v1.20.9) (2026-07-03)
 
 
