@@ -108,9 +108,10 @@ export interface OidcClientConfig {
 }
 
 export interface ServerClientConfig {
-    configured: boolean;
+    configured?: boolean;
     issuer?: string;
     apiBaseUrl?: string;
+    clientId?: string;
     redirectUri?: string;
     postLogoutRedirectUri?: string;
     scopes?: string[];
