@@ -10,6 +10,7 @@ import {
     DeleteDocumentSchema,
 } from '../schemas.js';
 import {mcpAuthContext} from '../context.js';
+import {getErrorMessage} from '../utils.js';
 import type {I_DocumentQuery} from 'docpouch-client';
 
 function getUserId(): string | null {
@@ -59,9 +60,9 @@ export function registerDocumentTools(
                 return rest;
             });
             return {content: [{type: 'text', text: JSON.stringify(sanitized)}]};
-        } catch (error: any) {
-            logger.error(`MCP list_documents error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP list_documents error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -81,9 +82,9 @@ export function registerDocumentTools(
             const doc = docs[0];
             const {password: _, ...rest} = doc as any;
             return {content: [{type: 'text', text: JSON.stringify(rest)}]};
-        } catch (error: any) {
-            logger.error(`MCP get_document error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP get_document error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -117,9 +118,9 @@ export function registerDocumentTools(
             const doc = await dataManager.createDocument(validated as any, userid, isAnonymous);
             const {password: _, ...rest} = doc as any;
             return {content: [{type: 'text', text: JSON.stringify(rest)}]};
-        } catch (error: any) {
-            logger.error(`MCP create_document error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP create_document error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -158,9 +159,9 @@ export function registerDocumentTools(
                 return {content: [{type: 'text', text: 'Unauthorized: not document owner'}], isError: true};
             }
             return {content: [{type: 'text', text: JSON.stringify({updated: result})}]};
-        } catch (error: any) {
-            logger.error(`MCP update_document error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP update_document error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -181,9 +182,9 @@ export function registerDocumentTools(
                 return {content: [{type: 'text', text: 'Unauthorized: not document owner or admin'}], isError: true};
             }
             return {content: [{type: 'text', text: JSON.stringify({deleted: result})}]};
-        } catch (error: any) {
-            logger.error(`MCP delete_document error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP delete_document error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 }

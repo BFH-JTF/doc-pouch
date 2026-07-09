@@ -472,17 +472,6 @@ export default class NeDbWrapper {
         }
     }
 
-    private getAdminUser(): Promise<I_UserEntry> {
-        return new Promise((resolve, reject) => {
-            this.users.query({isAdmin: true}).then((result) => {
-                if (result.length > 0)
-                    resolve(result[0] as I_UserEntry);
-                else
-                    reject("No admin user found");
-            })
-        })
-    }
-
     getUsers(requestingUserID?: string): Promise<I_UserEntry[]> {
         return new Promise((resolve, reject) => {
             if (requestingUserID !== undefined) {
@@ -500,7 +489,7 @@ export default class NeDbWrapper {
                     }
                 });
             } else {
-                reject("Requesting user ID is undefined");
+                reject(new Error("Requesting user ID is undefined"));
             }
         })
     }
@@ -512,7 +501,7 @@ export default class NeDbWrapper {
                     if (result.length > 0)
                         resolve(result as I_UserEntry[]);
                     else
-                        reject("User not found");
+                        reject(new Error("User not found"));
                 })
         })
     }
@@ -524,7 +513,37 @@ export default class NeDbWrapper {
                     if (result.length > 0)
                         resolve(result as I_UserEntry[]);
                     else
-                        reject("User not found");
+                        reject(new Error("User not found"));
+                })
+        })
+    }
+
+    createUser(newUser: I_UserCreation): Promise<I_UserEntry> {
+        return new Promise((resolve, reject) => {
+            if (newUser.password.length < 8)
+                reject(new Error("Password must be at least 8 characters long"));
+            if (newUser.name.length < 1)
+                reject(new Error("User must have a name"));
+            this.users.count({name: newUser.name})
+                .then((count) => {
+                    if (count > 0)
+                        reject(new Error("User name already exists"));
+                    else {
+                        bcrypt.hash(newUser.password, this.saltRounds).then((hash: string) => {
+                            this.users.add({
+                                email: newUser.email,
+                                department: newUser.department,
+                                group: newUser.group,
+                                name: newUser.name,
+                                password: hash,
+                                isAdmin: newUser.isAdmin
+                            })
+                                .then((result) => {
+                                    this.logger.info("Created new user account: " + JSON.stringify(newUser));
+                                    resolve(result as I_UserEntry);
+                                })
+                        })
+                    }
                 })
         })
     }
@@ -588,36 +607,6 @@ export default class NeDbWrapper {
         });
     }
 
-    createUser(newUser: I_UserCreation): Promise<I_UserEntry> {
-        return new Promise((resolve, reject) => {
-            if (newUser.password.length < 8)
-                reject("Password must be at least 8 characters long");
-            if (newUser.name.length < 1)
-                reject("User must have a name");
-            this.users.count({name: newUser.name})
-                .then((count) => {
-                    if (count > 0)
-                        reject("User name already exists");
-                    else {
-                        bcrypt.hash(newUser.password, this.saltRounds).then((hash: string) => {
-                            this.users.add({
-                                email: newUser.email,
-                                department: newUser.department,
-                                group: newUser.group,
-                                name: newUser.name,
-                                password: hash,
-                                isAdmin: newUser.isAdmin
-                            })
-                                .then((result) => {
-                                    this.logger.info("Created new user account: " + JSON.stringify(newUser));
-                                    resolve(result as I_UserEntry);
-                                })
-                        })
-                    }
-                })
-        })
-    }
-
     validateUser(username: string, password: string): Promise<I_UserEntry | number> {
         return new Promise((resolve, reject) => {
             this.users.query({name: username}).then((result) => {
@@ -636,11 +625,10 @@ export default class NeDbWrapper {
                     resolve(404);
                 }
             }).catch((error) => {
-                reject("Database error: " + error);
+                reject(new Error("Database error: " + error));
             });
         });
     }
-
 
     removeUser(userID: string) {
         return new Promise((resolve, reject) => {
@@ -650,10 +638,23 @@ export default class NeDbWrapper {
                         this.logger.info("Removed user:" + JSON.stringify(userID));
                         resolve(numRemoved);
                     } else
-                        reject("User not found");
+                        reject(new Error("User not found"));
                 })
             })
         })
+    }
+
+    getStructureByID(structureID: number): Promise<I_DataStructure> {
+        return new Promise((resolve, reject) => {
+            // Structures are visible to anyone
+            this.structures.query({_id: structureID}).then((result) => {
+                if (result.length > 0) {
+                    resolve(result[0] as I_DataStructure);
+                } else {
+                    reject(new Error("Structure not found"));
+                }
+            }).catch(reject);
+        });
     }
 
     updateUser(userID: string, updateData: Partial<I_UserEntry>): Promise<number> {
@@ -710,30 +711,17 @@ export default class NeDbWrapper {
         })
     }
 
-    getStructureByID(structureID: number): Promise<I_DataStructure> {
-        return new Promise((resolve, reject) => {
-            // Structures are visible to anyone
-            this.structures.query({_id: structureID}).then((result) => {
-                if (result.length > 0) {
-                    resolve(result[0] as I_DataStructure);
-                } else {
-                    reject("Structure not found");
-                }
-            }).catch(reject);
-        });
-    }
-
     createStructure(structure: I_StructureCreation, requestingUserID: string): Promise<I_DataStructure> {
         return new Promise((resolve, reject) => {
             this.isAdmin(requestingUserID).then((isAdmin) => {
                 if (!isAdmin) {
-                    reject("Only admins can create structures");
+                    reject(new Error("Only admins can create structures"));
                     return;
                 }
 
                 this.structures.query({name: structure.name}).then((result) => {
                     if (result.length > 0) {
-                        reject("Structure name already exists");
+                        reject(new Error("Structure name already exists"));
                     } else {
                         this.structures.add(structure).then((result) => {
                             this.logger.info("Created new structure: " + JSON.stringify(result));
@@ -743,6 +731,18 @@ export default class NeDbWrapper {
                 }).catch(reject);
             });
         });
+    }
+
+    getUserByID(id: string): Promise<I_UserEntry> {
+        return new Promise((resolve, reject) => {
+            this.users.query({_id: id})
+                .then((result) => {
+                    if (result.length > 0)
+                        resolve(result[0] as I_UserEntry);
+                    else
+                        reject(new Error("User not found"));
+                })
+        })
     }
 
     updateStructure(structureID: string, newStructure: I_DataStructure, requestingUserID: string): Promise<number> {
@@ -826,18 +826,6 @@ export default class NeDbWrapper {
         })
     }
 
-    getUserByID(id: string): Promise<I_UserEntry> {
-        return new Promise((resolve, reject) => {
-            this.users.query({_id: id})
-                .then((result) => {
-                    if (result.length > 0)
-                        resolve(result[0] as I_UserEntry);
-                    else
-                        reject("User not found");
-                })
-        })
-    }
-
     async getAdminUserID(): Promise<string> {
         return new Promise((resolve, reject) => {
             this.users.query({name: "admin"})
@@ -845,11 +833,22 @@ export default class NeDbWrapper {
                     if (result.length > 0)
                         resolve((result[0] as I_UserEntry)._id);
                     else
-                        reject("Admin user not found");
+                        reject(new Error("Admin user not found"));
                 })
                 .catch((error) => {
                     reject(error);
                 });
+        })
+    }
+
+    private getAdminUser(): Promise<I_UserEntry> {
+        return new Promise((resolve, reject) => {
+            this.users.query({isAdmin: true}).then((result) => {
+                if (result.length > 0)
+                    resolve(result[0] as I_UserEntry);
+                else
+                    reject(new Error("No admin user found"));
+            })
         })
     }
 

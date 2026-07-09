@@ -10,6 +10,7 @@ import {
     DeleteStructureSchema,
 } from '../schemas.js';
 import {mcpAuthContext} from '../context.js';
+import {getErrorMessage} from '../utils.js';
 
 function getUserId(): string | null {
     const store = mcpAuthContext.getStore();
@@ -33,9 +34,9 @@ export function registerStructureTools(
         try {
             const structures = await dataManager.getStructures();
             return {content: [{type: 'text', text: JSON.stringify(structures)}]};
-        } catch (error: any) {
-            logger.error(`MCP list_structures error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP list_structures error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -54,8 +55,8 @@ export function registerStructureTools(
                 return {content: [{type: 'text', text: 'Error: Structure not found'}], isError: true};
             }
             return {content: [{type: 'text', text: JSON.stringify(structure)}]};
-        } catch (error: any) {
-            logger.error(`MCP get_structure error: ${error.message}`);
+        } catch (error: unknown) {
+            logger.error(`MCP get_structure error: ${getErrorMessage(error)}`);
             return {content: [{type: 'text', text: `Error: Structure not found`}], isError: true};
         }
     });
@@ -87,9 +88,9 @@ export function registerStructureTools(
             }
             const structure = await dataManager.createStructure(validated as any, userid);
             return {content: [{type: 'text', text: JSON.stringify(structure)}]};
-        } catch (error: any) {
-            logger.error(`MCP create_structure error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP create_structure error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -130,9 +131,9 @@ export function registerStructureTools(
                 return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
             }
             return {content: [{type: 'text', text: JSON.stringify({updated: result})}]};
-        } catch (error: any) {
-            logger.error(`MCP update_structure error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP update_structure error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -154,9 +155,9 @@ export function registerStructureTools(
                 return {content: [{type: 'text', text: 'Error: Structure not found'}], isError: true};
             }
             return {content: [{type: 'text', text: JSON.stringify({deleted: result})}]};
-        } catch (error: any) {
-            logger.error(`MCP delete_structure error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP delete_structure error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 }

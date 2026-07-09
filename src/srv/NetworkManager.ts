@@ -973,7 +973,9 @@ export default class NetworkManager {
                 .then((users: I_UserEntry[]) => {
                     res.status(200).json(users);
                 }).catch((error) => {
-                res.status(error).json({error: error.message});
+                const status = typeof error === 'number' ? error : 500;
+                const message = error instanceof Error ? error.message : String(error);
+                res.status(status).json({error: message});
             });
         });
 
@@ -1231,10 +1233,10 @@ export default class NetworkManager {
                     res.status(200).json(documents);
                 })
                 .catch((error) => {
-                    if (error === "Document not found") {
-                        res.status(404).json({error: error});
-                    } else if (error === "Not authorized to access this document") {
-                        res.status(403).json({error: error});
+                    if (error instanceof Error && error.message === "Document not found") {
+                        res.status(404).json({error: error.message});
+                    } else if (error instanceof Error && error.message === "Not authorized to access this document") {
+                        res.status(403).json({error: error.message});
                     } else {
                         res.status(500).json({error: error.message || error});
                     }
@@ -1331,7 +1333,9 @@ export default class NetworkManager {
                         }
                     })
                     .catch((error) => {
-                        res.status(error).json({error: error});
+                        const status = typeof error === 'number' ? error : 500;
+                        const message = error instanceof Error ? error.message : String(error);
+                        res.status(status).json({error: message});
                     });
             } else {
                 res.status(404).json({error: "Invalid document data"});
@@ -1353,7 +1357,9 @@ export default class NetworkManager {
                                 }
                             })
                             .catch((error) => {
-                                res.status(error).json({error: error});
+                                const status = typeof error === 'number' ? error : 500;
+                                const message = error instanceof Error ? error.message : String(error);
+                                res.status(status).json({error: message});
                             });
                     }
                 })
@@ -1380,8 +1386,8 @@ export default class NetworkManager {
                         res.status(200).json(structure);
                     })
                     .catch((error) => {
-                        if (error === "Only admins can create structures") {
-                            res.status(401).json({error: error});
+                        if (error instanceof Error && error.message === "Only admins can create structures") {
+                            res.status(401).json({error: error.message});
                         } else {
                             res.status(500).json({error: error.message || error});
                         }
@@ -1406,7 +1412,9 @@ export default class NetworkManager {
                         }
                     })
                     .catch((error) => {
-                        res.status(error).json({error: "Unauthorized access"});
+                        const status = typeof error === 'number' ? error : 500;
+                        const message = error instanceof Error ? error.message : "Unauthorized access";
+                        res.status(status).json({error: message});
                     });
             } else {
                 res.status(400).json({error: "Invalid structure data"});
@@ -1427,7 +1435,9 @@ export default class NetworkManager {
                         }
                     })
                     .catch((error) => {
-                        res.status(error).json({error: error.message || error});
+                        const status = typeof error === 'number' ? error : 500;
+                        const message = error instanceof Error ? error.message : String(error);
+                        res.status(status).json({error: message});
                     });
             }
         });

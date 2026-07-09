@@ -4,6 +4,7 @@ import type {Variables} from '@modelcontextprotocol/sdk/shared/uriTemplate.js';
 import NeDbWrapper from '../NeDbWrapper.js';
 import type winston from 'winston';
 import {mcpAuthContext} from './context.js';
+import {getErrorMessage} from './utils.js';
 
 export function registerResources(
     server: McpServer,
@@ -49,13 +50,13 @@ export function registerResources(
                         text: JSON.stringify(safe),
                     }],
                 };
-            } catch (error: any) {
-                logger.error(`MCP resource document error: ${error.message}`);
+            } catch (error: unknown) {
+                logger.error(`MCP resource document error: ${getErrorMessage(error)}`);
                 return {
                     contents: [{
                         uri: uri.href,
                         mimeType: 'application/json',
-                        text: JSON.stringify({error: error.message}),
+                        text: JSON.stringify({error: getErrorMessage(error)}),
                     }],
                 };
             }
@@ -89,8 +90,8 @@ export function registerResources(
                         text: JSON.stringify(structure),
                     }],
                 };
-            } catch (error: any) {
-                logger.error(`MCP resource structure error: ${error.message}`);
+            } catch (error: unknown) {
+                logger.error(`MCP resource structure error: ${getErrorMessage(error)}`);
                 return {
                     contents: [{
                         uri: uri.href,
@@ -141,8 +142,8 @@ export function registerResources(
                         text: JSON.stringify(safe),
                     }],
                 };
-            } catch (error: any) {
-                logger.error(`MCP resource user error: ${error.message}`);
+            } catch (error: unknown) {
+                logger.error(`MCP resource user error: ${getErrorMessage(error)}`);
                 return {
                     contents: [{
                         uri: uri.href,

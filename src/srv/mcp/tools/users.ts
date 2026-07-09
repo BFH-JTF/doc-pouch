@@ -11,6 +11,7 @@ import {
     DeleteUserSchema,
 } from '../schemas.js';
 import {mcpAuthContext} from '../context.js';
+import {getErrorMessage} from '../utils.js';
 
 function getUserId(): string | null {
     const store = mcpAuthContext.getStore();
@@ -35,9 +36,9 @@ export function registerUserTools(
             const user = await dataManager.getUserByID(userid);
             const {password: _, ...safe} = user as any;
             return {content: [{type: 'text', text: JSON.stringify(safe)}]};
-        } catch (error: any) {
-            logger.error(`MCP whoami error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP whoami error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -56,9 +57,9 @@ export function registerUserTools(
                 return rest;
             });
             return {content: [{type: 'text', text: JSON.stringify(safe)}]};
-        } catch (error: any) {
-            logger.error(`MCP list_users error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP list_users error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -81,8 +82,8 @@ export function registerUserTools(
             const user = await dataManager.getUserByID(args.id);
             const {password: _, ...safe} = user as any;
             return {content: [{type: 'text', text: JSON.stringify(safe)}]};
-        } catch (error: any) {
-            logger.error(`MCP get_user error: ${error.message}`);
+        } catch (error: unknown) {
+            logger.error(`MCP get_user error: ${getErrorMessage(error)}`);
             return {content: [{type: 'text', text: `Error: User not found`}], isError: true};
         }
     });
@@ -115,9 +116,9 @@ export function registerUserTools(
             const newUser = await dataManager.createUser(validated as any);
             const {password: _, ...safe} = newUser as any;
             return {content: [{type: 'text', text: JSON.stringify(safe)}]};
-        } catch (error: any) {
-            logger.error(`MCP create_user error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP create_user error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -154,9 +155,9 @@ export function registerUserTools(
             }
             const result = await dataManager.updateUser(args.id, validated as any);
             return {content: [{type: 'text', text: JSON.stringify({updated: result})}]};
-        } catch (error: any) {
-            logger.error(`MCP update_user error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP update_user error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 
@@ -175,9 +176,9 @@ export function registerUserTools(
             }
             await dataManager.removeUser(args.id);
             return {content: [{type: 'text', text: JSON.stringify({deleted: true})}]};
-        } catch (error: any) {
-            logger.error(`MCP delete_user error: ${error.message}`);
-            return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+        } catch (error: unknown) {
+            logger.error(`MCP delete_user error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });
 }

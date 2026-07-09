@@ -174,7 +174,13 @@ const createDefaultStructures = async () => {
 
   createDefaultsLoading.value = true;
   try {
-    const response = await fetch(`${props.apiClient.baseUrl}:${props.apiClient.port}/structures/create-defaults`, {
+    const trimmedBaseUrl = props.apiClient.baseUrl.endsWith('/') ? props.apiClient.baseUrl.slice(0, -1) : props.apiClient.baseUrl;
+    const hasExplicitPort = /:\d+(?=\/|$)/.test(trimmedBaseUrl);
+    const normalizedBaseUrl = !hasExplicitPort && props.apiClient.port
+        ? `${trimmedBaseUrl}:${props.apiClient.port}`
+        : trimmedBaseUrl;
+
+    const response = await fetch(`${normalizedBaseUrl}/structures/create-defaults`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${props.apiClient.getToken()}`,
