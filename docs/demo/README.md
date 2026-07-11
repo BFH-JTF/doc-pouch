@@ -113,14 +113,17 @@ After registration, the template triggers the standard OIDC authorization-code f
 
 1. `loginWithOidc()` builds the authorization URL and redirects the browser to DocPouch.
 2. DocPouch authenticates the user and redirects back to `/callback`.
-3. `handleOidcCallback()` exchanges the `code` for tokens.
-4. `restoreOidcSession()` re-hydrates the token on page reloads.
+3. `initService()` → `client.initAuth()` detects the `code`/`state` params and calls `client.handleOidcCallback()` to
+   exchange them for tokens.
+4. `restoreOidcSession()` re-hydrates the token on subsequent page reloads.
 
 #### JWT (tab 2)
 
-For username/password authentication, the template calls `client.login({name, password})`. The returned token, username,
-and `isAdmin` flag are stored in `localStorage` so the session survives page reloads. On reload, `initService()` calls
-`client.setToken(savedToken)` and re-hydrates the reactive state.
+For username/password authentication, the template calls `client.login({name, password})`. The returned token is stored
+in `localStorage` under the library-managed `authToken` key (so `client.initAuth()` can restore it on the next page
+load), and the auth method is persisted via `client.persistAuthMethod('jwt')`. On reload, `initService()` calls
+`client.initAuth()` which reads the token back, then `client.getCurrentUser()` re-hydrates the `isAdmin` flag and
+username. A 401 response during data load clears these keys and prompts for re-login.
 
 ### 3. CRUD Operations
 
@@ -181,8 +184,8 @@ This is the **only file** that imports `docpouch-client`. It encapsulates:
 - **State**: `isAuthenticated`, `authMethod`, `authError`, `loading`, `realtimeEnabled`, `isAdmin`, `userName`,
   `documents`, `structures`, `users`
 - **Config**: `loadSettings()`, `saveSettings()`, `fetchServerConfig()`, `resolveBaseUrl()`, `normalizeBaseUrl()`
-- **OIDC lifecycle**: `initService()`, `handleOidcCallback()`, `loginWithOidc()`, `ensureOidcClient()`
-- **JWT lifecycle**: `loginWithJwt()`, JWT session restore in `initService()`
+- **OIDC lifecycle**: `initService()`, `handleOidcCallback()` (fallback), `loginWithOidc()`, `ensureOidcClient()`
+- **JWT lifecycle**: `loginWithJwt()`, JWT session restore in `initService()` via `client.initAuth()`
 - **Data**: `loadData()`, `loadAllDocuments()`, `createDocument()`, `updateDocument()`, `removeDocument()`,
   `createStructure()`, `updateStructure()`, `removeStructure()`
 - **Users (admin)**: `loadUsers()`, `createUser()`, `updateUser()`, `removeUser()`
@@ -208,10 +211,11 @@ This prevents the port-ignored bug that can occur when `docpouch-client` receive
 
 ### JWT Session Persistence
 
-When JWT login succeeds, the token, username, and `isAdmin` flag are stored in `localStorage` under
-`docpouch_jwt_token`, `docpouch_jwt_is_admin`, and `docpouch_jwt_username`. On page reload, `initService()` re-hydrates
-the client with `setToken()` and re-loads data. A 401 response during data load clears these keys and prompts for
-re-login.
+When JWT login succeeds, the token is stored in `localStorage` under the `docpouch-client` library's canonical
+`authToken` key, and the auth method is recorded via `client.persistAuthMethod('jwt')`. On page reload,
+`initService()` → `client.initAuth()` reads that key and re-hydrates the client. Because `initAuth()` always returns
+stub `isAdmin`/`userName` values, the template immediately calls `client.getCurrentUser()` (`/users/whoami`) to fetch
+the real profile. A 401 response during data load clears these keys and prompts for re-login.
 
 ---
 
@@ -250,7 +254,7 @@ The template demonstrates handling for:
 - **Unreachable DocPouch server** — network errors bubble up as `authError`
 - **Invalid registration token** — shown in the login modal
 - **Expired OIDC session** — `restoreOidcSession()` returns `false`; user is prompted to log in again
-- **Expired JWT token** — `setToken()` + `isAuthenticated()` returns `false`; stored token is cleared
+- **Expired JWT token** — `initAuth()` returns `method: 'none'`; stored token is cleared on the next 401
 - **401 during API call** — `is401Error()` catches it, clears the token, and shows the login modal
 - **403 when listing users** — `is403Error()` hides the Users card (non-admin user)
 - **Failed callback** — invalid `state` or expired `code` is caught and displayed
@@ -327,7 +331,8 @@ integration. The MCP server runs at `/mcp` on the DocPouch host and does not req
 | Browser triggers OIDC login                     | `client.loginWithOidc(config)`                                   |
 | Browser handles the OIDC redirect back          | `client.handleOidcCallback()`                                    |
 | Browser restores an OIDC session after refresh  | `client.restoreOidcSession()`                                    |
-| Browser restores a JWT session after refresh    | `client.setToken(savedToken)`                                    |
+| Browser restores a JWT session after refresh    | `client.initAuth()` (reads `localStorage.authToken`)             |
+| Re-hydrate `isAdmin` / `userName` after restore | `client.getCurrentUser()` (`/users/whoami`)                      |
 | Inspect auth state                              | `client.getAuthMethod()`, `client.isAuthenticated()`             |
 | Call a DocPouch API                             | `client.fetchDocuments()` / `createDocument()` / etc.            |
 | Make sure the token is fresh before an API call | `client.ensureValidOidcToken()` (called automatically)           |

@@ -2,7 +2,6 @@
 import {ref, onMounted, computed} from 'vue';
 import {
   initService,
-  handleOidcCallback,
   loginWithOidc,
   loginWithJwt,
   logout,
@@ -114,35 +113,19 @@ onMounted(async () => {
   configPort.value = settings.port;
   configToken.value = settings.registrationToken;
 
-  if (!isConfigured.value) {
-    // Try server-driven config first — initService will fetch /api/oidc-client-config
-    const authenticated = await initService();
-    if (!authenticated) {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.has('code') && urlParams.has('state')) {
-        const handled = await handleOidcCallback();
-        if (handled) return;
-      }
-      if (!isConfigured.value) {
-        showConfigModal.value = true;
-        return;
-      }
-    }
-    if (authenticated) return;
-  }
-
+  // initService() → client.initAuth() handles every restore path:
+  // OIDC logout redirect, OIDC callback (code+state), persisted OIDC
+  // session, and JWT token. If it returns false we show the login modal
+  // (or the config modal if the server isn't configured yet).
   const authenticated = await initService();
 
   if (!authenticated) {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.has('code') && urlParams.has('state')) {
-      const handled = await handleOidcCallback();
-      if (handled) {
-        showLoginModal.value = false;
-        return;
-      }
+    if (!isConfigured.value && !useServerConfig) {
+      // No server config and no localStorage override — ask the user.
+      showConfigModal.value = true;
+    } else {
+      showLoginModal.value = true;
     }
-    showLoginModal.value = true;
   }
 });
 
