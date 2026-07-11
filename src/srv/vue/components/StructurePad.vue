@@ -135,9 +135,6 @@ const filteredStructures = computed(() => {
 const selectedStructureID = ref<string | null>(null);
 const showSuccessSnackbar = ref(false);
 const showCreationDialog = ref(false);
-const showCreateDefaultsDialog = ref(false);
-const createDefaultsLoading = ref(false);
-const createDefaultsMessage = ref('');
 
 const selectStructure = (structureID: string | undefined) => {
   if (structureID !== undefined) {
@@ -169,42 +166,7 @@ const cancelCreation = () => {
   showCreationDialog.value = false;
 };
 
-const createDefaultStructures = async () => {
-  if (!props.apiClient) return;
 
-  createDefaultsLoading.value = true;
-  try {
-    const trimmedBaseUrl = props.apiClient.baseUrl.endsWith('/') ? props.apiClient.baseUrl.slice(0, -1) : props.apiClient.baseUrl;
-    const hasExplicitPort = /:\d+(?=\/|$)/.test(trimmedBaseUrl);
-    const normalizedBaseUrl = !hasExplicitPort && props.apiClient.port
-        ? `${trimmedBaseUrl}:${props.apiClient.port}`
-        : trimmedBaseUrl;
-
-    const response = await fetch(`${normalizedBaseUrl}/structures/create-defaults`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${props.apiClient.getToken()}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    const result = await response.json();
-
-    if (response.ok) {
-      createDefaultsMessage.value = result.message;
-      emit('structureListChanged');
-    } else {
-      createDefaultsMessage.value = result.error || 'Failed to create default structures';
-    }
-  } catch (error) {
-    createDefaultsMessage.value = 'Error creating default structures';
-    console.error('Error creating default structures:', error);
-  } finally {
-    createDefaultsLoading.value = false;
-    showCreateDefaultsDialog.value = false;
-    showSuccessSnackbar.value = true;
-  }
-};
 </script>
 
 <template>
@@ -353,15 +315,6 @@ const createDefaultStructures = async () => {
         New
       </v-btn>
 
-      <v-btn
-          v-if="!isSelectMode"
-          class="mr-2"
-          color="secondary"
-          prepend-icon="mdi-database-plus"
-          @click="showCreateDefaultsDialog = true"
-      >
-        Create Defaults
-      </v-btn>
 
       <v-btn
           v-if="!isSelectMode"
@@ -399,7 +352,7 @@ const createDefaultStructures = async () => {
     color="success"
     timeout="3000"
   >
-    {{ createDefaultsMessage || 'Structure created successfully!' }}
+    Structure created successfully!
     <template v-slot:actions>
       <v-btn
         variant="text"
@@ -433,27 +386,7 @@ const createDefaultStructures = async () => {
     </v-card>
   </v-dialog>
 
-  <!-- Create defaults confirmation dialog -->
-  <v-dialog v-model="showCreateDefaultsDialog" max-width="400">
-    <v-card>
-      <v-card-title class="text-h5">Create Default Structures</v-card-title>
-      <v-card-text>
-        <v-alert class="mb-3" density="compact" type="info" variant="tonal">
-          This will create the default type-0 structures if they don't already exist: Data Import String, Data Import
-          Template, and Tool Definition.
-        </v-alert>
-        <div>
-          Continue creating default structures?
-        </div>
-      </v-card-text>
-      <v-card-actions>
-        <v-spacer></v-spacer>
-        <v-btn color="grey-darken-1" variant="text" @click="showCreateDefaultsDialog = false">Cancel</v-btn>
-        <v-btn :loading="createDefaultsLoading" color="primary" variant="text" @click="createDefaultStructures">Create
-        </v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+
 </template>
 
 <style scoped>
