@@ -27,6 +27,7 @@ import type {
     UserUpdate,
     ServerSettings,
     ServerClientConfig,
+    LogoutOptions,
 } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -48,6 +49,11 @@ const documents = ref<DocumentEntry[]>([]);
 const structures = ref<DataStructure[]>([]);
 const users = ref<UserEntry[]>([]);
 const realtimeEnabled = ref(false);
+
+// Admin-only WebSocket warning. The server emits `databaseInconsistency`
+// on connect when faulty documents (invalid owner / type / subType) are
+// detected. Surfaced to the UI as a non-blocking banner.
+const dbWarning = ref('');
 
 // Whether to use the server-provided config or the localStorage override
 const useServerConfig = ref(true);
@@ -239,6 +245,21 @@ function registerCallbacks() {
         isAuthenticated.value = false;
         authMethod.value = 'none';
         realtimeEnabled.value = false;
+        documents.value = [];
+        structures.value = [];
+        users.value = [];
+    });
+
+    // Companion callback for JWT logout. `onLogout` above already covers
+    // both methods, but registering `onJwtLogout` explicitly future-proofs
+    // the template against any divergent JWT-only behaviour the library
+    // may add (e.g. a distinct pre-clear hook).
+    client.onJwtLogout(() => {
+        isAuthenticated.value = false;
+        authMethod.value = 'none';
+        realtimeEnabled.value = false;
+        isAdmin.value = false;
+        userName.value = '';
         documents.value = [];
         structures.value = [];
         users.value = [];
@@ -619,7 +640,22 @@ export async function removeUser(id: string): Promise<void> {
 
 function handleSocketEvent(event: string, data: any) {
     console.log(`[WebSocket] ${event}:`, data);
-    // Minimal live-update: refresh list on any document/structure/user change
+    // Admin-only: server reports faulty documents found during the
+    // connection-time consistency check. Surface as a non-blocking
+    // warning rather than refreshing data.
+    if (event === 'databaseInconsistency') {
+        const faulty = Array.isArray(data?.faultyDocuments) ? data.faultyDocuments : [];
+        dbWarning.value = faulty.length
+            ? `Database inconsistency detected: ${faulty.length} faulty document(s). Review the admin UI.`
+            : 'Database inconsistency detected.';
+        return;
+    }
+    // Minimal live-update: refresh list on any document/structure/user
+    // change. The server emits `newDocument`, `newStructure`, `newUser`,
+    // `changedDocument`, `changedStructure`, `changedUser`,
+    // `removedDocument`, `removedStructure`, `removedUser`. Note that
+    // `removedID` is a *payload field* (the id of the removed entity),
+    // not an event name.
     if (
         event.startsWith('new') ||
         event.startsWith('changed') ||
@@ -660,14 +696,22 @@ export function setUseServerConfig(enabled: boolean) {
     useServerConfig.value = enabled;
 }
 
-export async function logout(): Promise<void> {
+export function clearDbWarning() {
+    dbWarning.value = '';
+}
+
+export async function logout(options?: LogoutOptions): Promise<void> {
     if (!client) return;
 
     try {
         // logout() auto-detects OIDC vs JWT and does the right thing:
         //  - OIDC: redirects to /end_session (browser leaves the page)
         //  - JWT: clears local state and disconnects WebSocket
-        await client.logout();
+        //
+        // For OIDC, optional `options` ({redirectUri?, idTokenHint?})
+        // override the registered `post_logout_redirect_uri` / id token.
+        // Omitted → library uses the values configured via setOidcConfig.
+        await client.logout(options);
 
         // For JWT logout (no redirect), clear local reactive state + storage.
         // clearPersistedAuthState() removes the library-managed keys
@@ -714,4 +758,5 @@ export {
     users,
     realtimeEnabled,
     useServerConfig,
+    dbWarning,
 };

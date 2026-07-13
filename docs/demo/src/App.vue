@@ -22,6 +22,7 @@ import {
   toggleRealtime,
   clearAuthError,
   setUseServerConfig,
+  clearDbWarning,
   isConfigured,
   isAuthenticated,
   authMethod,
@@ -34,6 +35,7 @@ import {
   users,
   realtimeEnabled,
   useServerConfig,
+  dbWarning,
 } from './composables/useDocPouch';
 import type {DocumentEntry, DocumentCreation, DataStructure, UserEntry, UserCreation, ServerSettings} from './types';
 
@@ -410,10 +412,16 @@ async function deleteUser(id: string) {
             {{ realtimeEnabled ? '🔴' : '⚪' }}
           </button>
           <button class="icon-btn secondary" title="Settings" @click="openConfig">⚙️</button>
-          <button v-if="isAuthenticated" class="secondary-text" @click="logout">Logout</button>
+          <button v-if="isAuthenticated" class="secondary-text" @click="() => logout()">Logout</button>
         </div>
       </div>
     </header>
+
+    <!-- Database inconsistency warning (admin-only, non-blocking) -->
+    <div v-if="isAuthenticated && isAdmin && dbWarning" class="db-warning">
+      <span>{{ dbWarning }}</span>
+      <button class="icon-btn" title="Dismiss" @click="clearDbWarning">✕</button>
+    </div>
 
     <!-- Main -->
     <main class="main-content">
@@ -982,6 +990,30 @@ td {
   border-radius: 4px;
   font-size: 0.85rem;
   color: #1976d2;
+}
+
+.db-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing);
+  padding: var(--spacing) calc(2 * var(--spacing));
+  background-color: #fff3e0;
+  border-bottom: 1px solid #ffcc80;
+  font-size: 0.85rem;
+  color: #e65100;
+}
+
+.db-warning .icon-btn {
+  width: 22px;
+  height: 22px;
+  margin-left: 0;
+  background: transparent;
+  color: #e65100;
+}
+
+.db-warning .icon-btn:hover {
+  background: rgba(230, 81, 0, 0.12);
 }
 
 .modal-hint {
