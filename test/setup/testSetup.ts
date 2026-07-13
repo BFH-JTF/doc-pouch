@@ -1,6 +1,7 @@
 import {Server} from 'http';
 import NetworkManager from '../../src/srv/NetworkManager.js';
 import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import EmailService from '../../src/srv/EmailService.js';
 import {clearAllOidcData, initOidcDatabases, closeOidcDatabases} from '../../src/srv/OidcAdapter.js';
 import winston from 'winston';
 import {Writable} from 'stream';
@@ -79,12 +80,15 @@ export async function setupTestServer(options: { anonymousDocumentsEnabled?: boo
     // Wait for database initialization to complete before starting tests
     await dataManager.waitForInitialization();
 
+    const emailService = new EmailService(null, testLogger, 'http://localhost:3031');
+    dataManager.setEmailService(emailService);
+
     // Let NetworkManager create and listen on its own server instance
     const corsOptions = {
         origin: "*",
         credentials: true
     };
-    const networkManager = new NetworkManager(testLogger, dataManager, TEST_PORT, corsOptions, {anonymousDocumentsEnabled: options.anonymousDocumentsEnabled});
+    const networkManager = new NetworkManager(testLogger, dataManager, TEST_PORT, corsOptions, {anonymousDocumentsEnabled: options.anonymousDocumentsEnabled}, emailService);
 
     // Wait briefly to let the server start
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -266,11 +270,14 @@ export async function setupOidcTestServer() {
     const dataManager = new NeDbWrapper(testLogger, {inMemoryOnly: true});
     await dataManager.waitForInitialization();
 
+    const emailService = new EmailService(null, testLogger, `http://localhost:${OIDC_TEST_PORT}`);
+    dataManager.setEmailService(emailService);
+
     const corsOptions: I_CorsOption = {
         origin: '*',
         allowedHeaders: 'Content-Type, Authorization, X-Socket-ID'
     };
-    const networkManager = new NetworkManager(testLogger, dataManager, OIDC_TEST_PORT, corsOptions);
+    const networkManager = new NetworkManager(testLogger, dataManager, OIDC_TEST_PORT, corsOptions, {}, emailService);
     await new Promise(resolve => setTimeout(resolve, 100));
 
     return {

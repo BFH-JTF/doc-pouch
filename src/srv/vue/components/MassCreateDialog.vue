@@ -52,9 +52,10 @@
                       <v-select
                           v-model="columnMapping.email"
                           :items="columnOptions"
+                          :rules="mandatoryFieldRules"
                           class="mr-2"
                           density="compact"
-                          label="Email Column (optional)"
+                          label="Email Column"
                           variant="outlined"
                       ></v-select>
                       <v-select
@@ -242,6 +243,7 @@ const csvHeaders = computed(() => {
 
 const isColumnMappingValid = computed(() => {
   return columnMapping.name !== '' &&
+      columnMapping.email !== '' &&
       columnMapping.department !== '' &&
       columnMapping.group !== '';
 });
@@ -372,15 +374,11 @@ async function submitForm() {
         const userData: I_UserCreation = {
           name: row[nameIndex].trim(),
           password: commonPassword.value,
+          email: row[emailIndex]?.trim() || '',
           department: row[departmentIndex].trim(),
           group: row[groupIndex].trim(),
           isAdmin: false // Mass created users are always non-admin
         };
-
-        // Add email if available and column is mapped
-        if (emailIndex >= 0 && row[emailIndex]?.trim()) {
-          userData.email = row[emailIndex].trim();
-        }
 
         const createdUser = await props.apiClient.createUser(userData);
         createdUsers.push(createdUser);

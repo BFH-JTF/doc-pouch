@@ -3,6 +3,7 @@ import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/st
 import NeDbWrapper from '../NeDbWrapper.js';
 import type winston from 'winston';
 import SchemaValidator from '../SchemaValidator.js';
+import EmailService from '../EmailService.js';
 import {buildMcpServer} from './server.js';
 import {authenticateRequest} from './auth.js';
 import {mcpAuthContext} from './context.js';
@@ -14,6 +15,7 @@ export default class McpManager {
         private readonly logger: winston.Logger,
         private readonly validator: SchemaValidator,
         private readonly oidcProvider: any,
+        private readonly emailService: EmailService,
     ) {
         this.mount();
     }
@@ -31,7 +33,7 @@ export default class McpManager {
                     return;
                 }
 
-                const server = buildMcpServer(this.dataManager, this.logger, this.validator);
+                const server = buildMcpServer(this.dataManager, this.logger, this.validator, this.emailService);
                 const transport = new StreamableHTTPServerTransport({
                     sessionIdGenerator: undefined,
                 });

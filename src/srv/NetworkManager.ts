@@ -23,6 +23,7 @@ import {authenticateRequest} from "./mcp/auth.js";
 import McpManager from "./mcp/McpManager.js";
 import jwt from "jsonwebtoken";
 import {JWTOptions, parseDurationToSeconds} from "./webTokenStuff.js";
+import EmailService from "./EmailService.js";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
@@ -106,10 +107,11 @@ export default class NetworkManager {
     oidcProvider: any
     private readonly anonymousDocumentsEnabled: boolean;
     private mcpManager?: McpManager;
+    emailService: EmailService;
 
     constructor(logger: winston.Logger, dataManager: NeDbWrapper, port: number, corsOptions: I_CorsOption, runtimeOptions: {
         anonymousDocumentsEnabled?: boolean
-    } = {}) {
+    } = {}, emailService: EmailService) {
         this.corsOptions = corsOptions;
         this.port = port;
         this.expressApp = express();
@@ -118,6 +120,8 @@ export default class NetworkManager {
         this.logger = logger;
         this.anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
         this.validator = new SchemaValidator(logger);
+        this.emailService = emailService;
+        dataManager.setEmailService(emailService);
         const jwksFile = path.join(process.cwd(), 'db', 'oidc-jwks.json');
 
         let jwks: any;
@@ -979,16 +983,35 @@ export default class NetworkManager {
             });
         });
 
-        this.expressApp.post("/users/create", this.authenticate, (req, res) => {
+        this.expressApp.post("/users/create", this.authenticate, async (req, res) => {
             let validatedObject = this.validator.getValidatedObject("userCreation", req.body);
             if (validatedObject !== false) {
                 this.dataManager.isAdmin(req.userid).then((isAdmin) => {
                     if (isAdmin) {
                         this.dataManager.createUser(validatedObject as I_UserCreation)
-                            .then((newUser) => {
+                            .then(async (newUser) => {
                                 this.socketServer.sendEventToAdmins(req.socketID, "newUser", {newUser: newUser});
                                 this.logger.info(`New user created: ${JSON.stringify(newUser)}`);
-                                res.status(200).json(newUser);
+
+                                const plainPassword = (validatedObject as any).password;
+                                const userEmail = (newUser as any).email;
+                                const responseObj: any = {...newUser};
+                                delete responseObj.password;
+
+                                if (userEmail && plainPassword) {
+                                    const emailResult = await this.emailService.sendWelcomeEmail(userEmail, (newUser as any).name, plainPassword);
+                                    if (emailResult.sent) {
+                                        responseObj.message = emailResult.message;
+                                    } else {
+                                        responseObj.password = plainPassword;
+                                        responseObj.message = "Email delivery failed; password shown as fallback";
+                                    }
+                                } else {
+                                    responseObj.password = plainPassword;
+                                    responseObj.message = "No email address provided; password shown as fallback";
+                                }
+
+                                res.status(200).json(responseObj);
                             })
                             .catch((error) => {
                                 res.status(500).json({error: error.message});
@@ -1063,7 +1086,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.patch("/users/update/:userID", this.authenticate, (req: Request, res: Response) => {
+        this.expressApp.patch("/users/update/:userID", this.authenticate, async (req: Request, res: Response) => {
             const validatedObject = this.validator.getValidatedObject("userUpdate", req.body);
 
             if (validatedObject !== false && req.params.userID !== undefined) {
@@ -1074,7 +1097,7 @@ export default class NetworkManager {
                     }
                     return await this.dataManager.isAdmin(req.userid);
                 };
-                checkPermission().then((isAuthorized: boolean) => {
+                checkPermission().then(async (isAuthorized: boolean) => {
                     if (req.userid !== userID) {
                         if (!isAuthorized)
                             return res.status(401).json({error: "Not authorized to update this user"});
@@ -1089,15 +1112,47 @@ export default class NetworkManager {
                     if (req.body.group) updateData.group = req.body.group;
                     if (req.body.isAdmin !== undefined) updateData.isAdmin = req.body.isAdmin;
 
+                    const plainPassword = req.body.password;
+                    const isAdminReset = plainPassword && req.userid !== userID;
+
                     this.dataManager.updateUser(userID, updateData)
-                        .then((numUpdated: number) => {
+                        .then(async (numUpdated: number) => {
                             if (numUpdated < 1) {
                                 res.status(404).json({error: "User not found"});
                             } else if (numUpdated > 1)
                                 res.status(500).json({error: "Multiple users with the same ID found"});
                             else {
-                                this.socketServer.sendEventToAdmins(req.socketID, "changedUser", {changedUser: updateData})
-                                res.status(200).json({message: "User has been successfully updated"});
+                                this.socketServer.sendEventToAdmins(req.socketID, "changedUser", {changedUser: updateData});
+
+                                if (isAdminReset && plainPassword) {
+                                    try {
+                                        const user = await this.dataManager.getUserByID(userID);
+                                        const userEmail = (user as any).email;
+                                        const responseObj: any = {message: "User has been successfully updated"};
+
+                                        if (userEmail) {
+                                            const emailResult = await this.emailService.sendPasswordResetEmail(userEmail, (user as any).name, plainPassword);
+                                            if (emailResult.sent) {
+                                                responseObj.message = emailResult.message;
+                                            } else {
+                                                responseObj.password = plainPassword;
+                                                responseObj.message = "Email delivery failed; password shown as fallback";
+                                            }
+                                        } else {
+                                            responseObj.password = plainPassword;
+                                            responseObj.message = "No email address on file; password shown as fallback";
+                                        }
+                                        res.status(200).json(responseObj);
+                                    } catch {
+                                        res.status(200).json({
+                                            message: "User has been successfully updated",
+                                            password: plainPassword,
+                                            emailDelivery: "failed"
+                                        });
+                                    }
+                                } else {
+                                    res.status(200).json({message: "User has been successfully updated"});
+                                }
                             }
                         })
                         .catch((error) => {
@@ -1127,6 +1182,66 @@ export default class NetworkManager {
                 }
             })
         })
+
+        const forgotPasswordRateLimiter = rateLimit({
+            windowMs: 15 * 60 * 1000,
+            max: 5,
+            standardHeaders: true,
+            legacyHeaders: false,
+            message: {error: "Too many password reset requests. Please try again later."},
+        });
+
+        const resetPasswordRateLimiter = rateLimit({
+            windowMs: 15 * 60 * 1000,
+            max: 10,
+            standardHeaders: true,
+            legacyHeaders: false,
+            message: {error: "Too many password reset attempts. Please try again later."},
+        });
+
+        this.expressApp.post("/users/forgot-password", forgotPasswordRateLimiter, async (req, res) => {
+            const validatedObject = this.validator.getValidatedObject("forgotPassword", req.body);
+            if (validatedObject === false) {
+                return res.status(400).json({error: "Invalid email address"});
+            }
+
+            const email = (validatedObject as any).email;
+
+            try {
+                const user = await this.dataManager.getUserByEmail(email);
+                if (user) {
+                    const token = await this.dataManager.createPasswordResetToken(user._id);
+                    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.headers.host}`;
+                    await this.emailService.sendForgotPasswordEmail(email, (user as any).name, `${baseUrl}/reset-password?token=${token}`);
+                }
+            } catch (error: any) {
+                this.logger.error(`Error processing forgot-password request: ${error.message}`);
+            }
+
+            res.status(200).json({message: "If an account with that email exists, a reset link has been sent."});
+        });
+
+        this.expressApp.post("/users/reset-password", resetPasswordRateLimiter, async (req, res) => {
+            const validatedObject = this.validator.getValidatedObject("resetPassword", req.body);
+            if (validatedObject === false) {
+                return res.status(400).json({error: "Invalid reset data. Password must be at least 8 characters."});
+            }
+
+            const {token, password} = validatedObject as any;
+
+            try {
+                const userId = await this.dataManager.consumePasswordResetToken(token);
+                if (!userId) {
+                    return res.status(400).json({error: "Invalid or expired reset token"});
+                }
+
+                await this.dataManager.updateUser(userId, {password});
+                res.status(200).json({message: "Password reset successful"});
+            } catch (error: any) {
+                this.logger.error(`Error resetting password: ${error.message}`);
+                res.status(500).json({error: "Failed to reset password"});
+            }
+        });
 
         // API Key management endpoints
         this.expressApp.post("/api-keys/create", this.authenticate, async (req, res) => {
@@ -1691,6 +1806,7 @@ export default class NetworkManager {
                 this.logger,
                 this.validator,
                 this.oidcProvider,
+                this.emailService,
             );
             this.logger.info('MCP server mounted at /mcp');
         } else {

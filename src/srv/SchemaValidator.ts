@@ -5,6 +5,8 @@ export default class SchemaValidator {
     userCreationSchema: ObjectSchema<object>;
     userLoginSchema: ObjectSchema<object>;
     userUpdateSchema: ObjectSchema<object>;
+    forgotPasswordSchema: ObjectSchema<object>;
+    resetPasswordSchema: ObjectSchema<object>;
     documentCreationSchema: ObjectSchema<object>;
     documentUpdateSchema: ObjectSchema<object>;
     structureCreationSchema: ObjectSchema<object>;
@@ -18,7 +20,7 @@ export default class SchemaValidator {
         this.userCreationSchema = object({
             name: string().required(),
             password: string().required(),
-            email: string().optional(),
+            email: string().required().email(),
             department: string().required(),
             group: string().required(),
             isAdmin: boolean().required(),
@@ -32,10 +34,19 @@ export default class SchemaValidator {
         this.userUpdateSchema = object({
             name: string().optional(),
             password: string().optional(),
-            email: string().optional(),
+            email: string().optional().email(),
             department: string().optional(),
             group: string().optional(),
             isAdmin: boolean().optional(),
+        });
+
+        this.forgotPasswordSchema = object({
+            email: string().required().email(),
+        });
+
+        this.resetPasswordSchema = object({
+            token: string().required(),
+            password: string().required().min(8),
         });
 
         this.documentCreationSchema = object({
@@ -137,6 +148,12 @@ export default class SchemaValidator {
                 break;
             case "userUpdate":
                 res = this.userUpdateSchema.validateSync(userInput, { abortEarly: false, stripUnknown: true });
+                break;
+            case "forgotPassword":
+                res = this.forgotPasswordSchema.validateSync(userInput, {abortEarly: false, stripUnknown: true});
+                break;
+            case "resetPassword":
+                res = this.resetPasswordSchema.validateSync(userInput, {abortEarly: false, stripUnknown: true});
                 break;
             case "documentCreation":
                 res = this.documentCreationSchema.validateSync(userInput, { abortEarly: false, stripUnknown: false });

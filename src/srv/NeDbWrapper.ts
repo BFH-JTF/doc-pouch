@@ -2,6 +2,7 @@ import Nedb from "@seald-io/nedb";
 import winston from "winston";
 import fs from "fs";
 import bcrypt from "bcrypt"
+import crypto from "crypto";
 import {
     type I_UserEntry,
     type I_DocumentEntry,
@@ -14,6 +15,7 @@ import {
     type I_DataStructure,
 } from "docpouch-client";
 import ApiKeyManager from "./ApiKeyManager.js";
+import EmailService from "./EmailService.js";
 
 
 // Type declaration to help TypeScript understand Nedb constructor
@@ -53,8 +55,10 @@ export default class NeDbWrapper {
     documents: CustomStore
     types: CustomStore // only for backwards compatibility pre 1.9.0
     apiKeys: any
+    passwordResetTokens: CustomStore
     logger: winston.Logger
     saltRounds: number = 10;
+    emailService: EmailService;
     private readonly inMemoryOnly: boolean;
     private readonly filenamePrefix: string | undefined;
     private readonly dbPath: string | undefined;
@@ -69,6 +73,7 @@ export default class NeDbWrapper {
         this.filenamePrefix = options.filenamePrefix ?? undefined;
         this.dbPath = options.dbPath ?? "./db";
         this._anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
+        this.emailService = new EmailService(null, winstonLogger, ""); // placeholder; will be set via setEmailService
         if (!fs.existsSync(this.dbPath)) {
             fs.mkdirSync(this.dbPath);
         }
@@ -87,6 +92,9 @@ export default class NeDbWrapper {
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
             this.apiKeys = new ApiKeyManager(undefined);
+            this.passwordResetTokens = new CustomStore(undefined,
+                "Password Reset Tokens", "Collection of password reset tokens")
+            this.passwordResetTokens.datastore.setAutocompactionInterval(1000 * 60 * 5);
         } else {
             this.logger.info("Using database files in " + this.dbPath);
             if (this.filenamePrefix === undefined)
@@ -105,8 +113,15 @@ export default class NeDbWrapper {
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
             this.apiKeys = new ApiKeyManager(`${this.dbPath}/${this.filenamePrefix}apikeys.db`);
+            this.passwordResetTokens = new CustomStore(`${this.dbPath}/${this.filenamePrefix}reset-tokens.db`,
+                "Password Reset Tokens", "Collection of password reset tokens")
+            this.passwordResetTokens.datastore.setAutocompactionInterval(1000 * 60 * 5);
         }
         this.initializationPromise = this.initializeDatabase();
+    }
+
+    setEmailService(emailService: EmailService) {
+        this.emailService = emailService;
     }
 
     get anonymousDocumentsEnabled(): boolean {
@@ -137,6 +152,7 @@ export default class NeDbWrapper {
         this.documents.datastore.stopAutocompaction();
         this.types.datastore.stopAutocompaction();
         this.apiKeys.stopAutocompaction();
+        this.passwordResetTokens.datastore.stopAutocompaction();
     }
 
     isInMemoryOnly(): boolean {
@@ -516,6 +532,57 @@ export default class NeDbWrapper {
                         reject(new Error("User not found"));
                 })
         })
+    }
+
+    getUserByEmail(email: string): Promise<I_UserEntry | null> {
+        return new Promise((resolve) => {
+            this.users.query({email: email})
+                .then((result) => {
+                    if (result.length > 0)
+                        resolve(result[0] as I_UserEntry);
+                    else
+                        resolve(null);
+                })
+                .catch(() => resolve(null));
+        });
+    }
+
+    async createPasswordResetToken(userId: string): Promise<string> {
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+        await new Promise((resolve, reject) => {
+            this.passwordResetTokens.datastore.insert({token, userId, expiresAt}, (err: Error | null) => {
+                if (err) reject(err);
+                else resolve(undefined);
+            });
+        });
+        return token;
+    }
+
+    async consumePasswordResetToken(token: string): Promise<string | null> {
+        return new Promise((resolve, reject) => {
+            this.passwordResetTokens.datastore.find({token: token}, (err: Error | null, docs: any[]) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                if (docs.length === 0) {
+                    resolve(null);
+                    return;
+                }
+                const record = docs[0];
+                if (record.expiresAt < Date.now()) {
+                    this.passwordResetTokens.datastore.remove({token: token}, {multi: false}, () => {
+                        resolve(null);
+                    });
+                    return;
+                }
+                const userId = record.userId;
+                this.passwordResetTokens.datastore.remove({token: token}, {multi: false}, () => {
+                    resolve(userId);
+                });
+            });
+        });
     }
 
     createUser(newUser: I_UserCreation): Promise<I_UserEntry> {
@@ -1036,6 +1103,7 @@ export default class NeDbWrapper {
                 isAdmin: true,
             });
             this.logger.info(`Created new admin user: ${JSON.stringify(addedUser)}`);
+            this.logger.warn("Initial admin created without email — set an email address to enable password recovery");
         }
 
         this.logger.info("Database initialization complete");

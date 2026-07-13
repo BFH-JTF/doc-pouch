@@ -90,7 +90,7 @@ export const GetUserSchema = z.object({
 export const CreateUserSchema = z.object({
     name: z.string().min(1),
     password: z.string().min(8),
-    email: z.string().optional(),
+    email: z.string().email(),
     department: z.string().min(1),
     group: z.string().min(1),
     isAdmin: z.boolean(),
@@ -108,4 +108,13 @@ export const UpdateUserSchema = z.object({
 
 export const DeleteUserSchema = z.object({
     id: z.string().min(1),
+});
+
+export const ForgotPasswordSchema = z.object({
+    email: z.string().email(),
+});
+
+export const ResetPasswordSchema = z.object({
+    token: z.string().min(1),
+    password: z.string().min(8),
 });

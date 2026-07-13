@@ -1,5 +1,6 @@
 import NetworkManager from "./NetworkManager.js";
 import NeDbWrapper, {type INeDbOptions} from "./NeDbWrapper.js";
+import EmailService, {type SmtpConfig} from "./EmailService.js";
 import winston from "winston";
 import fs from "fs";
 import {checkForUpdates} from "./updateChecker.js";
@@ -82,9 +83,24 @@ setOidcAdapterLogger(winstonLogger);
 
 const dataManager = new NeDbWrapper(winstonLogger, dbOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED});
 
+// SMTP / Email configuration
+const smtpConfig: SmtpConfig | null = process.env.SMTP_HOST
+    ? {
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: process.env.SMTP_SECURE?.toLowerCase() === 'true',
+        user: process.env.SMTP_USER || '',
+        pass: process.env.SMTP_PASS || '',
+        from: process.env.SMTP_FROM || 'DocPouch <noreply@localhost>',
+    }
+    : null;
+
+const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
+const emailService = new EmailService(smtpConfig, winstonLogger, baseUrl);
+
 dataManager.waitForInitialization().then(() => {
     winstonLogger.info("Database initialized, starting server...");
-    new NetworkManager(winstonLogger, dataManager, PORT, corsOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED});
+    new NetworkManager(winstonLogger, dataManager, PORT, corsOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED}, emailService);
 }).catch((error) => {
     winstonLogger.error(`Failed to initialize database: ${error}`);
     process.exit(1);
