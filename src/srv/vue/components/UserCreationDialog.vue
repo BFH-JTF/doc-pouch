@@ -4,6 +4,10 @@
       <v-card-title class="headline bg-blue-darken-2">Create New User</v-card-title>
 
       <v-card-text>
+        <v-alert class="mb-4" density="compact" type="info" variant="tonal">
+          A random password will be generated and sent to the user's email address.
+        </v-alert>
+
         <v-form ref="form" v-model="formValid" @submit.prevent="submitForm">
           <v-container>
             <v-row>
@@ -13,31 +17,6 @@
                   v-model="newUser.name"
                   :rules="nameRules"
                   label="Username"
-                  variant="outlined"
-                  required
-                  density="compact"
-                ></v-text-field>
-              </v-col>
-
-              <!-- Password fields -->
-              <v-col cols="12">
-                <v-text-field
-                  v-model="newUser.password"
-                  :rules="passwordRules"
-                  label="Password"
-                  type="password"
-                  variant="outlined"
-                  required
-                  density="compact"
-                ></v-text-field>
-              </v-col>
-
-              <v-col cols="12">
-                <v-text-field
-                  v-model="confirmPassword"
-                  :rules="[...passwordRules, passwordMatchRule]"
-                  label="Confirm Password"
-                  type="password"
                   variant="outlined"
                   required
                   density="compact"
@@ -102,6 +81,16 @@
         >
           {{ errorMessage }}
         </v-alert>
+
+        <!-- Success alert showing password when email fails -->
+        <v-alert
+            v-if="successMessage"
+            class="mt-4"
+            type="success"
+            variant="tonal"
+        >
+          {{ successMessage }}
+        </v-alert>
       </v-card-text>
 
       <v-card-actions>
@@ -111,8 +100,8 @@
         </v-btn>
         <v-btn 
           color="primary" 
-          @click="submitForm" 
-          :disabled="!formValid || newUser.password !== confirmPassword || isSubmitting"
+          :disabled="!formValid || isSubmitting"
+          @click="submitForm"
           :loading="isSubmitting"
         >
           Create User
@@ -143,13 +132,12 @@ const emit = defineEmits<{
 // Form state
 const formValid = ref(false);
 const errorMessage = ref('');
+const successMessage = ref('');
 const isSubmitting = ref(false);
-const confirmPassword = ref('');
 
-// New user object
-const newUser = reactive(<I_UserCreation>{
+// New user object (no password field - auto-generated)
+const newUser = reactive({
   name: '',
-  password: '',
   email: '',
   department: '',
   group: '',
@@ -163,18 +151,9 @@ const nameRules = [
   (v: string) => /^[a-zA-Z0-9_]+$/.test(v) || 'Username can only contain letters, numbers and underscores'
 ];
 
-const passwordRules = [
-  (v: string) => !!v || 'Password is required',
-  (v: string) => v.length >= 8 || 'Password must be at least 8 characters',
-  (v: string) => /[A-Z]/.test(v) || 'Password must contain at least one uppercase letter',
-  (v: string) => /[0-9]/.test(v) || 'Password must contain at least one number'
-];
-
 const mandatoryFieldRules = [
   (v: string) => !!v || 'This field is required',
 ];
-
-const passwordMatchRule = (v: string) => v === newUser.password || 'Passwords do not match';
 
 const emailRules = [
   (v: string) => !!v || 'Email is required',
@@ -197,23 +176,32 @@ watch(dialogVisible, (newValue) => {
 
 // Form submission
 async function submitForm() {
-  if (!formValid.value || newUser.password !== confirmPassword.value) return;
+  if (!formValid.value) return;
 
   errorMessage.value = '';
+  successMessage.value = '';
   isSubmitting.value = true;
 
   try {
     const createdUser = await props.apiClient.createUser({
       name: newUser.name,
-      password: newUser.password,
-      email: newUser.email || undefined,
+      email: newUser.email,
       isAdmin: newUser.isAdmin,
       department: newUser.department,
       group: newUser.group
-    });
+    } as I_UserCreation);
+
+    if ((createdUser as any).password) {
+      successMessage.value = `User created. Generated password: ${(createdUser as any).password}`;
+    } else if ((createdUser as any).message) {
+      successMessage.value = (createdUser as any).message;
+    }
 
     emit('user-created', createdUser);
-    closeDialog();
+
+    if (!successMessage.value) {
+      closeDialog();
+    }
   } catch (error: any) {
     errorMessage.value = error.message || 'Failed to create user';
     console.error('Error creating user:', error);
@@ -229,11 +217,10 @@ function closeDialog() {
 function resetForm() {
   // Reset form data
   newUser.name = '';
-  newUser.password = '';
   newUser.email = '';
   newUser.isAdmin = false;
-  confirmPassword.value = '';
   errorMessage.value = '';
+  successMessage.value = '';
   formValid.value = false;
 }
 </script>

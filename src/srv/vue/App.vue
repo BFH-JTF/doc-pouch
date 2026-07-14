@@ -173,7 +173,7 @@ async function handleUserSelected(userID: string) {
   shownComponent.value = DisplayComponent.userViewer;
   console.log("Changed shown component to:", shownComponent.value, "DisplayComponent.userViewer =", DisplayComponent.userViewer);
   loadedUser.value = userArray.value.find(user => user._id === userID);
-  console.log("Loaded user:", loadedUser.value);
+  console.log("Loaded user:", loadedUser.value?._id);
 }
 
 async function handleStructureSelected(structureID: string) {
@@ -947,6 +947,8 @@ async function migrateDatabase() {
                 :user="loadedUser"
                 :department-list="[...new Set(userArray.map(user => user.department))]"
                 :group-list="[...new Set(userArray.map(user => user.group))]"
+                :api-client="apiClient"
+                :is-admin="isAdmin"
                 @user-updated="handleUserUpdate"
                 v-if="shownComponent === DisplayComponent.userViewer"
             />

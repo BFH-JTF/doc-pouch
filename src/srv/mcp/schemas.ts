@@ -89,7 +89,7 @@ export const GetUserSchema = z.object({
 
 export const CreateUserSchema = z.object({
     name: z.string().min(1),
-    password: z.string().min(8),
+    password: z.string().min(8).optional(),
     email: z.string().email(),
     department: z.string().min(1),
     group: z.string().min(1),
@@ -99,7 +99,6 @@ export const CreateUserSchema = z.object({
 export const UpdateUserSchema = z.object({
     id: z.string().min(1),
     name: z.string().optional(),
-    password: z.string().min(8).optional(),
     email: z.string().optional(),
     department: z.string().optional(),
     group: z.string().optional(),
@@ -107,6 +106,10 @@ export const UpdateUserSchema = z.object({
 });
 
 export const DeleteUserSchema = z.object({
+    id: z.string().min(1),
+});
+
+export const AdminResetPasswordSchema = z.object({
     id: z.string().min(1),
 });
 

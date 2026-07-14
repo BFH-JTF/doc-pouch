@@ -27,16 +27,26 @@
             ></v-text-field>
           </v-col>
 
-          <!-- Password field - now just shows a change password button -->
-          <v-col cols="12">
-            <v-btn 
-              color="primary" 
-              @click="showPasswordDialog = true"
+          <!-- Reset Password button (admin only) -->
+          <v-col v-if="props.isAdmin" cols="12">
+            <v-btn
+                :loading="resetLoading"
+                color="warning"
               variant="outlined"
               block
+                @click="handleResetPassword"
             >
-              Change Password
+              Reset Password
             </v-btn>
+            <div v-if="resetResult" class="mt-2 text-caption">
+              <v-alert v-if="resetResult.password" density="compact" type="warning" variant="tonal">
+                New password: {{ resetResult.password }}
+              </v-alert>
+              <v-alert v-else-if="resetResult.message && !resetResult.password"
+                       :type="resetResult.isError ? 'error' : 'success'" density="compact" variant="tonal">
+                {{ resetResult.message }}
+              </v-alert>
+            </div>
           </v-col>
 
           <!-- Email field -->
@@ -75,7 +85,7 @@
             <div class="d-flex align-center">
               <v-switch
                 label="Administrator"
-                v-model="isAdmin"
+                v-model="userIsAdmin"
                 color="primary"
                 @update:model-value="updateIsAdmin"
               ></v-switch>
@@ -90,56 +100,20 @@
         </v-row>
       </v-container>
     </v-card-text>
-
-    <!-- Password Change Dialog -->
-    <v-dialog v-model="showPasswordDialog" max-width="500px">
-      <v-card>
-        <v-card-title>Change Password</v-card-title>
-        <v-card-text>
-          <v-alert
-            type="info"
-            variant="tonal"
-            density="compact"
-            class="mb-3"
-          >
-            Password must contain at least 8 characters, one uppercase letter, and one number.
-          </v-alert>
-          <v-form ref="passwordForm" @submit.prevent="submitPasswordChange" v-model="validForm">
-            <v-text-field
-              v-model="newPassword"
-              :rules="passwordRules"
-              label="New Password"
-              type="password"
-              required
-              variant="outlined"
-            ></v-text-field>
-            <v-text-field
-              v-model="confirmPassword"
-              :rules="[...passwordRules, passwordMatchRule]"
-              label="Confirm Password"
-              type="password"
-              required
-              variant="outlined"
-            ></v-text-field>
-            <div class="d-flex justify-end mt-4">
-              <v-btn color="error" class="mr-2" @click="cancelPasswordChange">Cancel</v-btn>
-              <v-btn color="primary" type="submit" :disabled="!validForm || newPassword !== confirmPassword">Save</v-btn>
-            </div>
-          </v-form>
-        </v-card-text>
-      </v-card>
-    </v-dialog>
   </v-card>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue';
 import type {I_UserEntry} from 'docpouch-client';
+import type DbPouchClient from 'docpouch-client';
 
 const props = defineProps<{
   user: I_UserEntry | undefined;
   departmentList: string[];
   groupList: string[];
+  isAdmin?: boolean;
+  apiClient: DbPouchClient;
 }>();
 
 const emit = defineEmits<{
@@ -147,11 +121,13 @@ const emit = defineEmits<{
 }>();
 
 const username = ref(props.user?.name);
-const password = ref(props.user?.password);
 const email = ref(props.user?.email);
-const isAdmin = ref(props.user?.isAdmin);
+const userIsAdmin = ref(props.user?.isAdmin);
 const department = ref(props.user?.department);
 const group = ref(props.user?.group);
+
+const resetLoading = ref(false);
+const resetResult = ref<{ password?: string; message?: string; isError?: boolean } | null>(null);
 
 let departmentItems = computed(() => {
   return props.departmentList.map(d => {
@@ -165,35 +141,21 @@ let groupItems = computed(() => {
     });
 })
 
-const showPasswordDialog = ref(false);
-const newPassword = ref('');
-const confirmPassword = ref('');
-const validForm = ref(false);
-
-// Password validation rules
-const passwordRules = [
-  (v: string) => !!v || 'Password is required',
-  (v: string) => v.length >= 8 || 'Password must be at least 8 characters',
-  (v: string) => /[A-Z]/.test(v) || 'Password must contain at least one uppercase letter',
-  (v: string) => /[0-9]/.test(v) || 'Password must contain at least one number',
-];
-const passwordMatchRule = (v: string) => v === newPassword.value || 'Passwords do not match';
-
 onMounted(() => {
-  console.log("UserDisplay mounted, user:", props.user);
+  console.log("UserDisplay mounted, user:", props.user?._id);
 });
 
 // Watch for changes in the user prop
 watch(() => props.user, (newUser) => {
-  console.log("User prop changed:", newUser);
+  console.log("User prop changed:", newUser?._id);
   if (!newUser) return;
 
   username.value = newUser.name;
-  password.value = newUser.password;
   email.value = newUser.email;
-  isAdmin.value = newUser.isAdmin;
+  userIsAdmin.value = newUser.isAdmin;
   department.value = newUser.department;
   group.value = newUser.group;
+  resetResult.value = null;
 }, { immediate: true, deep: true });
 
 // Emit events when fields change
@@ -247,22 +209,36 @@ function updateIsAdmin(value: boolean | null) {
   }
 }
 
-// Password change functions
-function submitPasswordChange() {
-  if (newPassword.value === confirmPassword.value && props.user?._id !== undefined) {
-    emit('user-updated', props.user._id, 'password', newPassword.value);
-    closePasswordDialog();
+async function handleResetPassword() {
+  if (!props.user?._id) return;
+  resetLoading.value = true;
+  resetResult.value = null;
+
+  try {
+    const token = props.apiClient.getToken();
+    if (!token) {
+      resetResult.value = {message: 'Not authenticated', isError: true};
+      resetLoading.value = false;
+      return;
+    }
+    const response = await fetch(`/users/admin-reset-password/${props.user._id}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    if (response.ok) {
+      resetResult.value = data;
+    } else {
+      resetResult.value = {message: data.error || 'Failed to reset password', isError: true};
+    }
+  } catch (error: any) {
+    resetResult.value = {message: 'An error occurred while resetting the password', isError: true};
+  } finally {
+    resetLoading.value = false;
   }
-}
-
-function cancelPasswordChange() {
-  closePasswordDialog();
-}
-
-function closePasswordDialog() {
-  showPasswordDialog.value = false;
-  newPassword.value = '';
-  confirmPassword.value = '';
 }
 </script>
 

@@ -1,6 +1,12 @@
 import type {NextFunction, Request, Response} from 'express';
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import {
+    apiRateLimiter,
+    writeRateLimiter,
+    authRateLimiter,
+    forgotPasswordRateLimiter,
+    resetPasswordRateLimiter
+} from './rateLimiters.js';
 import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -24,6 +30,7 @@ import McpManager from "./mcp/McpManager.js";
 import jwt from "jsonwebtoken";
 import {JWTOptions, parseDurationToSeconds} from "./webTokenStuff.js";
 import EmailService from "./EmailService.js";
+import {generatePassword} from "./passwordGenerator.js";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
@@ -576,7 +583,7 @@ export default class NetworkManager {
         this.expressApp.disable('etag'); // Disable ETag header to prevent caching of responses
 
         // OIDC client config endpoint (must be before the OIDC provider mount)
-        this.expressApp.get('/api/oidc-client-config', async (req, res) => {
+        this.expressApp.get('/api/oidc-client-config', apiRateLimiter, async (req, res) => {
             try {
                 if (!process.env.OIDC_ISSUER) {
                     res.json({configured: false});
@@ -743,7 +750,7 @@ export default class NetworkManager {
         // the global urlencoded parser is mounted after the OIDC
         // provider (so that the OIDC provider can install its own
         // body parser without the body being consumed twice).
-        this.expressApp.post('/oidc/cancel-logout', express.urlencoded({extended: true}), (req, res) => {
+        this.expressApp.post('/oidc/cancel-logout', apiRateLimiter, express.urlencoded({extended: true}), (req, res) => {
             this.logger.debug('Logout cancelled, redirecting back to app');
             const postLogoutRedirectUri = typeof req.body?.post_logout_redirect_uri === 'string'
                 ? req.body.post_logout_redirect_uri
@@ -757,7 +764,10 @@ export default class NetworkManager {
             this.logger.debug('=== OIDC Request ===');
             this.logger.debug(`${req.method} ${req.url}`);
             this.logger.debug('Query: ' + JSON.stringify(req.query));
-            this.logger.debug('Headers: ' + JSON.stringify(req.headers));
+            const safeHeaders = {...req.headers};
+            if (safeHeaders.authorization) safeHeaders.authorization = '[redacted]';
+            if (safeHeaders.cookie) safeHeaders.cookie = '[redacted]';
+            this.logger.debug('Headers: ' + JSON.stringify(safeHeaders));
 
             // Log response when it finishes
             res.on('finish', () => {
@@ -808,22 +818,10 @@ export default class NetworkManager {
             }
         };
 
-        const interactionRateLimiter = rateLimit({
-            windowMs: 15 * 60 * 1000,
-            max: 100,
-            standardHeaders: true,
-            legacyHeaders: false,
-        });
 
-        const wellKnownRateLimiter = rateLimit({
-            windowMs: 15 * 60 * 1000,
-            max: 100,
-            standardHeaders: true,
-            legacyHeaders: false,
-        });
 
         // Serve OIDC login page
-        this.expressApp.get('/interaction/:uid', interactionRateLimiter, async (req, res) => {
+        this.expressApp.get('/interaction/:uid', apiRateLimiter, async (req, res) => {
             try {
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
 
@@ -858,7 +856,7 @@ export default class NetworkManager {
         });
 
         // API endpoint to get interaction details (for displaying client info)
-        this.expressApp.get('/interaction/:uid/details', async (req, res) => {
+        this.expressApp.get('/interaction/:uid/details', apiRateLimiter, async (req, res) => {
             try {
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
                 const client = interaction.params?.client_id
@@ -875,11 +873,10 @@ export default class NetworkManager {
         });
 
         // Handle login form submission
-        this.expressApp.post('/interaction/:uid', async (req, res) => {
+        this.expressApp.post('/interaction/:uid', authRateLimiter, async (req, res) => {
             this.logger.debug('=== Interaction POST Request ===');
             this.logger.debug('URL: ' + req.url);
             this.logger.debug('Method: ' + req.method);
-            this.logger.debug('Body: ' + JSON.stringify(req.body));
             this.logger.debug('Params: ' + JSON.stringify(req.params));
             
             try {
@@ -949,7 +946,7 @@ export default class NetworkManager {
             }
         });
         // Proxy well-known OIDC discovery to the OIDC provider (mounted at /oidc)
-        this.expressApp.get('/.well-known/openid-configuration', wellKnownRateLimiter, (req, res) => {
+        this.expressApp.get('/.well-known/openid-configuration', apiRateLimiter, (req, res) => {
             const options = {
                 hostname: 'localhost',
                 port: this.port,
@@ -972,7 +969,7 @@ export default class NetworkManager {
             proxyReq.end();
         });
 
-        this.expressApp.get('/users/list', this.authenticate, (req, res) => {
+        this.expressApp.get('/users/list', this.authenticate, apiRateLimiter, (req, res) => {
             this.dataManager.getUsers(req.userid)
                 .then((users: I_UserEntry[]) => {
                     res.status(200).json(users);
@@ -983,25 +980,31 @@ export default class NetworkManager {
             });
         });
 
-        this.expressApp.post("/users/create", this.authenticate, async (req, res) => {
+        this.expressApp.post("/users/create", this.authenticate, writeRateLimiter, async (req, res) => {
             let validatedObject = this.validator.getValidatedObject("userCreation", req.body);
             if (validatedObject !== false) {
                 this.dataManager.isAdmin(req.userid).then((isAdmin) => {
                     if (isAdmin) {
+                        const autoGenerated = !(validatedObject as any).password;
+                        if (autoGenerated) {
+                            (validatedObject as any).password = generatePassword();
+                        }
+                        const plainPassword = (validatedObject as any).password;
+
                         this.dataManager.createUser(validatedObject as I_UserCreation)
                             .then(async (newUser) => {
                                 this.socketServer.sendEventToAdmins(req.socketID, "newUser", {newUser: newUser});
-                                this.logger.info(`New user created: ${JSON.stringify(newUser)}`);
+                                const {password: _, ...safeNewUser} = newUser as any;
+                                this.logger.info(`New user created: ${JSON.stringify(safeNewUser)}`);
 
-                                const plainPassword = (validatedObject as any).password;
                                 const userEmail = (newUser as any).email;
                                 const responseObj: any = {...newUser};
                                 delete responseObj.password;
 
-                                if (userEmail && plainPassword) {
+                                if (userEmail) {
                                     const emailResult = await this.emailService.sendWelcomeEmail(userEmail, (newUser as any).name, plainPassword);
                                     if (emailResult.sent) {
-                                        responseObj.message = emailResult.message;
+                                        responseObj.message = `Password sent to ${userEmail}`;
                                     } else {
                                         responseObj.password = plainPassword;
                                         responseObj.message = "Email delivery failed; password shown as fallback";
@@ -1027,12 +1030,12 @@ export default class NetworkManager {
             res.status(405).json({error: "Method Not Allowed. Use POST for login."});
         })
 
-        this.expressApp.post("/users/login", (req: Request, res: Response) => {
+        this.expressApp.post("/users/login", authRateLimiter, (req: Request, res: Response) => {
             this.logger.info("Login request received");
 
             try {
                 const validatedObject = this.validator.getValidatedObject("userLogin", req.body);
-                this.logger.debug(`Validation result: ${JSON.stringify(validatedObject)}`);
+                this.logger.debug(`Validation result: ${validatedObject ? 'valid' : 'invalid'}`);
 
                 if (validatedObject) {
                     this.logger.debug("Validation passed, calling validateUser");
@@ -1068,7 +1071,7 @@ export default class NetworkManager {
             }
         })
 
-        this.expressApp.get("/users/whoami", this.authenticate, async (req, res) => {
+        this.expressApp.get("/users/whoami", this.authenticate, apiRateLimiter, async (req, res) => {
             try {
                 const user = await this.dataManager.getUserByID(req.userid);
                 if (user) {
@@ -1086,7 +1089,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.patch("/users/update/:userID", this.authenticate, async (req: Request, res: Response) => {
+        this.expressApp.patch("/users/update/:userID", this.authenticate, writeRateLimiter, async (req: Request, res: Response) => {
             const validatedObject = this.validator.getValidatedObject("userUpdate", req.body);
 
             if (validatedObject !== false && req.params.userID !== undefined) {
@@ -1106,14 +1109,10 @@ export default class NetworkManager {
                     const updateData: I_UserUpdate = {};
                     updateData._id = userID;
                     if (req.body.name) updateData.name = req.body.name;
-                    if (req.body.password) updateData.password = req.body.password;
                     if (req.body.email) updateData.email = req.body.email;
                     if (req.body.department) updateData.department = req.body.department;
                     if (req.body.group) updateData.group = req.body.group;
                     if (req.body.isAdmin !== undefined) updateData.isAdmin = req.body.isAdmin;
-
-                    const plainPassword = req.body.password;
-                    const isAdminReset = plainPassword && req.userid !== userID;
 
                     this.dataManager.updateUser(userID, updateData)
                         .then(async (numUpdated: number) => {
@@ -1122,37 +1121,8 @@ export default class NetworkManager {
                             } else if (numUpdated > 1)
                                 res.status(500).json({error: "Multiple users with the same ID found"});
                             else {
-                                this.socketServer.sendEventToAdmins(req.socketID, "changedUser", {changedUser: updateData});
-
-                                if (isAdminReset && plainPassword) {
-                                    try {
-                                        const user = await this.dataManager.getUserByID(userID);
-                                        const userEmail = (user as any).email;
-                                        const responseObj: any = {message: "User has been successfully updated"};
-
-                                        if (userEmail) {
-                                            const emailResult = await this.emailService.sendPasswordResetEmail(userEmail, (user as any).name, plainPassword);
-                                            if (emailResult.sent) {
-                                                responseObj.message = emailResult.message;
-                                            } else {
-                                                responseObj.password = plainPassword;
-                                                responseObj.message = "Email delivery failed; password shown as fallback";
-                                            }
-                                        } else {
-                                            responseObj.password = plainPassword;
-                                            responseObj.message = "No email address on file; password shown as fallback";
-                                        }
-                                        res.status(200).json(responseObj);
-                                    } catch {
-                                        res.status(200).json({
-                                            message: "User has been successfully updated",
-                                            password: plainPassword,
-                                            emailDelivery: "failed"
-                                        });
-                                    }
-                                } else {
-                                    res.status(200).json({message: "User has been successfully updated"});
-                                }
+                                this.socketServer.sendEventToAdmins(req.socketID, "changedUser", {changedUser: updateData})
+                                res.status(200).json({message: "User has been successfully updated"});
                             }
                         })
                         .catch((error) => {
@@ -1168,7 +1138,8 @@ export default class NetworkManager {
                 res.status(503).json({error: "Invalid user data"});
         });
 
-        this.expressApp.delete("/users/remove/:userID", this.authenticate, (req, res) => {
+
+        this.expressApp.delete("/users/remove/:userID", this.authenticate, writeRateLimiter, (req, res) => {
             this.dataManager.isAdmin(req.userid).then((isAdmin: boolean) => {
                 if (!isAdmin)
                     return res.status(401).json({error: "Not authorized to remove this user"});
@@ -1183,20 +1154,47 @@ export default class NetworkManager {
             })
         })
 
-        const forgotPasswordRateLimiter = rateLimit({
-            windowMs: 15 * 60 * 1000,
-            max: 5,
-            standardHeaders: true,
-            legacyHeaders: false,
-            message: {error: "Too many password reset requests. Please try again later."},
-        });
 
-        const resetPasswordRateLimiter = rateLimit({
-            windowMs: 15 * 60 * 1000,
-            max: 10,
-            standardHeaders: true,
-            legacyHeaders: false,
-            message: {error: "Too many password reset attempts. Please try again later."},
+        this.expressApp.post("/users/admin-reset-password/:userID", this.authenticate, writeRateLimiter, async (req: Request, res: Response) => {
+            const userID = req.params.userID as string;
+            if (!userID) {
+                return res.status(400).json({error: "User ID is required"});
+            }
+
+            const isAdmin = await this.dataManager.isAdmin(req.userid);
+            if (!isAdmin) {
+                return res.status(401).json({error: "Only administrators can reset passwords"});
+            }
+
+            try {
+                const user = await this.dataManager.getUserByID(userID);
+                const newPassword = generatePassword();
+                await this.dataManager.updateUser(userID, {password: newPassword});
+
+                const userEmail = (user as any).email;
+                const responseObj: any = {message: "Password has been reset"};
+
+                if (userEmail) {
+                    const emailResult = await this.emailService.sendPasswordResetEmail(userEmail, (user as any).name, newPassword);
+                    if (emailResult.sent) {
+                        responseObj.message = `New password sent to ${userEmail}`;
+                    } else {
+                        responseObj.password = newPassword;
+                        responseObj.message = "Email delivery failed; password shown as fallback";
+                    }
+                } else {
+                    responseObj.password = newPassword;
+                    responseObj.message = "No email address on file; password shown as fallback";
+                }
+
+                res.status(200).json(responseObj);
+            } catch (error: any) {
+                if (error.message === "User not found") {
+                    return res.status(404).json({error: "User not found"});
+                }
+                this.logger.error(`Error resetting password: ${error.message}`);
+                res.status(500).json({error: "Failed to reset password"});
+            }
         });
 
         this.expressApp.post("/users/forgot-password", forgotPasswordRateLimiter, async (req, res) => {
@@ -1244,7 +1242,7 @@ export default class NetworkManager {
         });
 
         // API Key management endpoints
-        this.expressApp.post("/api-keys/create", this.authenticate, async (req, res) => {
+        this.expressApp.post("/api-keys/create", this.authenticate, writeRateLimiter, async (req, res) => {
             try {
                 const {name, expiresInDays} = req.body;
                 if (!name || typeof name !== "string" || name.trim().length === 0) {
@@ -1258,7 +1256,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.get("/api-keys/list", this.authenticate, async (req, res) => {
+        this.expressApp.get("/api-keys/list", this.authenticate, apiRateLimiter, async (req, res) => {
             try {
                 const keys = await this.dataManager.apiKeys.listApiKeys(req.userid);
                 res.status(200).json(keys);
@@ -1267,7 +1265,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.delete("/api-keys/:keyId", this.authenticate, async (req, res) => {
+        this.expressApp.delete("/api-keys/:keyId", this.authenticate, writeRateLimiter, async (req, res) => {
             try {
                 const deleted = await this.dataManager.apiKeys.deleteApiKey(req.params.keyId, req.userid);
                 if (deleted) {
@@ -1281,7 +1279,7 @@ export default class NetworkManager {
         });
 
         // Admin: list all API keys (for any user)
-        this.expressApp.get("/api-keys/admin/list", this.authenticate, async (req, res) => {
+        this.expressApp.get("/api-keys/admin/list", this.authenticate, apiRateLimiter, async (req, res) => {
             try {
                 const isAdmin = await this.dataManager.isAdmin(req.userid);
                 if (!isAdmin) {
@@ -1309,7 +1307,7 @@ export default class NetworkManager {
         });
 
         // Admin: revoke any user's API key
-        this.expressApp.delete("/api-keys/admin/:keyId", this.authenticate, async (req, res) => {
+        this.expressApp.delete("/api-keys/admin/:keyId", this.authenticate, writeRateLimiter, async (req, res) => {
             try {
                 const isAdmin = await this.dataManager.isAdmin(req.userid);
                 if (!isAdmin) {
@@ -1329,7 +1327,7 @@ export default class NetworkManager {
         });
 
         // Document endpoints with access control
-        this.expressApp.get("/docs/list", this.authenticate, (req, res) => {
+        this.expressApp.get("/docs/list", this.authenticate, apiRateLimiter, (req, res) => {
             this.dataManager.getAllDocuments(req.userid)
                 .then((documents) => {
                     res.status(200).json(documents);
@@ -1339,7 +1337,7 @@ export default class NetworkManager {
                 });
         });
 
-        this.expressApp.post("/docs/fetch", this.authenticate, (req, res) => {
+        this.expressApp.post("/docs/fetch", this.authenticate, apiRateLimiter, (req, res) => {
             let queryObject = req.body;
             this.validator.getValidatedObject("documentFetch", queryObject);
 
@@ -1358,7 +1356,7 @@ export default class NetworkManager {
                 });
         });
 
-        this.expressApp.post("/docs/create", this.authenticate, (req, res) => {
+        this.expressApp.post("/docs/create", this.authenticate, writeRateLimiter, (req, res) => {
             // For privacy, do not log the full body when the request is for an
             // anonymous document. Even the raw body may contain identifying
             // information written by the submitter.
@@ -1420,7 +1418,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.patch("/docs/update/:documentID", this.authenticate, (req, res) => {
+        this.expressApp.patch("/docs/update/:documentID", this.authenticate, writeRateLimiter, (req, res) => {
             if (this.validator.getValidatedObject("documentUpdate", req.body) && req.params.documentID !== undefined) {
                 this.dataManager.updateDocument(req.params.documentID as string, req.body, req.userid)
                     .then((numUpdated) => {
@@ -1457,7 +1455,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.delete("/docs/remove/:documentID", this.authenticate, (req, res) => {
+        this.expressApp.delete("/docs/remove/:documentID", this.authenticate, writeRateLimiter, (req, res) => {
             if (req.params.documentID !== undefined) {
                 this.socketServer.sendEventToDocumentAccessors(req.socketID, req.params.documentID as string, "removedDocument", {removedID: req.params.documentID as string}).then(() => {
                     if (req.params.documentID !== undefined) {
@@ -1482,7 +1480,7 @@ export default class NetworkManager {
         });
 
         // Structure endpoints with access control
-        this.expressApp.get("/structures/list", this.authenticate, (req, res) => {
+        this.expressApp.get("/structures/list", this.authenticate, apiRateLimiter, (req, res) => {
             this.dataManager.getStructures()
                 .then((structures) => {
                     res.status(200).json(structures);
@@ -1492,7 +1490,7 @@ export default class NetworkManager {
                 });
         });
 
-        this.expressApp.post("/structures/create", this.authenticate, (req, res) => {
+        this.expressApp.post("/structures/create", this.authenticate, writeRateLimiter, (req, res) => {
             if (this.validator.getValidatedObject("structureCreation", req.body)) {
                 this.dataManager.createStructure(req.body, req.userid)
                     .then((structure) => {
@@ -1512,7 +1510,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.patch("/structures/update/:structureID", this.authenticate, (req, res) => {
+        this.expressApp.patch("/structures/update/:structureID", this.authenticate, writeRateLimiter, (req, res) => {
             if (this.validator.getValidatedObject("structureUpdate", req.body) && req.params.structureID !== undefined) {
                 const structureID = req.params.structureID;
                 this.dataManager.updateStructure(structureID as string, req.body, req.userid)
@@ -1536,7 +1534,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.delete("/structures/remove/:structureID", this.authenticate, (req, res) => {
+        this.expressApp.delete("/structures/remove/:structureID", this.authenticate, writeRateLimiter, (req, res) => {
             const structureID = req.params.structureID;
             if (structureID !== undefined) {
                 this.dataManager.removeStructure(structureID as string, req.userid)
@@ -1567,7 +1565,7 @@ export default class NetworkManager {
         });
 
         // Database export endpoint
-        this.expressApp.get("/database/export", this.authenticate, (req, res) => {
+        this.expressApp.get("/database/export", this.authenticate, apiRateLimiter, (req, res) => {
             this.dataManager.isAdmin(req.userid).then(async (isAdmin) => {
                 if (!isAdmin) {
                     return res.status(403).json({error: "Only admins can export the database"});
@@ -1645,7 +1643,7 @@ export default class NetworkManager {
         });
 
         // Database import endpoint
-        this.expressApp.post("/database/import", this.authenticate, upload.single('file'), (req, res) => {
+        this.expressApp.post("/database/import", this.authenticate, writeRateLimiter, upload.single('file'), (req, res) => {
             this.dataManager.isAdmin(req.userid).then(async (isAdmin) => {
                 if (!isAdmin) {
                     return res.status(403).json({error: "Only admins can import the database"});
@@ -1774,15 +1772,7 @@ export default class NetworkManager {
             });
         });
 
-        const indexRateLimiter = rateLimit({
-            windowMs: 15 * 60 * 1000,
-            max: 100,
-            standardHeaders: true,
-            legacyHeaders: false,
-        });
-
         this.expressApp.use((req, res, next) => {
-            // Skip for API routes that are already handled
             if (req.path.startsWith('/api') ||
                 req.path.startsWith('/users') ||
                 req.path.startsWith('/docs') ||
@@ -1795,7 +1785,7 @@ export default class NetworkManager {
                 return next();
             }
 
-            indexRateLimiter(req, res, next);
+            apiRateLimiter(req, res, next);
         });
 
         // Mount MCP server before the SPA catch-all so /mcp is handled

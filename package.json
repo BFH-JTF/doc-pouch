@@ -28,7 +28,7 @@
     "archiver": "^8.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
-    "docpouch-client": "^1.2.0",
+    "docpouch-client": "^1.2.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
@@ -73,5 +73,8 @@
     "typescript": "^6.0.3",
     "vite": "^7.3.6",
     "vue-tsc": "^3.3.7"
+  },
+  "overrides": {
+    "@babel/core": "$@babel/core"
   }
 }

@@ -4,6 +4,10 @@
       <v-card-title class="headline bg-blue-darken-2">Mass Create Users</v-card-title>
 
       <v-card-text>
+        <v-alert class="mb-4" density="compact" type="info" variant="tonal">
+          A random password will be generated for each user and sent to their email address.
+        </v-alert>
+
         <v-form ref="form" v-model="formValid" @submit.prevent="submitForm">
           <v-container>
             <v-row>
@@ -102,31 +106,6 @@
                   </v-card-text>
                 </v-card>
               </v-col>
-
-              <!-- Password field for all users -->
-              <v-col cols="12">
-                <v-text-field
-                    v-model="commonPassword"
-                    :rules="passwordRules"
-                    density="compact"
-                    label="Password for all users"
-                    required
-                    type="password"
-                    variant="outlined"
-                ></v-text-field>
-              </v-col>
-
-              <v-col cols="12">
-                <v-text-field
-                    v-model="confirmPassword"
-                    :rules="[...passwordRules, passwordMatchRule]"
-                    density="compact"
-                    label="Confirm Password"
-                    required
-                    type="password"
-                    variant="outlined"
-                ></v-text-field>
-              </v-col>
             </v-row>
           </v-container>
         </v-form>
@@ -158,7 +137,7 @@
           Cancel
         </v-btn>
         <v-btn
-            :disabled="!formValid || !csvFile || commonPassword !== confirmPassword || isSubmitting || !isColumnMappingValid"
+            :disabled="!formValid || !csvFile || !isColumnMappingValid || isSubmitting"
             :loading="isSubmitting"
             color="primary"
             @click="submitForm"
@@ -196,8 +175,6 @@ const successSummary = ref('');
 const isSubmitting = ref(false);
 const csvFile = ref<File | null>(null);
 const csvData = ref<string[][]>([]);
-const commonPassword = ref('');
-const confirmPassword = ref('');
 const ignoreFirstRow = ref(true);
 
 // Column mapping
@@ -254,18 +231,9 @@ const fileRules = [
   (v: any) => !v || v.type === 'text/csv' || v[0]?.type === 'text/csv' || 'File must be a CSV'
 ];
 
-const passwordRules = [
-  (v: string) => !!v || 'Password is required',
-  (v: string) => v.length >= 8 || 'Password must be at least 8 characters',
-  (v: string) => /[A-Z]/.test(v) || 'Password must contain at least one uppercase letter',
-  (v: string) => /[0-9]/.test(v) || 'Password must contain at least one number'
-];
-
 const mandatoryFieldRules = [
   (v: string) => !!v || 'This field is required',
 ];
-
-const passwordMatchRule = (v: string) => v === commonPassword.value || 'Passwords do not match';
 
 // Sync dialog visibility with prop
 const dialogVisible = ref(props.show);
@@ -345,7 +313,7 @@ function parseCSV(text: string): string[][] {
 
 // Form submission
 async function submitForm() {
-  if (!formValid.value || !csvFile.value || commonPassword.value !== confirmPassword.value || !isColumnMappingValid.value) return;
+  if (!formValid.value || !csvFile.value || !isColumnMappingValid.value) return;
 
   errorMessage.value = '';
   successSummary.value = '';
@@ -373,7 +341,7 @@ async function submitForm() {
       try {
         const userData: I_UserCreation = {
           name: row[nameIndex].trim(),
-          password: commonPassword.value,
+          password: undefined as any,
           email: row[emailIndex]?.trim() || '',
           department: row[departmentIndex].trim(),
           group: row[groupIndex].trim(),
@@ -389,7 +357,7 @@ async function submitForm() {
     }
 
     if (successCount > 0) {
-      successSummary.value = `Successfully created ${successCount} users.`;
+      successSummary.value = `Successfully created ${successCount} users. Passwords have been sent to their email addresses.`;
       if (failureCount > 0) {
         successSummary.value += ` Failed to create ${failureCount} users.`;
       }
@@ -421,8 +389,6 @@ function resetForm() {
   }
   csvFile.value = null;
   csvData.value = [];
-  commonPassword.value = '';
-  confirmPassword.value = '';
   errorMessage.value = '';
   successSummary.value = '';
   formValid.value = false;

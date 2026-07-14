@@ -587,8 +587,10 @@ export default class NeDbWrapper {
 
     createUser(newUser: I_UserCreation): Promise<I_UserEntry> {
         return new Promise((resolve, reject) => {
-            if (newUser.password.length < 8)
+            if (!newUser.password || newUser.password.length < 8) {
                 reject(new Error("Password must be at least 8 characters long"));
+                return;
+            }
             if (newUser.name.length < 1)
                 reject(new Error("User must have a name"));
             this.users.count({name: newUser.name})
@@ -606,7 +608,8 @@ export default class NeDbWrapper {
                                 isAdmin: newUser.isAdmin
                             })
                                 .then((result) => {
-                                    this.logger.info("Created new user account: " + JSON.stringify(newUser));
+                                    const {password: _, ...safeUser} = newUser;
+                                    this.logger.info("Created new user account: " + JSON.stringify(safeUser));
                                     resolve(result as I_UserEntry);
                                 })
                         })
@@ -1102,7 +1105,8 @@ export default class NeDbWrapper {
                 group: "auto-created",
                 isAdmin: true,
             });
-            this.logger.info(`Created new admin user: ${JSON.stringify(addedUser)}`);
+            const {password: _, ...safeAdmin} = addedUser as any;
+            this.logger.info(`Created new admin user: ${JSON.stringify(safeAdmin)}`);
             this.logger.warn("Initial admin created without email — set an email address to enable password recovery");
         }
 

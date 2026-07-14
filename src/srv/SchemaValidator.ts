@@ -19,7 +19,7 @@ export default class SchemaValidator {
 
         this.userCreationSchema = object({
             name: string().required(),
-            password: string().required(),
+            password: string().optional().min(8),
             email: string().required().email(),
             department: string().required(),
             group: string().required(),
@@ -33,7 +33,6 @@ export default class SchemaValidator {
 
         this.userUpdateSchema = object({
             name: string().optional(),
-            password: string().optional(),
             email: string().optional().email(),
             department: string().optional(),
             group: string().optional(),

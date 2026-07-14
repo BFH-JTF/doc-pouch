@@ -25,6 +25,7 @@ async function waitForServer(url: string, timeout = 30000) {
 }
 
 export default async function globalSetup() {
+    process.env.NODE_ENV = 'test';
     process.env.PORT = '3030';
     process.env.MEMORY_ONLY = 'true';
     process.env.OIDC_ISSUER = process.env.OIDC_ISSUER || 'http://localhost:3030/oidc';
@@ -38,6 +39,7 @@ export default async function globalSetup() {
         cwd: projectRoot,
         env: {
             ...process.env,
+            NODE_ENV: 'test',
             PORT: '3030',
             MEMORY_ONLY: 'true',
             OIDC_ISSUER: process.env.OIDC_ISSUER,

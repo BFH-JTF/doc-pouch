@@ -322,10 +322,52 @@ describe('User Management API Tests', () => {
     });
 
     describe('POST /users/create (email required)', () => {
+        test('should create a user without specifying a password (auto-generated)', async () => {
+            const newUser = {
+                name: 'AutoPass User',
+                email: 'autopass@example.com',
+                department: 'Testing',
+                group: 'Testers',
+                isAdmin: false
+            };
+
+            const response = await authenticatedRequest(server, adminToken)
+                .post('/users/create')
+                .send(newUser);
+
+            expect(response.status).toBe(200);
+            expect(response.body).toHaveProperty('_id');
+            expect(response.body.name).toBe(newUser.name);
+            expect(response.body.email).toBe(newUser.email);
+            // Since SMTP is not configured, the password should be in the response as fallback
+            expect(response.body).toHaveProperty('password');
+            expect(response.body.password.length).toBeGreaterThanOrEqual(8);
+        });
+
+        test('should create a user with an explicit password', async () => {
+            const newUser: I_UserCreation = {
+                name: 'Explicit Pass User',
+                password: 'explicitpassword',
+                email: 'explicit@example.com',
+                department: 'Testing',
+                group: 'Testers',
+                isAdmin: false
+            };
+
+            const response = await authenticatedRequest(server, adminToken)
+                .post('/users/create')
+                .send(newUser);
+
+            expect(response.status).toBe(200);
+            expect(response.body).toHaveProperty('_id');
+            expect(response.body.name).toBe(newUser.name);
+            // Password should be shown as fallback since SMTP is not configured
+            expect(response.body).toHaveProperty('password');
+        });
+
         test('should reject user creation without email', async () => {
             const userWithoutEmail = {
                 name: 'No Email User',
-                password: 'password123',
                 department: 'Testing',
                 group: 'Testers',
                 isAdmin: false
@@ -341,7 +383,6 @@ describe('User Management API Tests', () => {
         test('should reject user creation with invalid email', async () => {
             const userWithBadEmail = {
                 name: 'Bad Email User',
-                password: 'password123',
                 email: 'not-an-email',
                 department: 'Testing',
                 group: 'Testers',
@@ -353,6 +394,35 @@ describe('User Management API Tests', () => {
                 .send(userWithBadEmail);
 
             expect(response.status).toBe(400);
+        });
+    });
+
+    describe('POST /users/admin-reset-password/:userID', () => {
+        test('admin should be able to reset a user password', async () => {
+            const response = await authenticatedRequest(server, adminToken)
+                .post(`/users/admin-reset-password/${regularUser._id}`)
+                .send();
+
+            expect(response.status).toBe(200);
+            // Since SMTP is not configured, the response should contain the password
+            expect(response.body).toHaveProperty('password');
+            expect(response.body.password.length).toBeGreaterThanOrEqual(8);
+        });
+
+        test('regular user should not be able to reset passwords', async () => {
+            const response = await authenticatedRequest(server, userToken)
+                .post(`/users/admin-reset-password/${adminUser._id}`)
+                .send();
+
+            expect(response.status).toBe(401);
+        });
+
+        test('should return 404 for non-existent user', async () => {
+            const response = await authenticatedRequest(server, adminToken)
+                .post('/users/admin-reset-password/nonexistentid')
+                .send();
+
+            expect(response.status).toBe(404);
         });
     });
 });

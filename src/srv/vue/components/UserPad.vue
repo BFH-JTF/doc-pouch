@@ -118,7 +118,7 @@ const showSuccessSnackbar = ref(false);
 const successMessage = ref('User created successfully!');
 
 const handleUserCreated = (user: I_UserDisplay) => {
-  console.log('User created:', user);
+  console.log('User created:', user._id);
   successMessage.value = 'User created successfully!';
   showSuccessSnackbar.value = true;
   emit('userListChanged');
@@ -131,7 +131,7 @@ const handleUserCreated = (user: I_UserDisplay) => {
 };
 
 const handleUsersCreated = (users: I_UserDisplay[]) => {
-  console.log('Users created:', users);
+  console.log('Users created:', users.length);
   successMessage.value = `${users.length} users created successfully!`;
   showSuccessSnackbar.value = true;
   emit('userListChanged');
