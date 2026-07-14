@@ -1,3 +1,11 @@
+## [1.21.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.21.0...v1.21.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **ci:** only update OpenAPI version when a new release is published ([2707966](https://github.com/BFH-JTF/doc-pouch/commit/2707966a582fc0efb5fb384b6555ff3c7a989457))
+* **ci:** only update OpenAPI version when there are actual changes ([0f8dc40](https://github.com/BFH-JTF/doc-pouch/commit/0f8dc408239fcbcf7ff3becd4ca017d11f8ed547))
+
 # [1.21.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.20.9...v1.21.0) (2026-07-05)
 
 
