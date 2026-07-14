@@ -49,8 +49,9 @@
                 <v-text-field
                   v-model="newUser.email"
                   :rules="emailRules"
-                  label="Email (optional)"
+                  label="Email"
                   variant="outlined"
+                  required
                   density="compact"
                 ></v-text-field>
               </v-col>
@@ -176,7 +177,8 @@ const mandatoryFieldRules = [
 const passwordMatchRule = (v: string) => v === newUser.password || 'Passwords do not match';
 
 const emailRules = [
-  (v: string) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || 'Email must be valid'
+  (v: string) => !!v || 'Email is required',
+  (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || 'Email must be valid'
 ];
 
 // Sync dialog visibility with prop

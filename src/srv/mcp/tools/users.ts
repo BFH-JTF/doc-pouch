@@ -2,6 +2,7 @@ import type {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import NeDbWrapper from '../../NeDbWrapper.js';
 import SchemaValidator from '../../SchemaValidator.js';
 import type winston from 'winston';
+import EmailService from '../../EmailService.js';
 import {
     WhoamiSchema,
     ListUsersSchema,
@@ -9,6 +10,8 @@ import {
     CreateUserSchema,
     UpdateUserSchema,
     DeleteUserSchema,
+    ForgotPasswordSchema,
+    ResetPasswordSchema,
 } from '../schemas.js';
 import {mcpAuthContext} from '../context.js';
 import {getErrorMessage} from '../utils.js';
@@ -23,6 +26,7 @@ export function registerUserTools(
     dataManager: NeDbWrapper,
     logger: winston.Logger,
     validator: SchemaValidator,
+    emailService: EmailService,
 ): void {
     server.registerTool('whoami', {
         description: 'Return the authenticated docPouch user\'s profile information.',
@@ -178,6 +182,46 @@ export function registerUserTools(
             return {content: [{type: 'text', text: JSON.stringify({deleted: true})}]};
         } catch (error: unknown) {
             logger.error(`MCP delete_user error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
+        }
+    });
+
+    server.registerTool('forgot_password', {
+        description: 'Request a password reset email for a user by their email address. This is a public endpoint — no authentication required. Always returns a generic success message to prevent email enumeration.',
+        inputSchema: ForgotPasswordSchema,
+    }, async (args) => {
+        try {
+            const user = await dataManager.getUserByEmail(args.email);
+            if (user) {
+                const token = await dataManager.createPasswordResetToken(user._id);
+                const baseUrl = process.env.BASE_URL || 'http://localhost:3030';
+                await emailService.sendForgotPasswordEmail(args.email, (user as any).name, `${baseUrl}/reset-password?token=${token}`);
+            }
+            return {
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({message: 'If an account with that email exists, a reset link has been sent.'})
+                }]
+            };
+        } catch (error: unknown) {
+            logger.error(`MCP forgot_password error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
+        }
+    });
+
+    server.registerTool('reset_password', {
+        description: 'Reset a user password using a token received via email from forgot_password. This is a public endpoint — no authentication required.',
+        inputSchema: ResetPasswordSchema,
+    }, async (args) => {
+        try {
+            const userId = await dataManager.consumePasswordResetToken(args.token);
+            if (!userId) {
+                return {content: [{type: 'text', text: 'Error: Invalid or expired reset token'}], isError: true};
+            }
+            await dataManager.updateUser(userId, {password: args.password});
+            return {content: [{type: 'text', text: JSON.stringify({message: 'Password reset successful'})}]};
+        } catch (error: unknown) {
+            logger.error(`MCP reset_password error: ${getErrorMessage(error)}`);
             return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
         }
     });

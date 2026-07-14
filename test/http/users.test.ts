@@ -265,4 +265,94 @@ describe('User Management API Tests', () => {
             expect(response.status).toBe(404);
         });
     });
+
+    describe('POST /users/forgot-password', () => {
+        test('should return 200 even for non-existent email (prevents enumeration)', async () => {
+            const response = await request(server)
+                .post('/users/forgot-password')
+                .send({email: 'nonexistent@example.com'});
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toContain('reset link');
+        });
+
+        test('should return 200 for existing email', async () => {
+            const response = await request(server)
+                .post('/users/forgot-password')
+                .send({email: 'user@example.com'});
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toContain('reset link');
+        });
+
+        test('should return 400 for invalid email format', async () => {
+            const response = await request(server)
+                .post('/users/forgot-password')
+                .send({email: 'not-an-email'});
+
+            expect(response.status).toBe(400);
+        });
+
+        test('should return 400 when email is missing', async () => {
+            const response = await request(server)
+                .post('/users/forgot-password')
+                .send({});
+
+            expect(response.status).toBe(400);
+        });
+    });
+
+    describe('POST /users/reset-password', () => {
+        test('should return 400 for invalid token', async () => {
+            const response = await request(server)
+                .post('/users/reset-password')
+                .send({token: 'invalidtoken123456', password: 'newpassword123'});
+
+            expect(response.status).toBe(400);
+            expect(response.body.error).toContain('Invalid or expired');
+        });
+
+        test('should return 400 for password shorter than 8 characters', async () => {
+            const response = await request(server)
+                .post('/users/reset-password')
+                .send({token: 'sometoken', password: 'short'});
+
+            expect(response.status).toBe(400);
+        });
+    });
+
+    describe('POST /users/create (email required)', () => {
+        test('should reject user creation without email', async () => {
+            const userWithoutEmail = {
+                name: 'No Email User',
+                password: 'password123',
+                department: 'Testing',
+                group: 'Testers',
+                isAdmin: false
+            };
+
+            const response = await authenticatedRequest(server, adminToken)
+                .post('/users/create')
+                .send(userWithoutEmail);
+
+            expect(response.status).toBe(400);
+        });
+
+        test('should reject user creation with invalid email', async () => {
+            const userWithBadEmail = {
+                name: 'Bad Email User',
+                password: 'password123',
+                email: 'not-an-email',
+                department: 'Testing',
+                group: 'Testers',
+                isAdmin: false
+            };
+
+            const response = await authenticatedRequest(server, adminToken)
+                .post('/users/create')
+                .send(userWithBadEmail);
+
+            expect(response.status).toBe(400);
+        });
+    });
 });
