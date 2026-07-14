@@ -14,6 +14,9 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+    outputs:
+      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
     steps:
       - name: Verify token
         run: |
@@ -39,11 +42,14 @@ jobs:
         run: npm install
 
       - name: Run semantic-release
-        run: npx semantic-release
+        id: semantic
+        run: |
+          npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Update OpenAPI version
+        if: steps.semantic.outputs.new_release_published == 'true'
         run: |
           VERSION=$(jq -r '.version' package.json)
           sed -i "s/version: [0-9.]\+/version: $VERSION/" docpouch_openAPI.yaml
