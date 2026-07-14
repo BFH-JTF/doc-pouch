@@ -2,7 +2,6 @@
 import {ref, onMounted, computed} from 'vue';
 import {
   initService,
-  handleOidcCallback,
   loginWithOidc,
   loginWithJwt,
   logout,
@@ -23,6 +22,7 @@ import {
   toggleRealtime,
   clearAuthError,
   setUseServerConfig,
+  clearDbWarning,
   isConfigured,
   isAuthenticated,
   authMethod,
@@ -35,6 +35,7 @@ import {
   users,
   realtimeEnabled,
   useServerConfig,
+  dbWarning,
 } from './composables/useDocPouch';
 import type {DocumentEntry, DocumentCreation, DataStructure, UserEntry, UserCreation, ServerSettings} from './types';
 
@@ -114,35 +115,19 @@ onMounted(async () => {
   configPort.value = settings.port;
   configToken.value = settings.registrationToken;
 
-  if (!isConfigured.value) {
-    // Try server-driven config first — initService will fetch /api/oidc-client-config
-    const authenticated = await initService();
-    if (!authenticated) {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.has('code') && urlParams.has('state')) {
-        const handled = await handleOidcCallback();
-        if (handled) return;
-      }
-      if (!isConfigured.value) {
-        showConfigModal.value = true;
-        return;
-      }
-    }
-    if (authenticated) return;
-  }
-
+  // initService() → client.initAuth() handles every restore path:
+  // OIDC logout redirect, OIDC callback (code+state), persisted OIDC
+  // session, and JWT token. If it returns false we show the login modal
+  // (or the config modal if the server isn't configured yet).
   const authenticated = await initService();
 
   if (!authenticated) {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.has('code') && urlParams.has('state')) {
-      const handled = await handleOidcCallback();
-      if (handled) {
-        showLoginModal.value = false;
-        return;
-      }
+    if (!isConfigured.value && !useServerConfig) {
+      // No server config and no localStorage override — ask the user.
+      showConfigModal.value = true;
+    } else {
+      showLoginModal.value = true;
     }
-    showLoginModal.value = true;
   }
 });
 
@@ -427,10 +412,16 @@ async function deleteUser(id: string) {
             {{ realtimeEnabled ? '🔴' : '⚪' }}
           </button>
           <button class="icon-btn secondary" title="Settings" @click="openConfig">⚙️</button>
-          <button v-if="isAuthenticated" class="secondary-text" @click="logout">Logout</button>
+          <button v-if="isAuthenticated" class="secondary-text" @click="() => logout()">Logout</button>
         </div>
       </div>
     </header>
+
+    <!-- Database inconsistency warning (admin-only, non-blocking) -->
+    <div v-if="isAuthenticated && isAdmin && dbWarning" class="db-warning">
+      <span>{{ dbWarning }}</span>
+      <button class="icon-btn" title="Dismiss" @click="clearDbWarning">✕</button>
+    </div>
 
     <!-- Main -->
     <main class="main-content">
@@ -999,6 +990,30 @@ td {
   border-radius: 4px;
   font-size: 0.85rem;
   color: #1976d2;
+}
+
+.db-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing);
+  padding: var(--spacing) calc(2 * var(--spacing));
+  background-color: #fff3e0;
+  border-bottom: 1px solid #ffcc80;
+  font-size: 0.85rem;
+  color: #e65100;
+}
+
+.db-warning .icon-btn {
+  width: 22px;
+  height: 22px;
+  margin-left: 0;
+  background: transparent;
+  color: #e65100;
+}
+
+.db-warning .icon-btn:hover {
+  background: rgba(230, 81, 0, 0.12);
 }
 
 .modal-hint {

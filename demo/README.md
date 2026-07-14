@@ -113,14 +113,22 @@ After registration, the template triggers the standard OIDC authorization-code f
 
 1. `loginWithOidc()` builds the authorization URL and redirects the browser to DocPouch.
 2. DocPouch authenticates the user and redirects back to `/callback`.
-3. `handleOidcCallback()` exchanges the `code` for tokens.
-4. `restoreOidcSession()` re-hydrates the token on page reloads.
+3. `initService()` → `client.initAuth()` detects the `code`/`state` params and calls `client.handleOidcCallback()` to
+   exchange them for tokens.
+4. `restoreOidcSession()` re-hydrates the token on subsequent page reloads.
+
+> **One-call alternative:** `docpouch-client` ≥ 1.2.0 exposes `client.startOidcLogin(registrationToken?)`, which
+> combines `fetchOidcClientConfig` → `ensureOidcClient` → `loginWithOidc` into a single call. The template keeps the
+> manual orchestration for educational clarity, but production apps that just need "log in with DocPouch" can replace
+> `loginWithOidc()`'s body with `await client.startOidcLogin(configToken)`.
 
 #### JWT (tab 2)
 
-For username/password authentication, the template calls `client.login({name, password})`. The returned token, username,
-and `isAdmin` flag are stored in `localStorage` so the session survives page reloads. On reload, `initService()` calls
-`client.setToken(savedToken)` and re-hydrates the reactive state.
+For username/password authentication, the template calls `client.login({name, password})`. The returned token is stored
+in `localStorage` under the library-managed `authToken` key (so `client.initAuth()` can restore it on the next page
+load), and the auth method is persisted via `client.persistAuthMethod('jwt')`. On reload, `initService()` calls
+`client.initAuth()` which reads the token back, then `client.getCurrentUser()` re-hydrates the `isAdmin` flag and
+username. A 401 response during data load clears these keys and prompts for re-login.
 
 ### 3. CRUD Operations
 
@@ -146,6 +154,10 @@ Once authenticated, the template demonstrates:
 The **Users** card is only visible when the logged-in user has `isAdmin: true` (for JWT) or when `listUsers()` succeeds
 (for OIDC — a 403 response hides the card).
 
+> **Note:** `createUser()` returns `I_UserDisplay` which uses the field name `username` (not `name` — that's only on
+> `I_UserCreation` / `I_UserEntry`). The template reloads the user list after each mutation rather than relying on the
+> returned shape, so this difference is transparent.
+
 Use the **Typed / All** toggle in the Documents card to switch between `fetchDocuments({type:0, subType:0})` and
 `listDocuments()`.
 
@@ -154,8 +166,30 @@ These are wrapped in the `useDocPouch` composable so the UI layer only sees reac
 ### 4. Real-Time Sync
 
 The template enables WebSocket synchronization via `setRealTimeSync(true)`. When enabled, the client receives live
-events (`newDocument`, `changedDocument`, `removedID`, etc.) and automatically refreshes the document list. Toggle it
-with the 🔴 / ⚄ button in the header.
+events and automatically refreshes the document list. Toggle it with the 🔴 / ⚪ button in the header.
+
+The DocPouch server emits the following event names (the `I_EventString` union in `docpouch-client` mirrors these):
+
+| Event                   | Payload field      | When                                                    |
+|-------------------------|--------------------|---------------------------------------------------------|
+| `newDocument`           | `newDocument`      | A document was created                                  |
+| `changedDocument`       | `changedDocument`  | A document was updated (incl. admin owner reassignment) |
+| `removedDocument`       | `removedID`        | A document was deleted                                  |
+| `newStructure`          | `newStructure`     | A data structure was created                            |
+| `changedStructure`      | `changedStructure` | A data structure was updated                            |
+| `removedStructure`      | `removedID`        | A data structure was deleted                            |
+| `newUser`               | `newUser`          | A user was created                                      |
+| `changedUser`           | `changedUser`      | A user was updated                                      |
+| `removedUser`           | `removedID`        | A user was deleted                                      |
+| `heartbeatPing`         | —                  | Periodic keepalive                                      |
+| `databaseInconsistency` | `faultyDocuments`  | Admin-only: faulty docs detected on connect             |
+
+> **Note:** `removedID` is the **payload field name** (the id of the removed entity), not an event name. The
+> `I_EventString` type union still lists `removedID` for legacy reasons, but the server never emits it as an event.
+>
+> `databaseInconsistency` is emitted only to admin connections and is not yet part of `I_EventString` (the server
+> casts it with `as any`). The template handles it defensively in `handleSocketEvent` and surfaces it as a
+> non-blocking `dbWarning` banner.
 
 ### 5. Logout
 
@@ -167,8 +201,13 @@ The template uses `client.logout()`, which auto-detects the active auth method:
     - **No, stay signed in** → redirects back with `?logout=no` and the session is preserved.
 - **JWT**: clears the local token, disconnects the WebSocket, and resets the reactive state. No redirect needed.
 
-Both `onLogout(cb)` and `onOidcLogout(cb)` callbacks are registered in `initService()` so the UI state stays in sync
-regardless of how logout is triggered (server-side session expiry, manual logout, etc.).
+`client.logout()` accepts an optional `LogoutOptions` (`{redirectUri?, idTokenHint?}`) to override the registered
+post-logout redirect URI or ID token hint for OIDC logout. The template's `logout()` composable forwards this argument
+through (`await logout({redirectUri: ...})`); omit it to use the values configured via `setOidcConfig`.
+
+`onLogout(cb)`, `onOidcLogout(cb)`, and `onJwtLogout(cb)` callbacks are all registered in `initService()` so the UI
+state stays in sync regardless of how logout is triggered (server-side session expiry, manual logout, etc.).
+`onLogout` fires for any auth method; `onOidcLogout` and `onJwtLogout` are the method-specific companions.
 
 ---
 
@@ -181,8 +220,8 @@ This is the **only file** that imports `docpouch-client`. It encapsulates:
 - **State**: `isAuthenticated`, `authMethod`, `authError`, `loading`, `realtimeEnabled`, `isAdmin`, `userName`,
   `documents`, `structures`, `users`
 - **Config**: `loadSettings()`, `saveSettings()`, `fetchServerConfig()`, `resolveBaseUrl()`, `normalizeBaseUrl()`
-- **OIDC lifecycle**: `initService()`, `handleOidcCallback()`, `loginWithOidc()`, `ensureOidcClient()`
-- **JWT lifecycle**: `loginWithJwt()`, JWT session restore in `initService()`
+- **OIDC lifecycle**: `initService()`, `handleOidcCallback()` (fallback), `loginWithOidc()`, `ensureOidcClient()`
+- **JWT lifecycle**: `loginWithJwt()`, JWT session restore in `initService()` via `client.initAuth()`
 - **Data**: `loadData()`, `loadAllDocuments()`, `createDocument()`, `updateDocument()`, `removeDocument()`,
   `createStructure()`, `updateStructure()`, `removeStructure()`
 - **Users (admin)**: `loadUsers()`, `createUser()`, `updateUser()`, `removeUser()`
@@ -208,10 +247,11 @@ This prevents the port-ignored bug that can occur when `docpouch-client` receive
 
 ### JWT Session Persistence
 
-When JWT login succeeds, the token, username, and `isAdmin` flag are stored in `localStorage` under
-`docpouch_jwt_token`, `docpouch_jwt_is_admin`, and `docpouch_jwt_username`. On page reload, `initService()` re-hydrates
-the client with `setToken()` and re-loads data. A 401 response during data load clears these keys and prompts for
-re-login.
+When JWT login succeeds, the token is stored in `localStorage` under the `docpouch-client` library's canonical
+`authToken` key, and the auth method is recorded via `client.persistAuthMethod('jwt')`. On page reload,
+`initService()` → `client.initAuth()` reads that key and re-hydrates the client. Because `initAuth()` always returns
+stub `isAdmin`/`userName` values, the template immediately calls `client.getCurrentUser()` (`/users/whoami`) to fetch
+the real profile. A 401 response during data load clears these keys and prompts for re-login.
 
 ---
 
@@ -250,7 +290,7 @@ The template demonstrates handling for:
 - **Unreachable DocPouch server** — network errors bubble up as `authError`
 - **Invalid registration token** — shown in the login modal
 - **Expired OIDC session** — `restoreOidcSession()` returns `false`; user is prompted to log in again
-- **Expired JWT token** — `setToken()` + `isAuthenticated()` returns `false`; stored token is cleared
+- **Expired JWT token** — `initAuth()` returns `method: 'none'`; stored token is cleared on the next 401
 - **401 during API call** — `is401Error()` catches it, clears the token, and shows the login modal
 - **403 when listing users** — `is403Error()` hides the Users card (non-admin user)
 - **Failed callback** — invalid `state` or expired `code` is caught and displayed
@@ -315,27 +355,34 @@ integration. The MCP server runs at `/mcp` on the DocPouch host and does not req
 
 ## How the flow maps to docpouch-client
 
-| Step in the flow                                | docpouch-client method                                           |
-|-------------------------------------------------|------------------------------------------------------------------|
-| Server publishes the RP's OIDC config           | served at `/api/oidc-client-config`                              |
-| Browser learns the config                       | `fetch('/api/oidc-client-config')`                               |
-| Browser stores the config                       | `client.setOidcConfig(config)`                                   |
-| Dynamic client registration                     | `client.registerOidcClient(...)`                                 |
-| Update existing client registration             | `client.updateOidcClient(...)`                                   |
-| JWT login (username/password)                   | `client.login({name, password})`                                 |
-| Detect completed/cancelled OIDC logout          | `client.wasJustLoggedOut()`                                      |
-| Browser triggers OIDC login                     | `client.loginWithOidc(config)`                                   |
-| Browser handles the OIDC redirect back          | `client.handleOidcCallback()`                                    |
-| Browser restores an OIDC session after refresh  | `client.restoreOidcSession()`                                    |
-| Browser restores a JWT session after refresh    | `client.setToken(savedToken)`                                    |
-| Inspect auth state                              | `client.getAuthMethod()`, `client.isAuthenticated()`             |
-| Call a DocPouch API                             | `client.fetchDocuments()` / `createDocument()` / etc.            |
-| Make sure the token is fresh before an API call | `client.ensureValidOidcToken()` (called automatically)           |
-| Enable real-time updates                        | `client.setRealTimeSync(true)`                                   |
-| React to server-side changes                    | Constructor callback (`newDocument`, `changedDocument`)          |
-| React to logout (any method)                    | `client.onLogout(cb)`                                            |
-| React to OIDC logout specifically               | `client.onOidcLogout(cb)`                                        |
-| Log out (auto-detects OIDC vs JWT)              | `client.logout()` / `client.logoutOidc()` / `client.logoutJwt()` |
+| Step in the flow                                | docpouch-client method                                                                            |
+|-------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| Server publishes the RP's OIDC config           | served at `/api/oidc-client-config`                                                               |
+| Browser learns the config                       | `fetch('/api/oidc-client-config')` or `client.fetchOidcClientConfig()`                            |
+| Browser stores the config                       | `client.setOidcConfig(config)`                                                                    |
+| Dynamic client registration                     | `client.registerOidcClient(registration, token?)`                                                 |
+| Read / update / delete a dynamic registration   | `client.getOidcClient(id, token?)` / `updateOidcClient(id, ...)` / `deleteOidcClient(id, token?)` |
+| Register-or-update convenience (cached)         | `client.ensureOidcClient(redirectUri, token?, options?)`                                          |
+| One-call OIDC login (config + register + login) | `client.startOidcLogin(token?)`                                                                   |
+| JWT login (username/password)                   | `client.login({name, password})`                                                                  |
+| Detect completed/cancelled OIDC logout          | `client.wasJustLoggedOut()`                                                                       |
+| Browser triggers OIDC login                     | `client.loginWithOidc(config)`                                                                    |
+| Browser handles the OIDC redirect back          | `client.handleOidcCallback()`                                                                     |
+| Browser restores an OIDC session after refresh  | `client.restoreOidcSession()`                                                                     |
+| Browser restores a JWT session after refresh    | `client.initAuth()` (reads `localStorage.authToken`)                                              |
+| Re-hydrate `isAdmin` / `userName` after restore | `client.getCurrentUser()` (`/users/whoami`)                                                       |
+| Inspect auth state                              | `client.getAuthMethod()`, `client.isAuthenticated()`                                              |
+| Read / set the active token                     | `client.getToken()` / `client.setToken(token)`                                                    |
+| Call a DocPouch API                             | `client.fetchDocuments()` / `createDocument()` / etc.                                             |
+| Make sure the token is fresh before an API call | `client.ensureValidOidcToken()` (called automatically)                                            |
+| Enable real-time updates                        | `client.setRealTimeSync(true)`                                                                    |
+| React to server-side changes                    | Constructor callback (`newDocument`, `changedDocument`, `removedDocument`, …)                     |
+| React to logout (any method)                    | `client.onLogout(cb)`                                                                             |
+| React to OIDC logout specifically               | `client.onOidcLogout(cb)`                                                                         |
+| React to JWT logout specifically                | `client.onJwtLogout(cb)`                                                                          |
+| Read the registered post-logout redirect URI    | `client.getPostLogoutRedirectUri()`                                                               |
+| Library version                                 | `client.getVersion()`                                                                             |
+| Log out (auto-detects OIDC vs JWT)              | `client.logout(options?)` / `client.logoutOidc(options?)` / `client.logoutJwt()`                  |
 
 ---
 
@@ -365,6 +412,15 @@ attempts `listUsers()` and hides the card on 403.
 **`/api/oidc-client-config` returns `configured: false`**
 → The DocPouch server's `OIDC_ISSUER` env var is not set. Set it in `.env` and restart the server, or use the manual
 Server Configuration modal as a fallback.
+
+**"MCP server not found at /mcp"**
+→ The DocPouch server disables the MCP endpoint when `MCP_ENABLED=false` is set in the environment. Leave it unset (or
+set it to `true`) to expose `/mcp`.
+
+**Orange "Database inconsistency detected" banner**
+→ Admin-only. The DocPouch server emits a `databaseInconsistency` WebSocket event on connect when faulty documents
+(invalid owner or `type` / `subType`) are detected. Open the bundled admin UI to review and repair them, then dismiss
+the banner with the ✕ button.
 
 ---
 

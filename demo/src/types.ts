@@ -122,3 +122,10 @@ export interface ServerSettings {
     port: string;
     registrationToken: string;
 }
+
+// Mirrors `LogoutOptions` from docpouch-client. Both fields optional;
+// passing them lets you customise the RP-initiated logout URL (OIDC).
+export interface LogoutOptions {
+    redirectUri?: string;
+    idTokenHint?: string;
+}

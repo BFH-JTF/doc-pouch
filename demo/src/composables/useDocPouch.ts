@@ -13,12 +13,10 @@ import {ref, computed} from 'vue';
 import DocPouchClient, {
     type I_DocumentEntry,
     type I_DataStructure,
-    type I_DocumentQuery,
     type I_UserEntry,
     type I_UserCreation,
     type I_UserUpdate,
     type I_LoginResponse,
-    type I_OidcClientConfig,
 } from 'docpouch-client';
 import type {
     DocumentEntry,
@@ -27,9 +25,9 @@ import type {
     UserEntry,
     UserCreation,
     UserUpdate,
-    LoginResponse,
     ServerSettings,
     ServerClientConfig,
+    LogoutOptions,
 } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +49,11 @@ const documents = ref<DocumentEntry[]>([]);
 const structures = ref<DataStructure[]>([]);
 const users = ref<UserEntry[]>([]);
 const realtimeEnabled = ref(false);
+
+// Admin-only WebSocket warning. The server emits `databaseInconsistency`
+// on connect when faulty documents (invalid owner / type / subType) are
+// detected. Surfaced to the UI as a non-blocking banner.
+const dbWarning = ref('');
 
 // Whether to use the server-provided config or the localStorage override
 const useServerConfig = ref(true);
@@ -119,26 +122,23 @@ function is403Error(err: unknown): boolean {
  * Returns null if the endpoint is unreachable or reports `configured: false`.
  */
 async function fetchServerConfig(): Promise<ServerClientConfig | null> {
+    // Always fetch from the demo's own backend endpoint — this works
+    // even before the client library is instantiated, and avoids
+    // coupling the demo's config discovery to the library's
+    // server-side discovery (which would point at the DocPouch
+    // server's own /api/oidc-client-config, not the demo RP's).
     try {
-        let config: I_OidcClientConfig | null;
-        if (client) {
-            config = await client.fetchOidcClientConfig();
-        } else {
-            // Fallback: raw fetch before client is initialized
-            const resp = await fetch('/api/oidc-client-config');
-            if (!resp.ok) return null;
-            const data = await resp.json();
-            if (data.configured === false || !data.issuer) return null;
-            config = data;
-        }
-        if (!config) return null;
+        const resp = await fetch('/api/oidc-client-config');
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        if (data.configured === false || !data.issuer) return null;
         return {
-            configured: config.configured ?? true,
-            issuer: config.issuer,
-            apiBaseUrl: config.apiBaseUrl,
-            redirectUri: config.redirectUri,
-            postLogoutRedirectUri: config.postLogoutRedirectUri,
-            scopes: config.scope ? config.scope.split(' ') : config.scopes,
+            configured: data.configured ?? true,
+            issuer: data.issuer,
+            apiBaseUrl: data.apiBaseUrl,
+            redirectUri: data.redirectUri,
+            postLogoutRedirectUri: data.postLogoutRedirectUri,
+            scopes: data.scope ? data.scope.split(' ') : data.scopes,
         };
     } catch {
         return null;
@@ -196,9 +196,10 @@ export function clearSettings() {
     if (client) {
         client.clearPersistedAuthState();
     } else {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('authMethod');
         localStorage.removeItem('docpouch_oidc_client_id');
         localStorage.removeItem('docpouch_oidc_session');
-        localStorage.removeItem('docpouch_jwt_session');
     }
 }
 
@@ -248,6 +249,21 @@ function registerCallbacks() {
         structures.value = [];
         users.value = [];
     });
+
+    // Companion callback for JWT logout. `onLogout` above already covers
+    // both methods, but registering `onJwtLogout` explicitly future-proofs
+    // the template against any divergent JWT-only behaviour the library
+    // may add (e.g. a distinct pre-clear hook).
+    client.onJwtLogout(() => {
+        isAuthenticated.value = false;
+        authMethod.value = 'none';
+        realtimeEnabled.value = false;
+        isAdmin.value = false;
+        userName.value = '';
+        documents.value = [];
+        structures.value = [];
+        users.value = [];
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -279,13 +295,30 @@ export async function initService(): Promise<boolean> {
         });
     }
 
-    // Use the client library's initAuth() to handle all session restoration
+    // initAuth() handles every restore path: OIDC logout redirect,
+    // OIDC callback (code+state), persisted OIDC session, and the
+    // JWT token stored under localStorage `authToken`. It returns
+    // isAdmin/userName as empty stubs, so we fetch the real profile
+    // via getCurrentUser() afterwards.
     const authState = await client.initAuth();
     if (authState.method !== 'none' && authState.token) {
         isAuthenticated.value = true;
         authMethod.value = authState.method;
         realtimeEnabled.value = true;
         client.setRealTimeSync(true);
+        // Fetch the real profile (isAdmin, userName) from /users/whoami.
+        // Works for both JWT and OIDC. If it fails (e.g. token already
+        // expired) we keep the defaults and let the first API call
+        // trigger a 401 → re-login.
+        try {
+            const me = await client.getCurrentUser();
+            if (me) {
+                isAdmin.value = !!me.isAdmin;
+                userName.value = me.name || '';
+            }
+        } catch {
+            // non-fatal — loadData() will surface auth errors
+        }
         await loadData();
         return true;
     }
@@ -315,10 +348,10 @@ export async function loginWithJwt(name: string, password: string): Promise<void
             throw new Error('Login failed: no token returned');
         }
 
-        // Persist JWT session for reloads
-        localStorage.setItem('docpouch_jwt_token', response.token);
-        localStorage.setItem('docpouch_jwt_is_admin', String(response.isAdmin || false));
-        localStorage.setItem('docpouch_jwt_username', response.userName || name);
+        // Persist JWT token under the library's own key (`authToken`) so
+        // initAuth() can restore the session on page reload. Also persist
+        // the auth method so the library knows to look for a JWT token.
+        localStorage.setItem('authToken', response.token);
         client.persistAuthMethod('jwt');
 
         isAuthenticated.value = true;
@@ -374,43 +407,23 @@ export async function handleOidcCallback(): Promise<boolean> {
     if (!urlParams.has('code') || !urlParams.has('state')) return false;
 
     try {
-        const {baseUrl, serverConfig} = await resolveBaseUrl();
-
-        // Rebuild OIDC config for the callback
-        if (serverConfig) {
-            const redirectUri = window.location.origin + window.location.pathname;
-            client.setOidcConfig({
-                issuer: serverConfig.issuer || client.getOidcIssuer(),
-                clientId: serverConfig.clientId || '',
-                redirectUri: serverConfig.redirectUri || redirectUri,
-                postLogoutRedirectUri: serverConfig.postLogoutRedirectUri,
-                scope: serverConfig.scopes?.join(' ') || 'openid profile email offline_access',
-            });
-        } else {
-            // Fallback: use localStorage clientId and derive issuer
-            const storedClientId = localStorage.getItem('docpouch_oidc_client_id');
-            if (!storedClientId) return false;
-            const redirectUri = window.location.origin + window.location.pathname;
-            const issuer = client.getOidcIssuer();
-            const postLogoutProxy = `${baseUrl}/oidc/logout-redirect?post_logout_redirect_uri=${encodeURIComponent(redirectUri)}`;
-            client.setOidcConfig({
-                issuer,
-                clientId: storedClientId,
-                redirectUri,
-                postLogoutRedirectUri: postLogoutProxy,
-                scope: 'openid profile email offline_access',
-            });
-        }
-
+        // The library reads the OIDC config it persisted in sessionStorage
+        // during loginWithOidc(), so we no longer need to rebuild it here.
         const handled = await client.handleOidcCallback();
         if (handled && client.isAuthenticated()) {
             isAuthenticated.value = true;
             authMethod.value = client.getAuthMethod();
             realtimeEnabled.value = true;
-            client.setRealTimeSync(false);
-            setTimeout(() => {
-                if (client) client.setRealTimeSync(true);
-            }, 100);
+            client.setRealTimeSync(true);
+            try {
+                const me = await client.getCurrentUser();
+                if (me) {
+                    isAdmin.value = !!me.isAdmin;
+                    userName.value = me.name || '';
+                }
+            } catch {
+                // non-fatal — loadData() will surface auth errors
+            }
             await loadData();
             return true;
         }
@@ -627,7 +640,22 @@ export async function removeUser(id: string): Promise<void> {
 
 function handleSocketEvent(event: string, data: any) {
     console.log(`[WebSocket] ${event}:`, data);
-    // Minimal live-update: refresh list on any document/structure/user change
+    // Admin-only: server reports faulty documents found during the
+    // connection-time consistency check. Surface as a non-blocking
+    // warning rather than refreshing data.
+    if (event === 'databaseInconsistency') {
+        const faulty = Array.isArray(data?.faultyDocuments) ? data.faultyDocuments : [];
+        dbWarning.value = faulty.length
+            ? `Database inconsistency detected: ${faulty.length} faulty document(s). Review the admin UI.`
+            : 'Database inconsistency detected.';
+        return;
+    }
+    // Minimal live-update: refresh list on any document/structure/user
+    // change. The server emits `newDocument`, `newStructure`, `newUser`,
+    // `changedDocument`, `changedStructure`, `changedUser`,
+    // `removedDocument`, `removedStructure`, `removedUser`. Note that
+    // `removedID` is a *payload field* (the id of the removed entity),
+    // not an event name.
     if (
         event.startsWith('new') ||
         event.startsWith('changed') ||
@@ -668,16 +696,26 @@ export function setUseServerConfig(enabled: boolean) {
     useServerConfig.value = enabled;
 }
 
-export async function logout(): Promise<void> {
+export function clearDbWarning() {
+    dbWarning.value = '';
+}
+
+export async function logout(options?: LogoutOptions): Promise<void> {
     if (!client) return;
 
     try {
         // logout() auto-detects OIDC vs JWT and does the right thing:
         //  - OIDC: redirects to /end_session (browser leaves the page)
         //  - JWT: clears local state and disconnects WebSocket
-        await client.logout();
+        //
+        // For OIDC, optional `options` ({redirectUri?, idTokenHint?})
+        // override the registered `post_logout_redirect_uri` / id token.
+        // Omitted → library uses the values configured via setOidcConfig.
+        await client.logout(options);
 
-        // For JWT logout (no redirect), clear local reactive state + storage
+        // For JWT logout (no redirect), clear local reactive state + storage.
+        // clearPersistedAuthState() removes the library-managed keys
+        // (authToken, authMethod, docpouch_oidc_*).
         if (authMethod.value === 'jwt') {
             client.clearPersistedAuthState();
         }
@@ -720,4 +758,5 @@ export {
     users,
     realtimeEnabled,
     useServerConfig,
+    dbWarning,
 };
