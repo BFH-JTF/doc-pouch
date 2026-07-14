@@ -1,3 +1,15 @@
+# [1.23.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.22.0...v1.23.0) (2026-07-14)
+
+
+### Bug Fixes
+
+* add nodemailer dependency for SMTP support ([8ca2d04](https://github.com/BFH-JTF/doc-pouch/commit/8ca2d04ff4e12c4f5db7fc07f61552de400fd479))
+
+
+### Features
+
+* replace manual password entry with auto-generated passwords and admin reset ([ad1f169](https://github.com/BFH-JTF/doc-pouch/commit/ad1f16901493c747bb90a4f84e01e04e523cbd63))
+
 # [1.22.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.21.1...v1.22.0) (2026-07-14)
 
 
