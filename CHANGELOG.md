@@ -1,3 +1,18 @@
+# [1.22.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.21.1...v1.22.0) (2026-07-14)
+
+
+### Bug Fixes
+
+* delegate auth initialization and session restore to docpouch-client library ([734c637](https://github.com/BFH-JTF/doc-pouch/commit/734c637b606bddfb78a94f77c51ee1bf2823e772))
+* improve error handling and type safety ([e2c6536](https://github.com/BFH-JTF/doc-pouch/commit/e2c65369d7998178fc7e16691c7d2793833bea24))
+* remove default structure creation functionality ([e4a3451](https://github.com/BFH-JTF/doc-pouch/commit/e4a345143099b61e3f4b91b5f02d7cc0fc8c5801))
+
+
+### Features
+
+* add database inconsistency warning and improve logout handling ([322438e](https://github.com/BFH-JTF/doc-pouch/commit/322438e5f8452edf8f3a3064d54a9d9fa080a4b8))
+* add email service for user notifications and hide passwords in API responses ([61584d3](https://github.com/BFH-JTF/doc-pouch/commit/61584d3f87d33e25468208e994f097b60533aa59))
+
 ## [1.21.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.21.0...v1.21.1) (2026-07-14)
 
 
