@@ -1,3 +1,10 @@
+## [1.23.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.23.0...v1.23.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* add missing rateLimiters and passwordGenerator modules ([90eaf39](https://github.com/BFH-JTF/doc-pouch/commit/90eaf3987305a54d0fa91c982c99f3002993cb7f))
+
 # [1.23.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.22.0...v1.23.0) (2026-07-14)
 
 
