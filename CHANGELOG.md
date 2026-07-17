@@ -1,3 +1,10 @@
+## [1.24.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.24.0...v1.24.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* add database tools for export/import and system tools for version checks ([856061f](https://github.com/BFH-JTF/doc-pouch/commit/856061fdd67e14bfe94650867de32f940806fc21))
+
 # [1.24.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.23.1...v1.24.0) (2026-07-17)
 
 
