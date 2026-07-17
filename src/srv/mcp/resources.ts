@@ -13,9 +13,31 @@ export function registerResources(
 ): void {
     server.registerResource(
         'document',
-        new ResourceTemplate('docpouch://documents/{id}', {list: undefined}),
+        new ResourceTemplate('docpouch://documents/{id}', {
+            list: async () => {
+                const store = mcpAuthContext.getStore();
+                const userid = store?.userid;
+                if (!userid) {
+                    return {resources: []};
+                }
+                try {
+                    const docs = await dataManager.getAllDocuments(userid);
+                    return {
+                        resources: docs.map((doc: any) => ({
+                            uri: `docpouch://documents/${doc._id}`,
+                            name: doc.title || doc._id,
+                            description: `Document: ${doc.title || doc._id} (type: ${doc.type}/${doc.subType}, owner: ${doc.owner})`,
+                            mimeType: 'application/json',
+                        })),
+                    };
+                } catch (error: unknown) {
+                    logger.error(`MCP resource document list error: ${getErrorMessage(error)}`);
+                    return {resources: []};
+                }
+            },
+        }),
         {
-            description: 'A docPouch document accessible to the authenticated user.',
+            description: 'A single docPouch document accessible to the authenticated user. Use the URI template docpouch://documents/{id} to read a specific document by its ID. Listing this resource template returns all documents the user can access.',
         },
         async (uri: URL, variables: Variables) => {
             const id = variables['id'] as string;
@@ -65,9 +87,26 @@ export function registerResources(
 
     server.registerResource(
         'structure',
-        new ResourceTemplate('docpouch://structures/{id}', {list: undefined}),
+        new ResourceTemplate('docpouch://structures/{id}', {
+            list: async () => {
+                try {
+                    const structures = await dataManager.getStructures();
+                    return {
+                        resources: structures.map((s: any) => ({
+                            uri: `docpouch://structures/${s._id}`,
+                            name: s.name || s._id,
+                            description: `Document structure: ${s.name || s._id} (type: ${s.type}/${s.subType}, ${s.fields?.length || 0} fields)`,
+                            mimeType: 'application/json',
+                        })),
+                    };
+                } catch (error: unknown) {
+                    logger.error(`MCP resource structure list error: ${getErrorMessage(error)}`);
+                    return {resources: []};
+                }
+            },
+        }),
         {
-            description: 'A docPouch document structure.',
+            description: 'A docPouch document structure (schema/template) that defines the expected fields and their types for a category of documents. Use the URI template docpouch://structures/{id} to read a specific structure by its ID. Listing this resource template returns all structures in the system.',
         },
         async (uri: URL, variables: Variables) => {
             const id = variables['id'] as string;
@@ -105,9 +144,31 @@ export function registerResources(
 
     server.registerResource(
         'user',
-        new ResourceTemplate('docpouch://users/{id}', {list: undefined}),
+        new ResourceTemplate('docpouch://users/{id}', {
+            list: async () => {
+                const store = mcpAuthContext.getStore();
+                const userid = store?.userid;
+                if (!userid) {
+                    return {resources: []};
+                }
+                try {
+                    const users = await dataManager.getUsers(userid);
+                    return {
+                        resources: users.map((u: any) => ({
+                            uri: `docpouch://users/${u._id}`,
+                            name: u.name || u._id,
+                            description: `User profile: ${u.name || u._id} (department: ${u.department}, group: ${u.group}, admin: ${u.isAdmin})`,
+                            mimeType: 'application/json',
+                        })),
+                    };
+                } catch (error: unknown) {
+                    logger.error(`MCP resource user list error: ${getErrorMessage(error)}`);
+                    return {resources: []};
+                }
+            },
+        }),
         {
-            description: 'A docPouch user profile. Admin access required for other users.',
+            description: 'A docPouch user profile. Use the URI template docpouch://users/{id} to read a specific user by their ID. Admin users can access any user profile; non-admin users can only access their own. Listing this resource template returns all users the authenticated user is allowed to see (all for admins, only self for non-admins).',
         },
         async (uri: URL, variables: Variables) => {
             const id = variables['id'] as string;

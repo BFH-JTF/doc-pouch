@@ -36,7 +36,7 @@ export function registerDocumentTools(
     validator: SchemaValidator,
 ): void {
     server.registerTool('list_documents', {
-        description: 'List docPouch documents accessible to the authenticated user. Supports optional filtering by type, subType, owner, public, shareWithGroup, shareWithDepartment, and a limit (default 100, max 500).',
+        description: 'List docPouch documents accessible to the authenticated user. Supports optional filtering by _id, title, type, subType, owner, public, shareWithGroup, shareWithDepartment, and a limit (default 100, max 500). Title filtering is case-insensitive. Only documents the user has access to (owned, public, or shared via group/department) are returned.',
         inputSchema: ListDocumentsSchema,
     }, async (args) => {
         const userid = getUserId();
@@ -45,6 +45,8 @@ export function registerDocumentTools(
         }
         try {
             const query: I_DocumentQuery = {};
+            if (args.query?._id !== undefined) query._id = args.query._id;
+            if (args.query?.title !== undefined) query.title = args.query.title;
             if (args.query?.type !== undefined) query.type = args.query.type;
             if (args.query?.subType !== undefined) query.subType = args.query.subType;
             if (args.query?.owner !== undefined) query.owner = args.query.owner;

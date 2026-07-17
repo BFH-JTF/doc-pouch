@@ -50,4 +50,4 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add docpouch_openAPI.yaml
-          git diff-index --quiet HEAD || (git commit -m "docs: update OpenAPI version to $VERSION" && git push)
+          git diff-index --quiet HEAD || (git commit -m "docs: update OpenAPI version to $VERSION [skip ci]" && git push)
