@@ -2,7 +2,7 @@ openapi: 3.0.1
 info:
   title: DocPouch
   description: A light-weight, document-based database including user-management. DocPouch is meant for tests, development or internal applications, where security is not a major factor. The database is file and text based and therefore also not layed out for high performance. Instead the main focus of DocPouch is simplicity and a small footprint.
-  version: 1.23.1
+  version: 1.24.0
 servers:
   - url: 'http://localhost:3030'
     description: 'Local development server'
