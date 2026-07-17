@@ -1,3 +1,10 @@
+# [1.24.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.23.1...v1.24.0) (2026-07-17)
+
+
+### Features
+
+* enhance tools registration and resource templates, expand schema descriptions ([83a8709](https://github.com/BFH-JTF/doc-pouch/commit/83a8709e34a9007e905f3ac1d519d5a89cb23f61))
+
 ## [1.23.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.23.0...v1.23.1) (2026-07-14)
 
 
