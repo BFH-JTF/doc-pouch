@@ -67,6 +67,24 @@ When the flag is `true`:
   application
   log in connection with an anonymous creation.
 
+##### Per-Structure Allowlist
+
+Even when `ANONYMOUS_DOCUMENTS_ENABLED=true`, anonymous document creation is only permitted for structures that an
+administrator has explicitly flagged. This is managed through the **anonymous-structure allowlist**, a separate
+collection that maps `(type, subType)` pairs to their anonymous-allowed status.
+
+| Endpoint                       | Method | Auth                   | Description                                               |
+|--------------------------------|--------|------------------------|-----------------------------------------------------------|
+| `/structures/anonymous/list`   | GET    | Any authenticated user | List all type/subType pairs that allow anonymous creation |
+| `/structures/anonymous/set`    | POST   | Admin only             | Add a type/subType pair to the allowlist                  |
+| `/structures/anonymous/remove` | DELETE | Admin only             | Remove a type/subType pair from the allowlist             |
+
+When a user creates an anonymous document (`anonymous: true`) whose `type`/`subType` pair is **not** in the allowlist,
+the request is rejected with HTTP `400` and the error code `ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE`.
+
+This two-level gate ensures that administrators must explicitly opt in **both** globally (`ANONYMOUS_DOCUMENTS_ENABLED`)
+**and** per-structure (allowlist entry) before anonymous submissions are accepted for a given structure.
+
 Operators running in this mode should additionally:
 
 - Not set `LOG_LEVEL=debug` (the redaction in debug mode is metadata-only and does not protect the body of non-anonymous
@@ -269,6 +287,10 @@ or in a `.env` file when running locally.
 
 #### Feature Flags
 
+| Variable                      | Description                                                                                                                       | Default |
+|-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|---------|
+| `ANONYMOUS_DOCUMENTS_ENABLED` | Enable anonymous document creation. When `true`, documents can be created with `anonymous: true` for structures in the allowlist. | `false` |
+
 The server trusts `X-Forwarded-*` headers (`trust proxy: true`), so it works behind a reverse proxy out of the box.
 
 #### Example Configuration
@@ -351,8 +373,9 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 - `POST /docs/fetch` - Get documents based on a query object (including public ones)
 - `POST /docs/create` - Create a new document
     - Optional `anonymous` parameter (boolean) - If true, document will be owned by admin user. Requires
-      `ANONYMOUS_DOCUMENTS_ENABLED=true` on the server, otherwise the request is rejected with HTTP 400
-      (`ANONYMOUS_DOCUMENTS_DISABLED`).
+      `ANONYMOUS_DOCUMENTS_ENABLED=true` on the server AND the document's `type`/`subType` pair to be in the
+      anonymous-structure allowlist. Otherwise rejected with HTTP 400 (`ANONYMOUS_DOCUMENTS_DISABLED` or
+      `ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE`).
 - `PATCH /docs/update/{documentID}` - Update an existing document
 - `DELETE /docs/remove/{documentID}` - Remove a document
 
@@ -361,6 +384,12 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 - `POST /structures/create` - Create a new data structure (admin only)
 - `PATCH /structures/update/{structureID}` - Update an existing data structure (admin only)
 - `DELETE /structures/remove/{structureID}` - Remove a data structure (admin only)
+
+### Anonymous Structure Allowlist
+
+- `GET /structures/anonymous/list` - List all structure type/subType pairs that allow anonymous document creation
+- `POST /structures/anonymous/set` - Add a structure type/subType pair to the anonymous allowlist (admin only)
+- `DELETE /structures/anonymous/remove` - Remove a structure type/subType pair from the anonymous allowlist (admin only)
 
 ### Database Management
 

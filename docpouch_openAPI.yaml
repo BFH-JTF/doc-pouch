@@ -164,10 +164,16 @@ paths:
         Creates a new document. By default, the document is owned by the
         authenticated caller. If the `anonymous` property is set to `true` in
         the request body, the document is instead owned by the admin user and
-        the creator's user ID is discarded. Anonymous creation requires the
-        `ANONYMOUS_DOCUMENTS_ENABLED` environment variable to be set to `true`
-        on the server; when the flag is off the request is rejected with
-        HTTP 400 (error code `ANONYMOUS_DOCUMENTS_DISABLED`).
+        the creator's user ID is discarded. Anonymous creation requires both:
+
+        1. The `ANONYMOUS_DOCUMENTS_ENABLED` environment variable to be set
+           to `true` on the server; when the flag is off the request is
+           rejected with HTTP 400 (error code `ANONYMOUS_DOCUMENTS_DISABLED`).
+        2. The document's `type`/`subType` pair to be present in the
+           anonymous-structure allowlist (managed via
+           `/structures/anonymous/set`). If the structure is not in the
+           allowlist, the request is rejected with HTTP 400 (error code
+           `ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE`).
       tags:
         - documents
       security:
@@ -402,6 +408,85 @@ paths:
           description: "Structure not found"
 
 
+
+  /structures/anonymous/list:
+    get:
+      summary: List anonymous-allowed structures
+      description: "Returns all structure type/subType pairs that allow anonymous document creation. Available to any authenticated user."
+      tags:
+        - data structures
+      security:
+        - userAuth: [ ]
+        - adminAuth: [ ]
+      responses:
+        200:
+          description: "Array of anonymous-allowed structure type/subType pairs"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnonymousStructureEntry"
+        401:
+          description: "Not authenticated"
+
+  /structures/anonymous/set:
+    post:
+      summary: Add a structure to the anonymous allowlist
+      description: "Allow anonymous document creation for a specific structure type/subType pair. Admin only. When ANONYMOUS_DOCUMENTS_ENABLED is true, only structures in this allowlist will accept anonymous document submissions."
+      tags:
+        - data structures
+      security:
+        - adminAuth: [ ]
+      requestBody:
+        description: "The type/subType pair to add to the anonymous allowlist"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnonymousStructureSetRequest"
+      responses:
+        200:
+          description: "Entry added to or already present in the allowlist"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymousStructureEntry"
+        400:
+          description: "Invalid request data"
+        401:
+          description: "Not authorized (admin only)"
+
+  /structures/anonymous/remove:
+    delete:
+      summary: Remove a structure from the anonymous allowlist
+      description: "Remove a structure type/subType pair from the anonymous allowlist. After removal, anonymous documents can no longer be created for this structure. Admin only."
+      tags:
+        - data structures
+      security:
+        - adminAuth: [ ]
+      requestBody:
+        description: "The type/subType pair to remove from the anonymous allowlist"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnonymousStructureSetRequest"
+      responses:
+        200:
+          description: "Entry removed from the allowlist"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  removed:
+                    type: number
+                    description: "Number of entries removed"
+        400:
+          description: "Invalid request data"
+        401:
+          description: "Not authorized (admin only)"
 
   /version/check:
     get:
@@ -1210,9 +1295,12 @@ components:
             If `true`, the document is owned by the admin user instead of the
             authenticated caller. The creator's user ID is discarded and
             cannot be recovered from the document. The flag is not stored on
-            the document. Requires `ANONYMOUS_DOCUMENTS_ENABLED=true` on the
-            server; otherwise the request is rejected with HTTP 400 (error
-            code `ANONYMOUS_DOCUMENTS_DISABLED`).
+            the document. Requires both `ANONYMOUS_DOCUMENTS_ENABLED=true` on
+            the server AND the document's type/subType pair to be present in
+            the anonymous-structure allowlist (see
+            `/structures/anonymous/set`). Otherwise the request is rejected
+            with HTTP 400 (error code `ANONYMOUS_DOCUMENTS_DISABLED` or
+            `ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE` respectively).
           example: false
           default: false
       required:
@@ -1346,6 +1434,9 @@ components:
           type: string
           description: "A short, machine-readable error code identifying the failure mode."
           example: "ANONYMOUS_DOCUMENTS_DISABLED"
+          enum:
+            - ANONYMOUS_DOCUMENTS_DISABLED
+            - ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE
         message:
           type: string
           description: "A human-readable error message describing the failure."
@@ -1506,6 +1597,41 @@ components:
       required:
         - name
         - type
+
+    AnonymousStructureEntry:
+      type: object
+      description: "An entry in the anonymous-structure allowlist. When anonymous documents are enabled, only structures whose type/subType pair appears in this list will accept anonymous submissions."
+      properties:
+        _id:
+          type: string
+          description: "Unique ID of the allowlist entry"
+        type:
+          type: number
+          description: "The structure type identifier"
+          example: 17
+        subType:
+          type: number
+          description: "The structure subtype identifier"
+          example: 11
+      required:
+        - type
+        - subType
+
+    AnonymousStructureSetRequest:
+      type: object
+      description: "Request body for adding or removing a structure type/subType pair from the anonymous allowlist."
+      properties:
+        type:
+          type: number
+          description: "The structure type identifier"
+          example: 17
+        subType:
+          type: number
+          description: "The structure subtype identifier"
+          example: 11
+      required:
+        - type
+        - subType
 
     OidcDiscovery:
       type: object

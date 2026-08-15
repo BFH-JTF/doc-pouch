@@ -14,6 +14,29 @@ ancillary system logs (reverse proxy, load balancer, OS audit, etc.) and try
 to correlate one of those data sources with an anonymous document to
 de-anonymize the submitter.
 
+## Per-structure allowlist
+
+Even when `ANONYMOUS_DOCUMENTS_ENABLED` is `true`, anonymous document creation is only permitted for **structures that
+an administrator has explicitly flagged**. This is managed through the anonymous-structure allowlist, stored in a
+separate NeDB collection (`docpouch-anonymous-structures.db`), **not**
+inside the structure documents themselves.
+
+The allowlist is administered through three REST endpoints:
+
+| Endpoint                       | Method | Auth                   | Description                                        |
+|--------------------------------|--------|------------------------|----------------------------------------------------|
+| `/structures/anonymous/list`   | GET    | Any authenticated user | List all allowed `(type, subType)` pairs           |
+| `/structures/anonymous/set`    | POST   | Admin only             | Add a `(type, subType)` pair to the allowlist      |
+| `/structures/anonymous/remove` | DELETE | Admin only             | Remove a `(type, subType)` pair from the allowlist |
+
+When a user creates an anonymous document (`anonymous: true`) whose
+`type`/`subType` pair is **not** in the allowlist, the request is rejected with HTTP 400 and the error code
+`ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE`.
+
+This two-level gate ensures that administrators must explicitly opt in **both**
+globally (`ANONYMOUS_DOCUMENTS_ENABLED=true`) **and** per-structure (allowlist entry) before anonymous submissions are
+accepted for a given structure.
+
 ## What DocPouch does to protect anonymity
 
 1. **No creator link in the document.** The `owner` field of an anonymous
