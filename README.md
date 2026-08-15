@@ -291,6 +291,34 @@ or in a `.env` file when running locally.
 |-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|---------|
 | `ANONYMOUS_DOCUMENTS_ENABLED` | Enable anonymous document creation. When `true`, documents can be created with `anonymous: true` for structures in the allowlist. | `false` |
 
+#### Rate Limiting
+
+DocPouch applies per-IP rate limits to protect against abuse. There are five limiters, each with its own built-in
+default:
+
+| Limiter          | Applies to                                   | Default `max` | Default window |
+|------------------|----------------------------------------------|---------------|----------------|
+| `api`            | General read endpoints (`GET`)               | `100`         | `15m`          |
+| `write`          | Mutating endpoints (`POST`/`PATCH`/`DELETE`) | `30`          | `15m`          |
+| `auth`           | Login & interaction endpoints                | `5`           | `15m`          |
+| `forgotPassword` | Password-reset request endpoint              | `5`           | `15m`          |
+| `resetPassword`  | Password-reset submission endpoint           | `10`          | `15m`          |
+
+When a limit is exceeded the server responds with HTTP `429 Too Many Requests`. Rate limiting is automatically disabled
+when `NODE_ENV=test`.
+
+The two environment variables below provide a **single global override** — when set, they apply to *all five*
+limiters at once. When unset, the per-limiter defaults from the table above are used.
+
+| Variable            | Description                                                               | Default         |
+|---------------------|---------------------------------------------------------------------------|-----------------|
+| `RATE_LIMIT_MAX`    | Maximum number of requests per window per IP. Must be a positive integer. | *(per limiter)* |
+| `RATE_LIMIT_WINDOW` | Window duration. Accepts duration strings: `30s`, `15m`, `1h`, `2d`.      | `15m`           |
+
+> **Note**: Setting a single global override trades per-endpoint granularity for simplicity. For example, setting
+> `RATE_LIMIT_MAX=50` raises the auth limit from 5 to 50 but lowers the API limit from 100 to 50. If you need
+> different values per limiter, leave these unset and edit `src/srv/rateLimiters.ts` directly.
+
 The server trusts `X-Forwarded-*` headers (`trust proxy: true`), so it works behind a reverse proxy out of the box.
 
 #### Example Configuration
@@ -313,6 +341,8 @@ services:
       - JWT_SECRET=your-secure-secret-here
       - SESSION_TIMEOUT=24h
       - ALLOWED_ORIGINS=https://example.com,https://app.example.com
+      # RATE_LIMIT_MAX=100
+      # RATE_LIMIT_WINDOW=15m
     restart: unless-stopped
 ```
 
@@ -326,6 +356,8 @@ JWT_SECRET=your-development-secret
 SESSION_TIMEOUT=24h
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 ALLOWED_HEADERS=Content-Type, Authorization, X-Requested-With
+# RATE_LIMIT_MAX=100
+# RATE_LIMIT_WINDOW=15m
 ```
 
 **Using Docker CLI:**
@@ -339,6 +371,8 @@ docker run -d \
   -e JWT_SECRET=your-secure-secret \
   -e SESSION_TIMEOUT=24h \
   -e ALLOWED_ORIGINS=https://example.com \
+  -e RATE_LIMIT_MAX=100 \
+  -e RATE_LIMIT_WINDOW=15m \
   ghcr.io/bfh-jtf/doc-pouch:latest
 ```
 
