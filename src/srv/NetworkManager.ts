@@ -566,6 +566,35 @@ export default class NetworkManager {
         const vuePath = path.resolve(process.cwd(), 'dist/srv/vue');
         this.logger.info(`Serving static files from: ${vuePath}`);
 
+        // Validate a post-logout redirect target so we never perform an
+        // open redirect to an attacker-controlled URL. Allows relative
+        // paths ("/", "/path") and same-host absolute URLs (matching the
+        // request Host header, honoring x-forwarded-host because
+        // expressApp.set('trust proxy', true) is set in the constructor).
+        // Loopback addresses (localhost, 127.0.0.1, ::1) are treated as
+        // equivalent so test clients and RPs using different loopback
+        // names for the same port are accepted.
+        const normalizeHost = (host: string): string => {
+            const parts = host.split(':');
+            const hostname = parts[0];
+            const port = parts[1] || '';
+            const normalized = (hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1') ? 'localhost' : hostname;
+            return port ? `${normalized}:${port}` : normalized;
+        };
+        const safeRedirectTarget = (req: Request, target: string | undefined): string => {
+            if (!target || typeof target !== 'string') return '/';
+            if (target.startsWith('/')) return target;
+            try {
+                const parsed = new URL(target);
+                const rawHost = req.headers['x-forwarded-host'] || req.headers.host || '';
+                const requestHost = Array.isArray(rawHost) ? rawHost[0] : rawHost;
+                if (normalizeHost(parsed.host) === normalizeHost(requestHost)) return target;
+            } catch {
+                // Not a valid absolute URL; fall through to '/'
+            }
+            return '/';
+        };
+
         this.expressApp.use(cors(this.corsOptions));
         this.expressApp.use(express.static(vuePath, {
             setHeaders: (res, filePath) => {
@@ -679,7 +708,7 @@ export default class NetworkManager {
 
         // Logout redirect handler - must be before OIDC provider mount
         // Ensures cookies are cleared after oidc-provider logout
-        this.expressApp.get('/oidc/logout-redirect', async (req, res) => {
+        this.expressApp.get('/oidc/logout-redirect', apiRateLimiter, async (req, res) => {
             // Diagnostic logging: capture what query parameters the RP
             // returned with, what cookies it sent, and what is the
             // post_logout_redirect_uri it wants us to redirect to. This
@@ -709,8 +738,9 @@ export default class NetworkManager {
             // a successful logout.
             if (isLogoutCancelled) {
                 this.logger.debug('Logout cancelled by client, preserving session cookies');
-                const separator = postLogoutRedirectUri.includes('?') ? '&' : '?';
-                res.redirect(`${postLogoutRedirectUri}${separator}logout=no`);
+                const safeTarget = safeRedirectTarget(req, postLogoutRedirectUri);
+                const separator = safeTarget.includes('?') ? '&' : '?';
+                res.redirect(`${safeTarget}${separator}logout=no`);
                 return;
             }
 
@@ -727,8 +757,8 @@ export default class NetworkManager {
                 res.clearCookie(`${name}.sig`, cookieOptions);
             });
 
-            this.logger.debug('Redirecting to:', postLogoutRedirectUri);
-            res.redirect(postLogoutRedirectUri);
+            this.logger.debug('Redirecting to:', safeRedirectTarget(req, postLogoutRedirectUri));
+            res.redirect(safeRedirectTarget(req, postLogoutRedirectUri));
         });
 
         // Cancel logout handler - must be before OIDC provider mount
@@ -752,11 +782,11 @@ export default class NetworkManager {
         // body parser without the body being consumed twice).
         this.expressApp.post('/oidc/cancel-logout', apiRateLimiter, express.urlencoded({extended: true}), (req, res) => {
             this.logger.debug('Logout cancelled, redirecting back to app');
-            const postLogoutRedirectUri = typeof req.body?.post_logout_redirect_uri === 'string'
+            const safeTarget = safeRedirectTarget(req, typeof req.body?.post_logout_redirect_uri === 'string'
                 ? req.body.post_logout_redirect_uri
-                : '/';
-            const separator = postLogoutRedirectUri.includes('?') ? '&' : '?';
-            res.redirect(303, `${postLogoutRedirectUri}${separator}logout=no`);
+                : '/');
+            const separator = safeTarget.includes('?') ? '&' : '?';
+            res.redirect(303, `${safeTarget}${separator}logout=no`);
         });
 
         // Log all OIDC requests for debugging
@@ -807,15 +837,6 @@ export default class NetworkManager {
                 throw new Error("Invalid file path: outside uploads directory");
             }
             return normalizedPath;
-        };
-
-        const safeDeleteFile = (filePath: string) => {
-            try {
-                const safePath = getSafeUploadPath(filePath);
-                fs.unlinkSync(safePath);
-            } catch {
-                // Silently ignore if path is invalid or file doesn't exist
-            }
         };
 
 
@@ -1026,7 +1047,7 @@ export default class NetworkManager {
                 res.status(400).json({error: "Invalid user data"});
         })
 
-        this.expressApp.get("/users/login", (req: Request, res: Response) => {
+        this.expressApp.get("/users/login", apiRateLimiter, (req: Request, res: Response) => {
             res.status(405).json({error: "Method Not Allowed. Use POST for login."});
         })
 
@@ -1604,7 +1625,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.get("/version/check", (req, res) => {
+        this.expressApp.get("/version/check", apiRateLimiter, (req, res) => {
             const updateResult = getCachedUpdateResult();
             if (updateResult) {
                 res.status(200).json(updateResult);
@@ -1704,18 +1725,24 @@ export default class NetworkManager {
 
                 const uploadedFile = req.file;
 
+                // Sanitize the multer-provided path once. All subsequent
+                // fs/AdmZip operations use `safePath` exclusively so the
+                // tainted req.file.path value never reaches a filesystem
+                // API directly (CodeQL path-injection sink).
+                const safePath = getSafeUploadPath(uploadedFile.path);
+
                 try {
                     const scope = parseDatabaseScope(req.body.scope);
                     const mode = parseImportMode(req.body.mode);
                     const originalName = uploadedFile.originalname.toLowerCase();
 
                     if (originalName.endsWith('.json')) {
-                        const rawContent = fs.readFileSync(getSafeUploadPath(uploadedFile.path), "utf8");
+                        const rawContent = fs.readFileSync(safePath, "utf8");
                         const parsed = JSON.parse(rawContent);
 
                         if (scope === "all") {
                             if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-                                safeDeleteFile(uploadedFile.path);
+                                fs.unlinkSync(safePath);
                                 return res.status(400).json({error: "Invalid JSON payload. Expected an object with one or more collections."});
                             }
 
@@ -1731,7 +1758,7 @@ export default class NetworkManager {
                                 await this.dataManager.importAnonymousStructures(parsed.anonymousStructures, mode);
                             }
 
-                            safeDeleteFile(uploadedFile.path);
+                            fs.unlinkSync(safePath);
                             this.logger.info(`Database JSON import successful for scope=all, mode=${mode}`);
                             return res.status(200).json({message: "Database imported successfully"});
                         }
@@ -1743,29 +1770,29 @@ export default class NetworkManager {
                                 : null);
 
                         if (!scopedData) {
-                            safeDeleteFile(uploadedFile.path);
+                            fs.unlinkSync(safePath);
                             return res.status(400).json({error: `Invalid JSON payload for scope '${scope}'. Expected an array or an object containing '${scope}'.`});
                         }
 
                         const importResult = await this.dataManager.importCollections({[scope]: scopedData}, mode);
                         this.emitImportChangeEvents(req.socketID, importResult);
 
-                        safeDeleteFile(uploadedFile.path);
+                        fs.unlinkSync(safePath);
                         this.logger.info(`Database JSON import successful for scope=${scope}, mode=${mode}`);
                         return res.status(200).json({message: `${scope} imported successfully`});
                     }
 
                     if (!originalName.endsWith('.zip')) {
-                        safeDeleteFile(uploadedFile.path);
+                        fs.unlinkSync(safePath);
                         return res.status(400).json({error: "Uploaded file must be a JSON or ZIP file"});
                     }
 
                     if (scope !== "all") {
-                        safeDeleteFile(uploadedFile.path);
+                        fs.unlinkSync(safePath);
                         return res.status(400).json({error: "ZIP import supports only scope=all. Use JSON files for scoped import."});
                     }
 
-                    const zip = new AdmZip(getSafeUploadPath(uploadedFile.path));
+                    const zip = new AdmZip(safePath);
                     const zipEntries = zip.getEntries();
 
                     const collectionsData: any = {};
@@ -1798,7 +1825,7 @@ export default class NetworkManager {
                     }
 
                     if (Object.keys(collectionsData).length === 0) {
-                        safeDeleteFile(uploadedFile.path);
+                        fs.unlinkSync(safePath);
                         return res.status(400).json({error: "ZIP file does not contain any valid database files (.json or .db)"});
                     }
 
@@ -1809,14 +1836,14 @@ export default class NetworkManager {
                         await this.dataManager.importAnonymousStructures(collectionsData.anonymousStructures, mode);
                     }
 
-                    safeDeleteFile(uploadedFile.path);
+                    fs.unlinkSync(safePath);
 
                     this.logger.info(`Database ZIP import successful, mode=${mode}`);
                     return res.status(200).json({message: "Database imported successfully"});
                 } catch (error) {
                     if ((error as Error).message?.startsWith("Invalid scope")) {
-                        if (fs.existsSync(getSafeUploadPath(uploadedFile.path))) {
-                            safeDeleteFile(uploadedFile.path);
+                        if (fs.existsSync(safePath)) {
+                            fs.unlinkSync(safePath);
                         }
                         return res.status(400).json({error: (error as Error).message});
                     }
@@ -1824,7 +1851,11 @@ export default class NetworkManager {
                     this.logger.error("Error importing database:", error);
 
                     // Delete the uploaded file if it exists
-                    safeDeleteFile(uploadedFile.path);
+                    try {
+                        fs.unlinkSync(safePath);
+                    } catch {
+                        // Already removed or never existed; ignore.
+                    }
 
                     res.status(500).json({error: "Error importing database"});
                 }
@@ -1832,7 +1863,11 @@ export default class NetworkManager {
                 this.logger.error("Error checking admin status:", error);
 
                 if (req.file) {
-                    safeDeleteFile(req.file.path);
+                    try {
+                        fs.unlinkSync(getSafeUploadPath(req.file.path));
+                    } catch {
+                        // Already removed or never existed; ignore.
+                    }
                 }
 
                 res.status(500).json({error: "Error checking admin status"});

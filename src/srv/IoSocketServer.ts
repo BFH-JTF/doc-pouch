@@ -35,7 +35,7 @@ export default class IoSocketServer {
             } else if (client.userid) {
                 this.networkManager.dataManager.getUserByID(client.userid)
                     .then((userInfo) => {
-                        this.networkManager.logger.info(`Client connected: ${userInfo.name} (${userInfo.email}) - ${socket.id}`);
+                        this.networkManager.logger.info(`Client connected: ${client.userid} - ${socket.id}`);
 
                         // Run consistency check if the user is an admin
                         if (userInfo.isAdmin) {
@@ -50,7 +50,7 @@ export default class IoSocketServer {
                         }
 
                         socket.on('disconnect', () => {
-                            this.networkManager.logger.info(`Client disconnected: ${userInfo.name} (${userInfo.email}) - ${socket.id}`);
+                            this.networkManager.logger.info(`Client disconnected: ${client.userid} - ${socket.id}`);
                             this.wsClientList = this.wsClientList.filter(c => c.socket.id !== socket.id);
                         });
 
