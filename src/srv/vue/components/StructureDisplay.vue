@@ -11,6 +11,7 @@ const props = defineProps<{
   displayStructure: I_DataStructure | undefined;
   structureList: I_DataStructure[];
   isAdmin: boolean;
+  anonymousAllowlist: Array<{ type: number, subType: number }>;
   affectedDocumentsCount: number;
 }>();
 
@@ -22,6 +23,7 @@ const emit = defineEmits<{
     diff: IStructureDiff;
     affectedDocumentsCount: number;
   }];
+  'toggleAnonymous': [payload: { type: number; subType: number; enabled: boolean }];
 }>();
 
 const fieldTypes = ['string', 'number', 'boolean', 'array', 'structure', 'object'];
@@ -64,6 +66,22 @@ const formValid = computed(() => {
 });
 
 const editableStructure = ref<I_DataStructure | undefined>(undefined);
+
+const isAnonymousAllowed = computed(() => {
+  if (!props.displayStructure) return false;
+  return props.anonymousAllowlist.some(
+      (entry) => entry.type === props.displayStructure!.type && entry.subType === props.displayStructure!.subType
+  );
+});
+
+function toggleAnonymous(enabled: boolean) {
+  if (!editableStructure.value) return;
+  emit('toggleAnonymous', {
+    type: editableStructure.value.type,
+    subType: editableStructure.value.subType,
+    enabled
+  });
+}
 
 watch(() => props.displayStructure?._id, () => {
   editableStructure.value = props.displayStructure ? JSON.parse(JSON.stringify(props.displayStructure)) : undefined;
@@ -352,6 +370,19 @@ watch(treeItems, (newItems) => {
                   variant="outlined"
                   @change="updateStructure"
               ></v-textarea>
+            </v-col>
+          </v-row>
+
+          <v-row v-if="props.isAdmin" class="mt-0">
+            <v-col cols="12">
+              <v-switch
+                  :model-value="isAnonymousAllowed"
+                  color="primary"
+                  density="compact"
+                  hide-details
+                  label="Allow anonymous document creation"
+                  @update:model-value="toggleAnonymous"
+              ></v-switch>
             </v-col>
           </v-row>
 

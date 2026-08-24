@@ -1,0 +1,70 @@
+name: Export Security Alerts
+
+# Manual trigger only - run from the Actions tab ("Run workflow")
+on:
+  workflow_dispatch:
+    inputs:
+      state:
+        description: 'Alert state to export'
+        required: false
+        default: 'open'
+        type: choice
+        options:
+          - open
+          - dismissed
+          - fixed
+          - all
+
+permissions:
+  contents: read
+  security-events: read   # needed for code scanning + secret scanning alerts
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set state filter
+        id: vars
+        run: |
+          if [ "${{ inputs.state }}" = "all" ]; then
+            echo "query=" >> "$GITHUB_OUTPUT"
+          else
+            echo "query=?state=${{ inputs.state }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Export Dependabot alerts
+        env:
+          GH_TOKEN: ${{ secrets.SECURITY_EXPORT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/dependabot/alerts${{ steps.vars.outputs.query }}" \
+            --paginate --jq '.[] | [.number, .state, .security_advisory.severity, .dependency.package.name, .dependency.manifest_path, .security_advisory.summary, .created_at, .html_url] | @csv' \
+            > dependabot-alerts.csv || echo "No Dependabot alerts or insufficient permissions" > dependabot-alerts.csv
+          sed -i '1i number,state,severity,package,manifest_path,summary,created_at,url' dependabot-alerts.csv
+
+      - name: Export code scanning alerts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/code-scanning/alerts${{ steps.vars.outputs.query }}" \
+            --paginate --jq '.[] | [.number, .state, .rule.severity, .rule.description, .most_recent_instance.location.path, .created_at, .html_url] | @csv' \
+            > code-scanning-alerts.csv || echo "No code scanning alerts or insufficient permissions" > code-scanning-alerts.csv
+          sed -i '1i number,state,severity,rule_description,file_path,created_at,url' code-scanning-alerts.csv
+
+      - name: Export secret scanning alerts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/secret-scanning/alerts${{ steps.vars.outputs.query }}" \
+            --paginate --jq '.[] | [.number, .state, .secret_type_display_name, .created_at, .html_url] | @csv' \
+            > secret-scanning-alerts.csv || echo "No secret scanning alerts or insufficient permissions" > secret-scanning-alerts.csv
+          sed -i '1i number,state,secret_type,created_at,url' secret-scanning-alerts.csv
+
+      - name: Upload alerts as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-alerts-${{ github.run_id }}
+          path: |
+            dependabot-alerts.csv
+            code-scanning-alerts.csv
+            secret-scanning-alerts.csv
+          retention-days: 30

@@ -130,6 +130,23 @@ export const DeleteStructureSchema = z.object({
         .describe('The unique ID of the structure to delete. Admin only.'),
 });
 
+export const ListAnonymousStructuresSchema = z.object({})
+    .describe('List all structure type/subType pairs that allow anonymous document creation. Available to any authenticated user.');
+
+export const SetAnonymousStructureSchema = z.object({
+    type: z.number()
+        .describe('Structure type identifier (numeric). The type of the structure that should allow anonymous document creation.'),
+    subType: z.number()
+        .describe('Structure subtype identifier (numeric). The subtype of the structure that should allow anonymous document creation.'),
+});
+
+export const RemoveAnonymousStructureSchema = z.object({
+    type: z.number()
+        .describe('Structure type identifier (numeric). The type of the structure to remove from the anonymous allowlist.'),
+    subType: z.number()
+        .describe('Structure subtype identifier (numeric). The subtype of the structure to remove from the anonymous allowlist.'),
+});
+
 export const WhoamiSchema = z.object({})
     .describe('Returns the authenticated user\'s own profile information, including user ID, name, email, department, group, and admin status. No parameters required.');
 

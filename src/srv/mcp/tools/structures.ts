@@ -8,6 +8,9 @@ import {
     CreateStructureSchema,
     UpdateStructureSchema,
     DeleteStructureSchema,
+    ListAnonymousStructuresSchema,
+    SetAnonymousStructureSchema,
+    RemoveAnonymousStructureSchema,
 } from '../schemas.js';
 import {mcpAuthContext} from '../context.js';
 import {getErrorMessage} from '../utils.js';
@@ -158,6 +161,65 @@ export function registerStructureTools(
         } catch (error: unknown) {
             logger.error(`MCP delete_structure error: ${getErrorMessage(error)}`);
             return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
+        }
+    });
+
+    server.registerTool('list_anonymous_structures', {
+        description: 'List all structure type/subType pairs that allow anonymous document creation. Available to any authenticated user.',
+        inputSchema: ListAnonymousStructuresSchema,
+    }, async () => {
+        const userid = getUserId();
+        if (!userid) {
+            return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
+        }
+        try {
+            const entries = await dataManager.getAnonymousAllowedStructures();
+            return {content: [{type: 'text', text: JSON.stringify(entries)}]};
+        } catch (error: unknown) {
+            logger.error(`MCP list_anonymous_structures error: ${getErrorMessage(error)}`);
+            return {content: [{type: 'text', text: `Error: ${getErrorMessage(error)}`}], isError: true};
+        }
+    });
+
+    server.registerTool('set_anonymous_structure', {
+        description: 'Allow anonymous document creation for a specific structure type/subType pair. Admin only. When anonymous documents are enabled globally, only structures in this allowlist will accept anonymous submissions.',
+        inputSchema: SetAnonymousStructureSchema,
+    }, async (args) => {
+        const userid = getUserId();
+        if (!userid) {
+            return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
+        }
+        try {
+            const entry = await dataManager.setAnonymousAllowed(args.type, args.subType, userid);
+            return {content: [{type: 'text', text: JSON.stringify(entry)}]};
+        } catch (error: unknown) {
+            logger.error(`MCP set_anonymous_structure error: ${getErrorMessage(error)}`);
+            const msg = getErrorMessage(error);
+            if (msg === 'Only admins can manage anonymous structure allowlist') {
+                return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
+            }
+            return {content: [{type: 'text', text: `Error: ${msg}`}], isError: true};
+        }
+    });
+
+    server.registerTool('remove_anonymous_structure', {
+        description: 'Remove a structure type/subType pair from the anonymous document creation allowlist. Admin only. After removal, anonymous documents can no longer be created for this structure.',
+        inputSchema: RemoveAnonymousStructureSchema,
+    }, async (args) => {
+        const userid = getUserId();
+        if (!userid) {
+            return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
+        }
+        try {
+            const result = await dataManager.removeAnonymousAllowed(args.type, args.subType, userid);
+            return {content: [{type: 'text', text: JSON.stringify({removed: result})}]};
+        } catch (error: unknown) {
+            logger.error(`MCP remove_anonymous_structure error: ${getErrorMessage(error)}`);
+            const msg = getErrorMessage(error);
+            if (msg === 'Only admins can manage anonymous structure allowlist') {
+                return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
+            }
+            return {content: [{type: 'text', text: `Error: ${msg}`}], isError: true};
         }
     });
 }

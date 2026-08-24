@@ -117,6 +117,12 @@ export function registerDocumentTools(
             if (isAnonymous && !dataManager.anonymousDocumentsEnabled) {
                 return {content: [{type: 'text', text: 'ANONYMOUS_DOCUMENTS_DISABLED'}], isError: true};
             }
+            if (isAnonymous) {
+                const allowed = await dataManager.isAnonymousAllowed(args.type, args.subType);
+                if (!allowed) {
+                    return {content: [{type: 'text', text: 'ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE'}], isError: true};
+                }
+            }
             const doc = await dataManager.createDocument(validated as any, userid, isAnonymous);
             const {password: _, ...rest} = doc as any;
             return {content: [{type: 'text', text: JSON.stringify(rest)}]};

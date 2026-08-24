@@ -67,6 +67,24 @@ When the flag is `true`:
   application
   log in connection with an anonymous creation.
 
+##### Per-Structure Allowlist
+
+Even when `ANONYMOUS_DOCUMENTS_ENABLED=true`, anonymous document creation is only permitted for structures that an
+administrator has explicitly flagged. This is managed through the **anonymous-structure allowlist**, a separate
+collection that maps `(type, subType)` pairs to their anonymous-allowed status.
+
+| Endpoint                       | Method | Auth                   | Description                                               |
+|--------------------------------|--------|------------------------|-----------------------------------------------------------|
+| `/structures/anonymous/list`   | GET    | Any authenticated user | List all type/subType pairs that allow anonymous creation |
+| `/structures/anonymous/set`    | POST   | Admin only             | Add a type/subType pair to the allowlist                  |
+| `/structures/anonymous/remove` | DELETE | Admin only             | Remove a type/subType pair from the allowlist             |
+
+When a user creates an anonymous document (`anonymous: true`) whose `type`/`subType` pair is **not** in the allowlist,
+the request is rejected with HTTP `400` and the error code `ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE`.
+
+This two-level gate ensures that administrators must explicitly opt in **both** globally (`ANONYMOUS_DOCUMENTS_ENABLED`)
+**and** per-structure (allowlist entry) before anonymous submissions are accepted for a given structure.
+
 Operators running in this mode should additionally:
 
 - Not set `LOG_LEVEL=debug` (the redaction in debug mode is metadata-only and does not protect the body of non-anonymous
@@ -269,6 +287,38 @@ or in a `.env` file when running locally.
 
 #### Feature Flags
 
+| Variable                      | Description                                                                                                                       | Default |
+|-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|---------|
+| `ANONYMOUS_DOCUMENTS_ENABLED` | Enable anonymous document creation. When `true`, documents can be created with `anonymous: true` for structures in the allowlist. | `false` |
+
+#### Rate Limiting
+
+DocPouch applies per-IP rate limits to protect against abuse. There are five limiters, each with its own built-in
+default:
+
+| Limiter          | Applies to                                   | Default `max` | Default window |
+|------------------|----------------------------------------------|---------------|----------------|
+| `api`            | General read endpoints (`GET`)               | `100`         | `15m`          |
+| `write`          | Mutating endpoints (`POST`/`PATCH`/`DELETE`) | `30`          | `15m`          |
+| `auth`           | Login & interaction endpoints                | `5`           | `15m`          |
+| `forgotPassword` | Password-reset request endpoint              | `5`           | `15m`          |
+| `resetPassword`  | Password-reset submission endpoint           | `10`          | `15m`          |
+
+When a limit is exceeded the server responds with HTTP `429 Too Many Requests`. Rate limiting is automatically disabled
+when `NODE_ENV=test`.
+
+The two environment variables below provide a **single global override** — when set, they apply to *all five*
+limiters at once. When unset, the per-limiter defaults from the table above are used.
+
+| Variable            | Description                                                               | Default         |
+|---------------------|---------------------------------------------------------------------------|-----------------|
+| `RATE_LIMIT_MAX`    | Maximum number of requests per window per IP. Must be a positive integer. | *(per limiter)* |
+| `RATE_LIMIT_WINDOW` | Window duration. Accepts duration strings: `30s`, `15m`, `1h`, `2d`.      | `15m`           |
+
+> **Note**: Setting a single global override trades per-endpoint granularity for simplicity. For example, setting
+> `RATE_LIMIT_MAX=50` raises the auth limit from 5 to 50 but lowers the API limit from 100 to 50. If you need
+> different values per limiter, leave these unset and edit `src/srv/rateLimiters.ts` directly.
+
 The server trusts `X-Forwarded-*` headers (`trust proxy: true`), so it works behind a reverse proxy out of the box.
 
 #### Example Configuration
@@ -291,6 +341,8 @@ services:
       - JWT_SECRET=your-secure-secret-here
       - SESSION_TIMEOUT=24h
       - ALLOWED_ORIGINS=https://example.com,https://app.example.com
+      # RATE_LIMIT_MAX=100
+      # RATE_LIMIT_WINDOW=15m
     restart: unless-stopped
 ```
 
@@ -304,6 +356,8 @@ JWT_SECRET=your-development-secret
 SESSION_TIMEOUT=24h
 ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 ALLOWED_HEADERS=Content-Type, Authorization, X-Requested-With
+# RATE_LIMIT_MAX=100
+# RATE_LIMIT_WINDOW=15m
 ```
 
 **Using Docker CLI:**
@@ -317,6 +371,8 @@ docker run -d \
   -e JWT_SECRET=your-secure-secret \
   -e SESSION_TIMEOUT=24h \
   -e ALLOWED_ORIGINS=https://example.com \
+  -e RATE_LIMIT_MAX=100 \
+  -e RATE_LIMIT_WINDOW=15m \
   ghcr.io/bfh-jtf/doc-pouch:latest
 ```
 
@@ -351,8 +407,9 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 - `POST /docs/fetch` - Get documents based on a query object (including public ones)
 - `POST /docs/create` - Create a new document
     - Optional `anonymous` parameter (boolean) - If true, document will be owned by admin user. Requires
-      `ANONYMOUS_DOCUMENTS_ENABLED=true` on the server, otherwise the request is rejected with HTTP 400
-      (`ANONYMOUS_DOCUMENTS_DISABLED`).
+      `ANONYMOUS_DOCUMENTS_ENABLED=true` on the server AND the document's `type`/`subType` pair to be in the
+      anonymous-structure allowlist. Otherwise rejected with HTTP 400 (`ANONYMOUS_DOCUMENTS_DISABLED` or
+      `ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE`).
 - `PATCH /docs/update/{documentID}` - Update an existing document
 - `DELETE /docs/remove/{documentID}` - Remove a document
 
@@ -361,6 +418,12 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 - `POST /structures/create` - Create a new data structure (admin only)
 - `PATCH /structures/update/{structureID}` - Update an existing data structure (admin only)
 - `DELETE /structures/remove/{structureID}` - Remove a data structure (admin only)
+
+### Anonymous Structure Allowlist
+
+- `GET /structures/anonymous/list` - List all structure type/subType pairs that allow anonymous document creation
+- `POST /structures/anonymous/set` - Add a structure type/subType pair to the anonymous allowlist (admin only)
+- `DELETE /structures/anonymous/remove` - Remove a structure type/subType pair from the anonymous allowlist (admin only)
 
 ### Database Management
 
