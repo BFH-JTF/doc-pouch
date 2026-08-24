@@ -2,6 +2,8 @@ import request from 'supertest';
 import {Server} from 'http';
 import NetworkManager from '../../src/srv/NetworkManager.js';
 import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import EmailService from '../../src/srv/EmailService.js';
+import type {I_CorsOption} from '../../src/types.js';
 import {
     setupTestServer,
     createTestUsers,
@@ -52,6 +54,9 @@ describe('Anonymous Document API Tests', () => {
             description: 'Structure for anonymous feedback',
             fields: []
         });
+
+        // Allow anonymous creation for this structure
+        await dataManager.setAnonymousAllowed(1, 1, adminUser._id);
     });
 
     // Close the test server after all tests
@@ -242,6 +247,11 @@ describe('Anonymous Document API Tests with flag disabled', () => {
             description: 'Structure for anonymous feedback',
             fields: []
         });
+
+        // Also add to allowlist - even though the global flag is off,
+        // this ensures the allowlist works correctly in combination.
+        await dataManager.setAnonymousAllowed(1, 1, regularUser._id).catch(() => {
+        });
     });
 
     afterAll(async () => {
@@ -351,9 +361,13 @@ describe('Anonymous Document logging privacy', () => {
             description: 'Structure for anonymous feedback',
             fields: []
         });
+        await dataManager.setAnonymousAllowed(1, 1, users.adminUser._id);
 
-        const corsOptions = {origin: "*", credentials: true};
-        const networkManager = new NetworkManager(logger, dataManager, 3033, corsOptions, {anonymousDocumentsEnabled: true});
+        const emailService = new EmailService(null, logger, 'http://localhost:3033');
+        dataManager.setEmailService(emailService);
+
+        const corsOptions = {origin: "*", credentials: true} as unknown as I_CorsOption;
+        const networkManager = new NetworkManager(logger, dataManager, 3033, corsOptions, {anonymousDocumentsEnabled: true}, emailService);
         const server = networkManager.webServer;
         await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -417,8 +431,11 @@ describe('Anonymous Document logging privacy', () => {
             fields: []
         });
 
-        const corsOptions = {origin: "*", credentials: true};
-        const networkManager = new NetworkManager(logger, dataManager, 3034, corsOptions, {anonymousDocumentsEnabled: false});
+        const emailService = new EmailService(null, logger, 'http://localhost:3034');
+        dataManager.setEmailService(emailService);
+
+        const corsOptions = {origin: "*", credentials: true} as unknown as I_CorsOption;
+        const networkManager = new NetworkManager(logger, dataManager, 3034, corsOptions, {anonymousDocumentsEnabled: false}, emailService);
         const server = networkManager.webServer;
         await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -472,9 +489,13 @@ describe('Anonymous Document logging privacy', () => {
             description: 'Structure for anonymous feedback',
             fields: []
         });
+        await dataManager.setAnonymousAllowed(1, 1, users.adminUser._id);
 
-        const corsOptions = {origin: "*", credentials: true};
-        const networkManager = new NetworkManager(logger, dataManager, 3035, corsOptions, {anonymousDocumentsEnabled: true});
+        const emailService = new EmailService(null, logger, 'http://localhost:3035');
+        dataManager.setEmailService(emailService);
+
+        const corsOptions = {origin: "*", credentials: true} as unknown as I_CorsOption;
+        const networkManager = new NetworkManager(logger, dataManager, 3035, corsOptions, {anonymousDocumentsEnabled: true}, emailService);
         const server = networkManager.webServer;
         await new Promise(resolve => setTimeout(resolve, 100));
 

@@ -1,3 +1,11 @@
+# [1.25.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.24.1...v1.25.0) (2026-08-15)
+
+
+### Features
+
+* add environment variable overrides for rate limiting ([06ca1e1](https://github.com/BFH-JTF/doc-pouch/commit/06ca1e1715393bf6417fddae56f7ce615493b4d2))
+* add per-structure allowlist for anonymous document creation ([050bde7](https://github.com/BFH-JTF/doc-pouch/commit/050bde738d76b1ebd05d04bbf646ff269b5dd770))
+
 ## [1.24.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.24.0...v1.24.1) (2026-07-17)
 
 

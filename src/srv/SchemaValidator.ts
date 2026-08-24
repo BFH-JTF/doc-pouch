@@ -12,6 +12,8 @@ export default class SchemaValidator {
     structureCreationSchema: ObjectSchema<object>;
     structureUpdateSchema: ObjectSchema<object>;
     documentFetchSchema: ObjectSchema<object>;
+    anonymousStructureSetSchema: ObjectSchema<object>;
+    anonymousStructureRemoveSchema: ObjectSchema<object>;
     private logger: winston.Logger;
 
     constructor(logger: winston.Logger) {
@@ -132,6 +134,16 @@ export default class SchemaValidator {
             public: boolean().optional(),
         })
 
+        this.anonymousStructureSetSchema = object({
+            type: number().required(),
+            subType: number().required(),
+        });
+
+        this.anonymousStructureRemoveSchema = object({
+            type: number().required(),
+            subType: number().required(),
+        });
+
         this.logger.debug('SchemaValidator initialized with schemas');
     }
 
@@ -168,6 +180,15 @@ export default class SchemaValidator {
                 break;
             case "structureUpdate":
                 res = this.structureUpdateSchema.validateSync(userInput, { abortEarly: false, stripUnknown: true });
+                break;
+            case "anonymousStructureSet":
+                res = this.anonymousStructureSetSchema.validateSync(userInput, {abortEarly: false, stripUnknown: true});
+                break;
+            case "anonymousStructureRemove":
+                res = this.anonymousStructureRemoveSchema.validateSync(userInput, {
+                    abortEarly: false,
+                    stripUnknown: true
+                });
                 break;
             default:
                 const errorMsg = `Unknown schema template: ${template}`;

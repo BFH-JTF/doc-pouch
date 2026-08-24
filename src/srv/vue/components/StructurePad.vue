@@ -8,6 +8,7 @@ const props = defineProps<{
   structurelist: I_DataStructure[] | undefined;
   apiClient: DbPouchClient;
   isAdmin: boolean;
+  anonymousAllowlist: Array<{ type: number, subType: number }>;
 }>();
 
 const emit = defineEmits<{
@@ -20,6 +21,12 @@ const emit = defineEmits<{
 const nameFilter = ref('');
 const showDeleteConfirmDialog = ref(false);
 const structureToDelete = ref<string | null>(null);
+
+function isAnonymousAllowedForStructure(structure: I_DataStructure): boolean {
+  return props.anonymousAllowlist.some(
+      (entry) => entry.type === structure.type && entry.subType === structure.subType
+  );
+}
 
 // Multi-select functionality
 const selectedStructures = ref<Set<string>>(new Set());
@@ -249,7 +256,11 @@ const cancelCreation = () => {
               <v-icon icon="mdi-table"></v-icon>
             </v-avatar>
           </template>
-          <v-list-item-title>{{ structure.title }}</v-list-item-title>
+          <v-list-item-title>{{ structure.title }}
+            <v-chip v-if="isAnonymousAllowedForStructure(structure)" class="ml-1" color="primary" size="x-small"
+                    variant="tonal">Anonymous
+            </v-chip>
+          </v-list-item-title>
           <v-list-item-subtitle>
             Type: {{ structure.type }} / Subtype: {{ structure.subType }}
           </v-list-item-subtitle>
