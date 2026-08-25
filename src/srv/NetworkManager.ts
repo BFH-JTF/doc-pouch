@@ -831,12 +831,32 @@ export default class NetworkManager {
         });
 
         const getSafeUploadPath = (filePath: string): string => {
+            // Multer with dest:'uploads/' generates paths of the form
+            // uploads/<hex-uuid> on all platforms. The user does not
+            // control this path component (they control originalname,
+            // which we never use for filesystem operations). The regex
+            // allowlist below makes the sanitization explicit and
+            // recognizable to static analysis (CodeQL recognizes a
+            // regex.test() guard followed by a throw as a sanitizer).
+            const SAFE_UPLOAD_PATH_RE = /^uploads[/\\][0-9a-fA-F-]+$/;
+            if (!SAFE_UPLOAD_PATH_RE.test(filePath)) {
+                throw new Error("Invalid file path: not a multer-generated uploads path");
+            }
             const normalizedPath = path.resolve(filePath);
             const uploadsDir = path.resolve('uploads');
             if (!normalizedPath.startsWith(uploadsDir + path.sep) && normalizedPath !== uploadsDir) {
                 throw new Error("Invalid file path: outside uploads directory");
             }
             return normalizedPath;
+        };
+
+        const safeDeleteFile = (filePath: string) => {
+            try {
+                const safePath = getSafeUploadPath(filePath);
+                fs.unlinkSync(safePath);
+            } catch {
+                // Silently ignore if path is invalid or file doesn't exist
+            }
         };
 
 
@@ -1725,24 +1745,18 @@ export default class NetworkManager {
 
                 const uploadedFile = req.file;
 
-                // Sanitize the multer-provided path once. All subsequent
-                // fs/AdmZip operations use `safePath` exclusively so the
-                // tainted req.file.path value never reaches a filesystem
-                // API directly (CodeQL path-injection sink).
-                const safePath = getSafeUploadPath(uploadedFile.path);
-
                 try {
                     const scope = parseDatabaseScope(req.body.scope);
                     const mode = parseImportMode(req.body.mode);
                     const originalName = uploadedFile.originalname.toLowerCase();
 
                     if (originalName.endsWith('.json')) {
-                        const rawContent = fs.readFileSync(safePath, "utf8");
+                        const rawContent = fs.readFileSync(getSafeUploadPath(uploadedFile.path), "utf8");
                         const parsed = JSON.parse(rawContent);
 
                         if (scope === "all") {
                             if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-                                fs.unlinkSync(safePath);
+                                safeDeleteFile(uploadedFile.path);
                                 return res.status(400).json({error: "Invalid JSON payload. Expected an object with one or more collections."});
                             }
 
@@ -1758,7 +1772,7 @@ export default class NetworkManager {
                                 await this.dataManager.importAnonymousStructures(parsed.anonymousStructures, mode);
                             }
 
-                            fs.unlinkSync(safePath);
+                            safeDeleteFile(uploadedFile.path);
                             this.logger.info(`Database JSON import successful for scope=all, mode=${mode}`);
                             return res.status(200).json({message: "Database imported successfully"});
                         }
@@ -1770,29 +1784,29 @@ export default class NetworkManager {
                                 : null);
 
                         if (!scopedData) {
-                            fs.unlinkSync(safePath);
+                            safeDeleteFile(uploadedFile.path);
                             return res.status(400).json({error: `Invalid JSON payload for scope '${scope}'. Expected an array or an object containing '${scope}'.`});
                         }
 
                         const importResult = await this.dataManager.importCollections({[scope]: scopedData}, mode);
                         this.emitImportChangeEvents(req.socketID, importResult);
 
-                        fs.unlinkSync(safePath);
+                        safeDeleteFile(uploadedFile.path);
                         this.logger.info(`Database JSON import successful for scope=${scope}, mode=${mode}`);
                         return res.status(200).json({message: `${scope} imported successfully`});
                     }
 
                     if (!originalName.endsWith('.zip')) {
-                        fs.unlinkSync(safePath);
+                        safeDeleteFile(uploadedFile.path);
                         return res.status(400).json({error: "Uploaded file must be a JSON or ZIP file"});
                     }
 
                     if (scope !== "all") {
-                        fs.unlinkSync(safePath);
+                        safeDeleteFile(uploadedFile.path);
                         return res.status(400).json({error: "ZIP import supports only scope=all. Use JSON files for scoped import."});
                     }
 
-                    const zip = new AdmZip(safePath);
+                    const zip = new AdmZip(getSafeUploadPath(uploadedFile.path));
                     const zipEntries = zip.getEntries();
 
                     const collectionsData: any = {};
@@ -1825,7 +1839,7 @@ export default class NetworkManager {
                     }
 
                     if (Object.keys(collectionsData).length === 0) {
-                        fs.unlinkSync(safePath);
+                        safeDeleteFile(uploadedFile.path);
                         return res.status(400).json({error: "ZIP file does not contain any valid database files (.json or .db)"});
                     }
 
@@ -1836,14 +1850,14 @@ export default class NetworkManager {
                         await this.dataManager.importAnonymousStructures(collectionsData.anonymousStructures, mode);
                     }
 
-                    fs.unlinkSync(safePath);
+                    safeDeleteFile(uploadedFile.path);
 
                     this.logger.info(`Database ZIP import successful, mode=${mode}`);
                     return res.status(200).json({message: "Database imported successfully"});
                 } catch (error) {
                     if ((error as Error).message?.startsWith("Invalid scope")) {
-                        if (fs.existsSync(safePath)) {
-                            fs.unlinkSync(safePath);
+                        if (fs.existsSync(getSafeUploadPath(uploadedFile.path))) {
+                            safeDeleteFile(uploadedFile.path);
                         }
                         return res.status(400).json({error: (error as Error).message});
                     }
@@ -1851,11 +1865,7 @@ export default class NetworkManager {
                     this.logger.error("Error importing database:", error);
 
                     // Delete the uploaded file if it exists
-                    try {
-                        fs.unlinkSync(safePath);
-                    } catch {
-                        // Already removed or never existed; ignore.
-                    }
+                    safeDeleteFile(uploadedFile.path);
 
                     res.status(500).json({error: "Error importing database"});
                 }
@@ -1863,11 +1873,7 @@ export default class NetworkManager {
                 this.logger.error("Error checking admin status:", error);
 
                 if (req.file) {
-                    try {
-                        fs.unlinkSync(getSafeUploadPath(req.file.path));
-                    } catch {
-                        // Already removed or never existed; ignore.
-                    }
+                    safeDeleteFile(req.file.path);
                 }
 
                 res.status(500).json({error: "Error checking admin status"});
