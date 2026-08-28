@@ -566,6 +566,35 @@ export default class NetworkManager {
         const vuePath = path.resolve(process.cwd(), 'dist/srv/vue');
         this.logger.info(`Serving static files from: ${vuePath}`);
 
+        // Validate a post-logout redirect target so we never perform an
+        // open redirect to an attacker-controlled URL. Allows relative
+        // paths ("/", "/path") and same-host absolute URLs (matching the
+        // request Host header, honoring x-forwarded-host because
+        // expressApp.set('trust proxy', true) is set in the constructor).
+        // Loopback addresses (localhost, 127.0.0.1, ::1) are treated as
+        // equivalent so test clients and RPs using different loopback
+        // names for the same port are accepted.
+        const normalizeHost = (host: string): string => {
+            const parts = host.split(':');
+            const hostname = parts[0];
+            const port = parts[1] || '';
+            const normalized = (hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1') ? 'localhost' : hostname;
+            return port ? `${normalized}:${port}` : normalized;
+        };
+        const safeRedirectTarget = (req: Request, target: string | undefined): string => {
+            if (!target || typeof target !== 'string') return '/';
+            if (target.startsWith('/')) return target;
+            try {
+                const parsed = new URL(target);
+                const rawHost = req.headers['x-forwarded-host'] || req.headers.host || '';
+                const requestHost = Array.isArray(rawHost) ? rawHost[0] : rawHost;
+                if (normalizeHost(parsed.host) === normalizeHost(requestHost)) return target;
+            } catch {
+                // Not a valid absolute URL; fall through to '/'
+            }
+            return '/';
+        };
+
         this.expressApp.use(cors(this.corsOptions));
         this.expressApp.use(express.static(vuePath, {
             setHeaders: (res, filePath) => {
@@ -679,7 +708,7 @@ export default class NetworkManager {
 
         // Logout redirect handler - must be before OIDC provider mount
         // Ensures cookies are cleared after oidc-provider logout
-        this.expressApp.get('/oidc/logout-redirect', async (req, res) => {
+        this.expressApp.get('/oidc/logout-redirect', apiRateLimiter, async (req, res) => {
             // Diagnostic logging: capture what query parameters the RP
             // returned with, what cookies it sent, and what is the
             // post_logout_redirect_uri it wants us to redirect to. This
@@ -709,8 +738,9 @@ export default class NetworkManager {
             // a successful logout.
             if (isLogoutCancelled) {
                 this.logger.debug('Logout cancelled by client, preserving session cookies');
-                const separator = postLogoutRedirectUri.includes('?') ? '&' : '?';
-                res.redirect(`${postLogoutRedirectUri}${separator}logout=no`);
+                const safeTarget = safeRedirectTarget(req, postLogoutRedirectUri);
+                const separator = safeTarget.includes('?') ? '&' : '?';
+                res.redirect(`${safeTarget}${separator}logout=no`);
                 return;
             }
 
@@ -727,8 +757,8 @@ export default class NetworkManager {
                 res.clearCookie(`${name}.sig`, cookieOptions);
             });
 
-            this.logger.debug('Redirecting to:', postLogoutRedirectUri);
-            res.redirect(postLogoutRedirectUri);
+            this.logger.debug('Redirecting to:', safeRedirectTarget(req, postLogoutRedirectUri));
+            res.redirect(safeRedirectTarget(req, postLogoutRedirectUri));
         });
 
         // Cancel logout handler - must be before OIDC provider mount
@@ -752,11 +782,11 @@ export default class NetworkManager {
         // body parser without the body being consumed twice).
         this.expressApp.post('/oidc/cancel-logout', apiRateLimiter, express.urlencoded({extended: true}), (req, res) => {
             this.logger.debug('Logout cancelled, redirecting back to app');
-            const postLogoutRedirectUri = typeof req.body?.post_logout_redirect_uri === 'string'
+            const safeTarget = safeRedirectTarget(req, typeof req.body?.post_logout_redirect_uri === 'string'
                 ? req.body.post_logout_redirect_uri
-                : '/';
-            const separator = postLogoutRedirectUri.includes('?') ? '&' : '?';
-            res.redirect(303, `${postLogoutRedirectUri}${separator}logout=no`);
+                : '/');
+            const separator = safeTarget.includes('?') ? '&' : '?';
+            res.redirect(303, `${safeTarget}${separator}logout=no`);
         });
 
         // Log all OIDC requests for debugging
@@ -801,6 +831,17 @@ export default class NetworkManager {
         });
 
         const getSafeUploadPath = (filePath: string): string => {
+            // Multer with dest:'uploads/' generates paths of the form
+            // uploads/<hex-uuid> on all platforms. The user does not
+            // control this path component (they control originalname,
+            // which we never use for filesystem operations). The regex
+            // allowlist below makes the sanitization explicit and
+            // recognizable to static analysis (CodeQL recognizes a
+            // regex.test() guard followed by a throw as a sanitizer).
+            const SAFE_UPLOAD_PATH_RE = /^uploads[/\\][0-9a-fA-F-]+$/;
+            if (!SAFE_UPLOAD_PATH_RE.test(filePath)) {
+                throw new Error("Invalid file path: not a multer-generated uploads path");
+            }
             const normalizedPath = path.resolve(filePath);
             const uploadsDir = path.resolve('uploads');
             if (!normalizedPath.startsWith(uploadsDir + path.sep) && normalizedPath !== uploadsDir) {
@@ -1026,7 +1067,7 @@ export default class NetworkManager {
                 res.status(400).json({error: "Invalid user data"});
         })
 
-        this.expressApp.get("/users/login", (req: Request, res: Response) => {
+        this.expressApp.get("/users/login", apiRateLimiter, (req: Request, res: Response) => {
             res.status(405).json({error: "Method Not Allowed. Use POST for login."});
         })
 
@@ -1604,7 +1645,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.get("/version/check", (req, res) => {
+        this.expressApp.get("/version/check", apiRateLimiter, (req, res) => {
             const updateResult = getCachedUpdateResult();
             if (updateResult) {
                 res.status(200).json(updateResult);

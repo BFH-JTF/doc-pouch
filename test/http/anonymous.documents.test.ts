@@ -366,7 +366,7 @@ describe('Anonymous Document logging privacy', () => {
         const emailService = new EmailService(null, logger, 'http://localhost:3033');
         dataManager.setEmailService(emailService);
 
-        const corsOptions = {origin: "*", credentials: true} as unknown as I_CorsOption;
+        const corsOptions = {origin: "http://localhost:3033", credentials: true} as unknown as I_CorsOption;
         const networkManager = new NetworkManager(logger, dataManager, 3033, corsOptions, {anonymousDocumentsEnabled: true}, emailService);
         const server = networkManager.webServer;
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -434,7 +434,7 @@ describe('Anonymous Document logging privacy', () => {
         const emailService = new EmailService(null, logger, 'http://localhost:3034');
         dataManager.setEmailService(emailService);
 
-        const corsOptions = {origin: "*", credentials: true} as unknown as I_CorsOption;
+        const corsOptions = {origin: "http://localhost:3034", credentials: true} as unknown as I_CorsOption;
         const networkManager = new NetworkManager(logger, dataManager, 3034, corsOptions, {anonymousDocumentsEnabled: false}, emailService);
         const server = networkManager.webServer;
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -494,7 +494,7 @@ describe('Anonymous Document logging privacy', () => {
         const emailService = new EmailService(null, logger, 'http://localhost:3035');
         dataManager.setEmailService(emailService);
 
-        const corsOptions = {origin: "*", credentials: true} as unknown as I_CorsOption;
+        const corsOptions = {origin: "http://localhost:3035", credentials: true} as unknown as I_CorsOption;
         const networkManager = new NetworkManager(logger, dataManager, 3035, corsOptions, {anonymousDocumentsEnabled: true}, emailService);
         const server = networkManager.webServer;
         await new Promise(resolve => setTimeout(resolve, 100));

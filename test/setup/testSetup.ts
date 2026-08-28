@@ -85,7 +85,7 @@ export async function setupTestServer(options: { anonymousDocumentsEnabled?: boo
 
     // Let NetworkManager create and listen on its own server instance
     const corsOptions = {
-        origin: "*",
+        origin: `http://localhost:${TEST_PORT}`,
         credentials: true
     };
     const networkManager = new NetworkManager(testLogger, dataManager, TEST_PORT, corsOptions, {anonymousDocumentsEnabled: options.anonymousDocumentsEnabled}, emailService);
@@ -274,7 +274,7 @@ export async function setupOidcTestServer() {
     dataManager.setEmailService(emailService);
 
     const corsOptions: I_CorsOption = {
-        origin: '*',
+        origin: `http://localhost:${OIDC_TEST_PORT}`,
         allowedHeaders: 'Content-Type, Authorization, X-Socket-ID'
     };
     const networkManager = new NetworkManager(testLogger, dataManager, OIDC_TEST_PORT, corsOptions, {}, emailService);
