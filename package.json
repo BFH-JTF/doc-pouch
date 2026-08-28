@@ -19,6 +19,9 @@
     "type": "git",
     "url": "https://github.com/BFH-JTF/doc-pouch"
   },
+  "engines": {
+    "node": ">=22.22.2"
+  },
   "dependencies": {
     "@mdi/font": "^7.4.47",
     "@modelcontextprotocol/sdk": "^1.30.0",
