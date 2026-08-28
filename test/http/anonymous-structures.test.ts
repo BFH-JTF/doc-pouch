@@ -293,7 +293,7 @@ describe('Anonymous document creation with per-structure allowlist', () => {
         const disabledUsers = await createTestUsers(disabledDm);
 
         const disabledCors: I_CorsOption = {
-            origin: '*',
+            origin: 'http://localhost:3036',
             allowedHeaders: ['Content-Type', 'Authorization', 'X-Socket-ID']
         };
         const disabledNm = new NetworkManager(logger, disabledDm, 3036, disabledCors, {anonymousDocumentsEnabled: false}, disabledEmailService);
