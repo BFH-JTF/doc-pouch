@@ -1,7 +1,7 @@
 {
   "name": "docpouch",
   "private": true,
-  "version": "1.25.0",
+  "version": "1.25.1",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -74,7 +74,7 @@
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.12",
     "typescript": "^6.0.3",
-    "vite": "^7.3.6",
+    "vite": "^8.2.2",
     "vue-tsc": "^3.3.11"
   },
   "overrides": {

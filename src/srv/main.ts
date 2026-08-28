@@ -64,6 +64,10 @@ let winstonLogger = winston.createLogger({
     ],
 });
 
+if (!process.env.ALLOWED_ORIGINS) {
+    winstonLogger.warn("ALLOWED_ORIGINS is not set; CORS allows all origins ('*'). Set ALLOWED_ORIGINS to a comma-separated list of trusted origins in production.");
+}
+
 let dbOptions: INeDbOptions = {
     inMemoryOnly: MEMORY_ONLY,
     filenamePrefix: PREFIX
