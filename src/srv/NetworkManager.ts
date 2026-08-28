@@ -1407,8 +1407,16 @@ export default class NetworkManager {
                         res.status(200).json(document);
                     })
                     .catch((error) => {
-                        this.logger.error(`Document creation failed: ${error.message || error}`, error);
-                        res.status(500).json({error: error.message || "Document creation failed"});
+                        const message = error instanceof Error ? error.message : String(error);
+                        if (message === "ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE") {
+                            res.status(400).json({
+                                error: "ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE",
+                                message: "Anonymous document creation is not allowed for this structure type. The administrator must enable it first."
+                            });
+                        } else {
+                            this.logger.error(`Document creation failed: ${message}`, error);
+                            res.status(500).json({error: error.message || "Document creation failed"});
+                        }
                     });
             } else {
                 this.logger.error("Document creation validation failed");
@@ -1555,6 +1563,47 @@ export default class NetworkManager {
             }
         });
 
+        // Anonymous structure allowlist endpoints
+        this.expressApp.get("/structures/anonymous/list", this.authenticate, apiRateLimiter, (req, res) => {
+            this.dataManager.getAnonymousAllowedStructures().then((entries) => {
+                res.status(200).json(entries);
+            }).catch((error) => {
+                res.status(500).json({error: error.message || error});
+            });
+        });
+
+        this.expressApp.post("/structures/anonymous/set", this.authenticate, writeRateLimiter, (req, res) => {
+            if (this.validator.getValidatedObject("anonymousStructureSet", req.body)) {
+                this.dataManager.setAnonymousAllowed(req.body.type, req.body.subType, req.userid).then((entry) => {
+                    res.status(200).json(entry);
+                }).catch((error) => {
+                    if (error instanceof Error && error.message === "Only admins can manage anonymous structure allowlist") {
+                        res.status(401).json({error: error.message});
+                    } else {
+                        res.status(500).json({error: error.message || error});
+                    }
+                });
+            } else {
+                res.status(400).json({error: "Invalid anonymous structure data"});
+            }
+        });
+
+        this.expressApp.delete("/structures/anonymous/remove", this.authenticate, writeRateLimiter, (req, res) => {
+            if (this.validator.getValidatedObject("anonymousStructureRemove", req.body)) {
+                this.dataManager.removeAnonymousAllowed(req.body.type, req.body.subType, req.userid).then((numRemoved) => {
+                    res.status(200).json({removed: numRemoved});
+                }).catch((error) => {
+                    if (error instanceof Error && error.message === "Only admins can manage anonymous structure allowlist") {
+                        res.status(401).json({error: error.message});
+                    } else {
+                        res.status(500).json({error: error.message || error});
+                    }
+                });
+            } else {
+                res.status(400).json({error: "Invalid anonymous structure data"});
+            }
+        });
+
         this.expressApp.get("/version/check", (req, res) => {
             const updateResult = getCachedUpdateResult();
             if (updateResult) {
@@ -1678,6 +1727,10 @@ export default class NetworkManager {
                             }, mode);
                             this.emitImportChangeEvents(req.socketID, importResult);
 
+                            if (parsed.anonymousStructures && Array.isArray(parsed.anonymousStructures)) {
+                                await this.dataManager.importAnonymousStructures(parsed.anonymousStructures, mode);
+                            }
+
                             safeDeleteFile(uploadedFile.path);
                             this.logger.info(`Database JSON import successful for scope=all, mode=${mode}`);
                             return res.status(200).json({message: "Database imported successfully"});
@@ -1732,6 +1785,16 @@ export default class NetworkManager {
                                 }
                             }
                         }
+                        if (entryName.includes('anonymous-structures') || entryName.includes('anonymous_structures')) {
+                            const content = entry.getData().toString('utf8');
+                            if (entryName.endsWith('.json')) {
+                                collectionsData.anonymousStructures = JSON.parse(content);
+                            } else if (entryName.endsWith('.db')) {
+                                collectionsData.anonymousStructures = content.split('\n')
+                                    .filter((line: string) => line.trim().length > 0)
+                                    .map((line: string) => JSON.parse(line));
+                            }
+                        }
                     }
 
                     if (Object.keys(collectionsData).length === 0) {
@@ -1741,6 +1804,10 @@ export default class NetworkManager {
 
                     const importResult = await this.dataManager.importCollections(collectionsData, mode);
                     this.emitImportChangeEvents(req.socketID, importResult);
+
+                    if (collectionsData.anonymousStructures && Array.isArray(collectionsData.anonymousStructures)) {
+                        await this.dataManager.importAnonymousStructures(collectionsData.anonymousStructures, mode);
+                    }
 
                     safeDeleteFile(uploadedFile.path);
 

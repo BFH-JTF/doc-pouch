@@ -55,6 +55,7 @@ const userArray = ref(<I_UserEntry[]>[]);
 const docArray = ref(<I_DocumentEntry[]>[]);
 const structureArray = ref(<I_DataStructure[]>[]);
 const typeArray = ref(<I_LegacyDocumentType[]>[]);
+const anonymousAllowlist = ref<Array<{ type: number, subType: number }>>([]);
 let shownComponent = ref(DisplayComponent.documentViewer);
 const apiClient = new DbPouchClient(window.location.origin, 0, handleNetworkEvent);
 const isLoggedIn = computed(() => authToken.value !== null);
@@ -274,6 +275,30 @@ const affectedDocumentsForLoadedStructure = computed(() => {
   ).length;
 });
 
+async function handleToggleAnonymous(payload: { type: number; subType: number; enabled: boolean }) {
+  const endpoint = payload.enabled ? '/structures/anonymous/set' : '/structures/anonymous/remove';
+  const method = payload.enabled ? 'POST' : 'DELETE';
+  try {
+    const response = await fetch(endpoint, {
+      method: method,
+      headers: {
+        'Authorization': `Bearer ${authToken.value}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({type: payload.type, subType: payload.subType})
+    });
+    if (response.ok) {
+      successfullySaved();
+      await fetchData();
+    } else {
+      const errorData = await response.json();
+      handleApiError(new Error(errorData.error || `HTTP ${response.status}`), payload.enabled ? "enabling anonymous documents for structure" : "disabling anonymous documents for structure");
+    }
+  } catch (error) {
+    handleApiError(error, payload.enabled ? "enabling anonymous documents for structure" : "disabling anonymous documents for structure");
+  }
+}
+
 function handleStructureSaveRequested(payload: {
   newStructure: I_DataStructure;
   previousStructure: I_DataStructure | undefined;
@@ -408,6 +433,21 @@ async function fetchData() {
   } catch (error) {
     handleApiError(error, "fetching structures");
     structureArray.value = [];
+  }
+
+  // Fetch anonymous structure allowlist
+  console.debug("Fetching anonymous structure allowlist");
+  try {
+    const response = await fetch('/structures/anonymous/list', {
+      headers: {'Authorization': `Bearer ${authToken.value}`}
+    });
+    if (response.ok) {
+      anonymousAllowlist.value = await response.json();
+    } else {
+      anonymousAllowlist.value = [];
+    }
+  } catch (error) {
+    anonymousAllowlist.value = [];
   }
 
   // Fetch legacy document types for pre-2.0.0 migration only.
@@ -904,6 +944,7 @@ async function migrateDatabase() {
                       :structurelist="structureArray"
                       :api-client="apiClient"
                       :is-admin="isAdmin"
+                      :anonymous-allowlist="anonymousAllowlist"
                       @structure-list-changed="fetchData"
                       @structure-removed="handleStructureRemoved"
                   />
@@ -956,9 +997,11 @@ async function migrateDatabase() {
                 :displayStructure="loadedStructure"
                 :structure-list="structureArray"
                 :is-admin="isAdmin"
+                :anonymous-allowlist="anonymousAllowlist"
                 :affected-documents-count="affectedDocumentsForLoadedStructure"
                 @update:structure="handleStructureUpdate"
                 @save-requested="handleStructureSaveRequested"
+                @toggle-anonymous="handleToggleAnonymous"
                 v-if="shownComponent === DisplayComponent.structureViewer"
             />
           </v-col>

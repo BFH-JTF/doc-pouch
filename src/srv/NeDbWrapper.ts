@@ -36,6 +36,13 @@ export interface IDatabaseExportData {
     users: any[];
     documents: any[];
     structures: any[];
+    anonymousStructures?: any[];
+}
+
+export interface I_AnonymousStructureEntry {
+    _id?: string;
+    type: number;
+    subType: number;
 }
 
 /**
@@ -54,6 +61,7 @@ export default class NeDbWrapper {
     structures: CustomStore
     documents: CustomStore
     types: CustomStore // only for backwards compatibility pre 1.9.0
+    anonymousStructures: CustomStore
     apiKeys: any
     passwordResetTokens: CustomStore
     logger: winston.Logger
@@ -91,6 +99,9 @@ export default class NeDbWrapper {
             this.types = new CustomStore(undefined,
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
+            this.anonymousStructures = new CustomStore(undefined,
+                "Anonymous Structures", "Collection of structure type/subType pairs that allow anonymous document creation")
+            this.anonymousStructures.datastore.setAutocompactionInterval(1000 * 60 * 30);
             this.apiKeys = new ApiKeyManager(undefined);
             this.passwordResetTokens = new CustomStore(undefined,
                 "Password Reset Tokens", "Collection of password reset tokens")
@@ -112,6 +123,9 @@ export default class NeDbWrapper {
             this.types = new CustomStore(`${this.dbPath}/${this.filenamePrefix}types.db`,
                 "Document Types", "Collection of document types")
             this.types.datastore.setAutocompactionInterval(1000 * 60 * 60);
+            this.anonymousStructures = new CustomStore(`${this.dbPath}/${this.filenamePrefix}anonymous-structures.db`,
+                "Anonymous Structures", "Collection of structure type/subType pairs that allow anonymous document creation")
+            this.anonymousStructures.datastore.setAutocompactionInterval(1000 * 60 * 30);
             this.apiKeys = new ApiKeyManager(`${this.dbPath}/${this.filenamePrefix}apikeys.db`);
             this.passwordResetTokens = new CustomStore(`${this.dbPath}/${this.filenamePrefix}reset-tokens.db`,
                 "Password Reset Tokens", "Collection of password reset tokens")
@@ -133,16 +147,18 @@ export default class NeDbWrapper {
     }
 
     async exportAllData(): Promise<IDatabaseExportData> {
-        const [users, documents, structures] = await Promise.all([
+        const [users, documents, structures, anonymousStructures] = await Promise.all([
             this.users.query({}),
             this.documents.query({}),
             this.structures.query({}),
+            this.anonymousStructures.query({}),
         ]);
 
         return {
             users,
             documents,
             structures,
+            anonymousStructures,
         };
     }
 
@@ -151,6 +167,7 @@ export default class NeDbWrapper {
         this.structures.datastore.stopAutocompaction();
         this.documents.datastore.stopAutocompaction();
         this.types.datastore.stopAutocompaction();
+        this.anonymousStructures.datastore.stopAutocompaction();
         this.apiKeys.stopAutocompaction();
         this.passwordResetTokens.datastore.stopAutocompaction();
     }
@@ -463,6 +480,36 @@ export default class NeDbWrapper {
 
     async exportCollection(collection: DatabaseCollection): Promise<any[]> {
         return this.getCollectionStore(collection).query({}) as Promise<any[]>;
+    }
+
+    async importAnonymousStructures(data: any[], mode: ImportMode = "replace"): Promise<{
+        created: number,
+        removed: number
+    }> {
+        if (mode === "replace") {
+            await this.anonymousStructures.remove({});
+        }
+        let created = 0;
+        for (const entry of data) {
+            if (typeof entry.type !== "number" || typeof entry.subType !== "number") {
+                continue;
+            }
+            if (mode === "add" || mode === "replace") {
+                const existing = await this.anonymousStructures.query({type: entry.type, subType: entry.subType});
+                if (existing.length === 0) {
+                    await this.anonymousStructures.add({type: entry.type, subType: entry.subType} as any);
+                    created++;
+                }
+            } else if (mode === "skip") {
+                const existing = await this.anonymousStructures.query({type: entry.type, subType: entry.subType});
+                if (existing.length === 0) {
+                    await this.anonymousStructures.add({type: entry.type, subType: entry.subType} as any);
+                    created++;
+                }
+            }
+        }
+        const removed = mode === "replace" ? (data.length === 0 ? 0 : 0) : 0;
+        return {created, removed};
     }
 
     // Structure methods with access control
@@ -884,16 +931,79 @@ export default class NeDbWrapper {
                     return;
                 }
 
-                this.structures.remove({_id: structureID}).then((numRemoved: number) => {
-                    if (numRemoved > 0) {
-                        this.logger.info("Removed structure:" + JSON.stringify(structureID));
-                        resolve(numRemoved);
-                    } else {
+                this.structures.query({_id: structureID}).then((results) => {
+                    if (results.length === 0) {
                         reject(404);
+                        return;
                     }
-                })
+                    const structure = results[0] as I_DataStructure;
+                    this.structures.remove({_id: structureID}).then((numRemoved: number) => {
+                        if (numRemoved > 0) {
+                            this.anonymousStructures.remove({
+                                type: structure.type,
+                                subType: structure.subType
+                            }).catch(() => {
+                            });
+                            this.logger.info("Removed structure:" + JSON.stringify(structureID));
+                            resolve(numRemoved);
+                        } else {
+                            reject(404);
+                        }
+                    }).catch(reject);
+                }).catch(reject);
             });
         })
+    }
+
+    // Anonymous structure allowlist methods
+
+    isAnonymousAllowed(type: number, subType: number): Promise<boolean> {
+        return new Promise((resolve, reject) => {
+            this.anonymousStructures.query({type, subType}).then((results) => {
+                resolve(results.length > 0);
+            }).catch(reject);
+        });
+    }
+
+    async getAnonymousAllowedStructures(): Promise<Array<{ type: number, subType: number }>> {
+        const results = await this.anonymousStructures.query({});
+        return results.map((r: any) => ({type: r.type, subType: r.subType}));
+    }
+
+    setAnonymousAllowed(type: number, subType: number, requestingUserID: string): Promise<I_AnonymousStructureEntry> {
+        return new Promise((resolve, reject) => {
+            this.isAdmin(requestingUserID).then((isAdmin) => {
+                if (!isAdmin) {
+                    reject(new Error("Only admins can manage anonymous structure allowlist"));
+                    return;
+                }
+                this.anonymousStructures.query({type, subType}).then((results) => {
+                    if (results.length > 0) {
+                        resolve(results[0] as I_AnonymousStructureEntry);
+                        return;
+                    }
+                    this.anonymousStructures.add({type, subType} as any).then((result) => {
+                        this.logger.info(`Added anonymous allowlist entry: type=${type}, subType=${subType}`);
+                        resolve(result as I_AnonymousStructureEntry);
+                    }).catch(reject);
+                }).catch(reject);
+            });
+        });
+    }
+
+    removeAnonymousAllowed(type: number, subType: number, requestingUserID: string): Promise<number> {
+        return new Promise((resolve, reject) => {
+            this.isAdmin(requestingUserID).then((isAdmin) => {
+                if (!isAdmin) {
+                    reject(new Error("Only admins can manage anonymous structure allowlist"));
+                    return;
+                }
+                this.anonymousStructures.remove({type, subType}).then((numRemoved: number) => {
+                    this.logger.info(`Removed anonymous allowlist entry: type=${type}, subType=${subType}`);
+                    resolve(numRemoved);
+                }).catch(reject);
+            });
+        });
     }
 
     async getAdminUserID(): Promise<string> {
@@ -977,13 +1087,23 @@ export default class NeDbWrapper {
             let ownerId = requestingUserID;
 
             // If the document should be anonymous, reassign ownership to the admin user
+            // and verify that the structure allows anonymous creation
             if (anonymous) {
-                this.getAdminUserID().then((adminUserId) => {
-                    ownerId = adminUserId;
-                    this.createDocumentWithOwner(document, ownerId, true, resolve, reject);
+                const anonymousCheck = this.isAnonymousAllowed(document.type, document.subType).then((allowed) => {
+                    if (!allowed) {
+                        reject(new Error("ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE"));
+                        return;
+                    }
+                    this.getAdminUserID().then((adminUserId) => {
+                        ownerId = adminUserId;
+                        this.createDocumentWithOwner(document, ownerId, true, resolve, reject);
+                    }).catch((error) => {
+                        this.logger.error("Failed to get admin user:", error);
+                        reject(new Error("Failed to get admin user: " + error));
+                    });
                 }).catch((error) => {
-                    this.logger.error("Failed to get admin user:", error);
-                    reject(new Error("Failed to get admin user: " + error));
+                    this.logger.error("Failed to check anonymous allowlist:", error);
+                    reject(new Error("Failed to check anonymous allowlist: " + error));
                 });
             } else {
                 this.createDocumentWithOwner(document, ownerId, false, resolve, reject);

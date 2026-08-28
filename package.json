@@ -1,7 +1,7 @@
 {
   "name": "docpouch",
   "private": true,
-  "version": "1.24.1",
+  "version": "1.25.0",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -19,9 +19,12 @@
     "type": "git",
     "url": "https://github.com/BFH-JTF/doc-pouch"
   },
+  "engines": {
+    "node": ">=22.22.2"
+  },
   "dependencies": {
     "@mdi/font": "^7.4.47",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@seald-io/nedb": "^4.1.2",
     "@types/nodemailer": "^8.0.1",
     "adm-zip": "^0.6.0",
@@ -31,16 +34,16 @@
     "docpouch-client": "^1.2.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.5.2",
+    "express-rate-limit": "^8.6.1",
     "jsonwebtoken": "9.0.3",
     "multer": "2.2.0",
     "node-fetch": "^3.3.2",
     "nodemailer": "^9.0.3",
-    "oidc-provider": "^9.9.1",
+    "oidc-provider": "^9.11.3",
     "semver": "^7.8.5",
     "socket.io": "^4.8.3",
     "vue": "^3.5.40",
-    "vuetify": "^4.1.5",
+    "vuetify": "^4.1.7",
     "winston": "^3.19.0",
     "yup": "^1.7.1"
   },
@@ -58,21 +61,21 @@
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.2.0",
-    "@types/oidc-provider": "^9.5.0",
-    "@types/semver": "^7.7.1",
+    "@types/oidc-provider": "^9.11.1",
+    "@types/semver": "^7.8.0",
     "@types/supertest": "^7.2.1",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1",
     "babel-jest": "^30.4.1",
     "jest": "^30.4.2",
-    "semantic-release": "^25.0.7",
+    "semantic-release": "^25.0.8",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.2.2",
-    "ts-jest": "^29.4.11",
+    "ts-jest": "^29.4.12",
     "typescript": "^6.0.3",
     "vite": "^7.3.6",
-    "vue-tsc": "^3.3.7"
+    "vue-tsc": "^3.3.9"
   },
   "overrides": {
     "@babel/core": "$@babel/core"
