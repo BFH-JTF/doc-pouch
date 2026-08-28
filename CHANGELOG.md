@@ -1,3 +1,10 @@
+## [1.25.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.0...v1.25.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **security:** address 50 code scanning alerts ([#52](https://github.com/BFH-JTF/doc-pouch/issues/52)) ([2398b29](https://github.com/BFH-JTF/doc-pouch/commit/2398b2966b4492f4a939216e6c5286a39fe0f5cb))
+
 # [1.25.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.24.1...v1.25.0) (2026-08-15)
 
 
