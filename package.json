@@ -67,7 +67,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1",
-    "babel-jest": "^30.4.1",
+    "babel-jest": "^30.5.0",
     "jest": "^30.4.2",
     "semantic-release": "^25.0.9",
     "socket.io-client": "^4.8.3",
