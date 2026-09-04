@@ -36,7 +36,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
     "jsonwebtoken": "9.0.3",
-    "multer": "2.2.0",
+    "multer": "2.3.0",
     "node-fetch": "^3.3.2",
     "nodemailer": "^9.0.6",
     "oidc-provider": "^9.11.5",
