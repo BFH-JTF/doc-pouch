@@ -1,3 +1,11 @@
+## [1.25.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.1...v1.25.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **ci:** remove custom CodeQL workflow that conflicts with default setup ([2e0cd9c](https://github.com/BFH-JTF/doc-pouch/commit/2e0cd9c1788c09cde0e6b1dcd1879f3dd15a9201))
+* **ci:** resolve CodeQL conflict and conditionalize OpenAPI version update ([e436d70](https://github.com/BFH-JTF/doc-pouch/commit/e436d70f2334e14d3f019f93cd530a96a9c68570))
+
 ## [1.25.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.0...v1.25.1) (2026-08-28)
 
 
