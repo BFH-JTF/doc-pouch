@@ -39,11 +39,19 @@ jobs:
         run: npm install
 
       - name: Run semantic-release
+        id: semantic
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: npx semantic-release
+        run: |
+          npx semantic-release
+          if git diff --quiet HEAD; then
+            echo "new_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_release=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Update OpenAPI version
+        if: steps.semantic.outputs.new_release == 'true'
         run: |
           VERSION=$(jq -r '.version' package.json)
           sed -i "s/version: [0-9.]\+/version: $VERSION/" docpouch_openAPI.yaml
