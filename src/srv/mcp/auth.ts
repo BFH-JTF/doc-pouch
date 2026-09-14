@@ -1,7 +1,7 @@
 import type {Request} from 'express';
 import jwt from 'jsonwebtoken';
 import {JWTOptions} from '../webTokenStuff.js';
-import NeDbWrapper from '../NeDbWrapper.js';
+import DatabaseWrapper from '../DatabaseWrapper.js';
 
 export interface AuthResult {
     userid: string;
@@ -10,7 +10,7 @@ export interface AuthResult {
 
 export async function authenticateRequest(
     req: Request,
-    dataManager: NeDbWrapper,
+    dataManager: DatabaseWrapper,
     oidcProvider: any,
 ): Promise<AuthResult | null> {
     const authHeader = req.headers['authorization'];

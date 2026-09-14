@@ -1,10 +1,11 @@
 import NetworkManager from "./NetworkManager.js";
-import NeDbWrapper, {type INeDbOptions} from "./NeDbWrapper.js";
+import DatabaseWrapper, {type INeDbOptions} from "./DatabaseWrapper.js";
 import EmailService, {type SmtpConfig} from "./EmailService.js";
 import winston from "winston";
 import fs from "fs";
 import {checkForUpdates} from "./updateChecker.js";
-import {initOidcDatabases, setOidcAdapterLogger} from "./OidcAdapter.js";
+import {setOidcStoreFactory, setOidcAdapterLogger} from "./OidcAdapter.js";
+import StoreFactory, {storeConfigFromEnv} from "./storage/storeFactory.js";
 import type {I_CorsOption} from "../types.ts";
 import dotenv from 'dotenv';
 
@@ -73,6 +74,17 @@ let dbOptions: INeDbOptions = {
     filenamePrefix: PREFIX
 }
 
+// Storage backend selection: NeDB (default, file-based) or MongoDB.
+// Throws early on invalid/missing configuration so misconfiguration is
+// reported at boot instead of at first database access.
+const storeConfig = storeConfigFromEnv();
+const STORAGE_BACKEND = storeConfig.backend;
+if (STORAGE_BACKEND === "mongodb" && !storeConfig.mongodb.uri) {
+    winstonLogger.error("STORAGE_BACKEND is 'mongodb' but MONGODB_URI is not set. Exiting.");
+    process.exit(1);
+}
+const storeFactory = new StoreFactory(storeConfig, winstonLogger);
+
 checkForUpdates(winstonLogger);
 
 if (ANONYMOUS_DOCUMENTS_ENABLED) {
@@ -80,12 +92,20 @@ if (ANONYMOUS_DOCUMENTS_ENABLED) {
 }
 
 // When anonymous documents are enabled, force the OIDC adapter to in-memory
-// storage so that the session/access-token NeDB files cannot be used to
-// correlate user activity with anonymous document creation.
-initOidcDatabases('./db', MEMORY_ONLY || ANONYMOUS_DOCUMENTS_ENABLED);
+// storage so that the session/access-token records cannot be used to
+// correlate user activity with anonymous document creation. This applies
+// to the NeDB backend; a MongoDB deployment is inherently multi-instance
+// and its session store cannot be correlated through local files.
+if (STORAGE_BACKEND === "nedb") {
+    winstonLogger.info("Initializing OIDC databases (NeDB backend)");
+    setOidcStoreFactory(storeFactory, './db', MEMORY_ONLY || ANONYMOUS_DOCUMENTS_ENABLED);
+} else {
+    winstonLogger.info("Initializing OIDC databases (MongoDB backend)");
+    setOidcStoreFactory(storeFactory, './db', false);
+}
 setOidcAdapterLogger(winstonLogger);
 
-const dataManager = new NeDbWrapper(winstonLogger, dbOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED});
+const dataManager = new DatabaseWrapper(winstonLogger, dbOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED}, storeFactory);
 
 // SMTP / Email configuration
 const smtpConfig: SmtpConfig | null = process.env.SMTP_HOST
@@ -102,10 +122,15 @@ const smtpConfig: SmtpConfig | null = process.env.SMTP_HOST
 const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
 const emailService = new EmailService(smtpConfig, winstonLogger, baseUrl);
 
-dataManager.waitForInitialization().then(() => {
-    winstonLogger.info("Database initialized, starting server...");
-    new NetworkManager(winstonLogger, dataManager, PORT, corsOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED}, emailService);
-}).catch((error) => {
-    winstonLogger.error(`Failed to initialize database: ${error}`);
-    process.exit(1);
-});
+// Wait for the store factory (MongoDB connection + index creation) and the
+// initial database setup before starting the HTTP server.
+storeFactory.waitForInitialization()
+    .then(() => dataManager.waitForInitialization())
+    .then(() => {
+        winstonLogger.info("Database initialized, starting server...");
+        new NetworkManager(winstonLogger, dataManager, PORT, corsOptions, {anonymousDocumentsEnabled: ANONYMOUS_DOCUMENTS_ENABLED}, emailService);
+    })
+    .catch((error) => {
+        winstonLogger.error(`Failed to initialize database: ${error}`);
+        process.exit(1);
+    });

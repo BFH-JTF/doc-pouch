@@ -1,21 +1,18 @@
 import bcrypt from "bcrypt"
-import Nedb from "@seald-io/nedb";
 import {type I_ApiKey, type I_ApiKeyListItem, type I_ApiKeyCreated} from "../types.js";
+import type {IDocStore} from "./storage/IDocStore.js";
 
-declare const NedbConstructor: new (options?: any) => any;
-type NedbInstance = InstanceType<typeof NedbConstructor>;
-
+/**
+ * Manages long-lived API keys. Storage is backend-agnostic: the store is
+ * injected (NeDB file, in-memory, or MongoDB) and this class only handles
+ * hashing, validation, and the per-user key limit.
+ */
 export default class ApiKeyManager {
     saltRounds: number = 10;
-    private datastore: NedbInstance;
+    private store: IDocStore;
 
-    constructor(filename: string | undefined) {
-        if (!filename) {
-            this.datastore = new (Nedb as any)({inMemoryOnly: true, autoload: true});
-        } else {
-            this.datastore = new (Nedb as any)({filename: filename, autoload: true});
-        }
-        this.datastore.setAutocompactionInterval(1000 * 60 * 60);
+    constructor(store: IDocStore) {
+        this.store = store;
     }
 
     async createApiKey(userId: string, name: string, expiresInDays?: number): Promise<I_ApiKeyCreated> {
@@ -104,48 +101,23 @@ export default class ApiKeyManager {
         return keys.length > 0 ? keys[0] : null;
     }
 
-    stopAutocompaction(): void {
-        this.datastore.stopAutocompaction();
+    stop(): void {
+        this.store.stop();
     }
 
     private async query(query: object): Promise<I_ApiKey[]> {
-        return new Promise((resolve, reject) => {
-            this.datastore.find(query, (err: any, result: I_ApiKey[]) => {
-                if (err) reject(err);
-                else resolve(result);
-            });
-        });
+        return this.store.query<I_ApiKey>(query);
     }
 
     private async add(inputData: I_ApiKey): Promise<I_ApiKey> {
-        return new Promise((resolve, reject) => {
-            this.datastore.insert(inputData, (err: Error | null, newDoc: I_ApiKey) => {
-                if (err) reject(err);
-                else resolve(newDoc);
-            });
-        });
+        return this.store.add<I_ApiKey>(inputData);
     }
 
     private async remove(query: object): Promise<void> {
-        return new Promise((resolve, reject) => {
-            this.datastore.remove(query, {}, (err: Error | null) => {
-                if (err) reject(err);
-                else resolve();
-            });
-        });
+        await this.store.remove(query, {multi: true});
     }
 
     private async updateLastUsed(keyId: string): Promise<void> {
-        return new Promise((resolve, reject) => {
-            this.datastore.update(
-                {_id: keyId},
-                {$set: {lastUsedAt: Date.now()}},
-                {multi: false, upsert: false},
-                (err: any) => {
-                    if (err) reject(err);
-                    else resolve();
-                }
-            );
-        });
+        await this.store.updateOne({_id: keyId}, {$set: {lastUsedAt: Date.now()}}, {multi: false, upsert: false});
     }
 }

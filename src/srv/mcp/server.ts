@@ -1,5 +1,5 @@
 import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
-import NeDbWrapper from '../NeDbWrapper.js';
+import DatabaseWrapper from '../DatabaseWrapper.js';
 import type winston from 'winston';
 import SchemaValidator from '../SchemaValidator.js';
 import EmailService from '../EmailService.js';
@@ -7,7 +7,7 @@ import {registerAllTools} from './tools/index.js';
 import {registerResources} from './resources.js';
 
 export function buildMcpServer(
-    dataManager: NeDbWrapper,
+    dataManager: DatabaseWrapper,
     logger: winston.Logger,
     validator: SchemaValidator,
     emailService: EmailService,

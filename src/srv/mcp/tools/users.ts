@@ -1,5 +1,5 @@
 import type {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
-import NeDbWrapper from '../../NeDbWrapper.js';
+import DatabaseWrapper from '../../DatabaseWrapper.js';
 import SchemaValidator from '../../SchemaValidator.js';
 import type winston from 'winston';
 import EmailService from '../../EmailService.js';
@@ -25,7 +25,7 @@ function getUserId(): string | null {
 
 export function registerUserTools(
     server: McpServer,
-    dataManager: NeDbWrapper,
+    dataManager: DatabaseWrapper,
     logger: winston.Logger,
     validator: SchemaValidator,
     emailService: EmailService,

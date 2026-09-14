@@ -1,7 +1,7 @@
 import request from 'supertest';
 import {Server} from 'http';
 import NetworkManager from '../../src/srv/NetworkManager.js';
-import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import DatabaseWrapper from '../../src/srv/DatabaseWrapper.js';
 import {
     setupTestServer,
     createTestUsers,
@@ -15,7 +15,7 @@ const JWT_SECRET = 'ThisIsMyVeryOwnAndCreativeSecret';
 describe.skip('MCP Authentication', () => {
     let server: Server;
     let networkManager: NetworkManager;
-    let dataManager: NeDbWrapper;
+    let dataManager: DatabaseWrapper;
     let adminToken: string;
     let userToken: string;
 

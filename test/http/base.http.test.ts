@@ -1,6 +1,6 @@
 import request from 'supertest';
 import {Server} from 'http';
-import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import DatabaseWrapper from '../../src/srv/DatabaseWrapper.js';
 import NetworkManager from '../../src/srv/NetworkManager.js';
 import {
     setupTestServer,
@@ -13,7 +13,7 @@ import {
 describe('Base HTTP Test', () => {
     let server: Server;
     let networkManager: NetworkManager;
-    let dataManager: NeDbWrapper;
+    let dataManager: DatabaseWrapper;
     let adminToken: string;
     let userToken: string;
 

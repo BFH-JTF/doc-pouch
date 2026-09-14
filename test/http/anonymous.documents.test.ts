@@ -1,7 +1,7 @@
 import request from 'supertest';
 import {Server} from 'http';
 import NetworkManager from '../../src/srv/NetworkManager.js';
-import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import DatabaseWrapper from '../../src/srv/DatabaseWrapper.js';
 import EmailService from '../../src/srv/EmailService.js';
 import type {I_CorsOption} from '../../src/types.js';
 import {
@@ -21,7 +21,7 @@ interface I_AnonymousDocumentCreation extends I_DocumentCreation {
 describe('Anonymous Document API Tests', () => {
     let server: Server;
     let networkManager: NetworkManager;
-    let dataManager: NeDbWrapper;
+    let dataManager: DatabaseWrapper;
     let adminToken: string;
     let userToken: string;
     let adminUser: any;
@@ -221,7 +221,7 @@ describe('Anonymous Document API Tests', () => {
 describe('Anonymous Document API Tests with flag disabled', () => {
     let server: Server;
     let networkManager: NetworkManager;
-    let dataManager: NeDbWrapper;
+    let dataManager: DatabaseWrapper;
     let adminToken: string;
     let userToken: string;
     let regularUser: any;
@@ -348,7 +348,7 @@ describe('Anonymous Document logging privacy', () => {
         const {logger, entries} = createMemoryTestLogger('debug');
 
         // Set up an isolated server using the memory logger
-        const dataManager = new NeDbWrapper(logger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: true});
+        const dataManager = new DatabaseWrapper(logger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: true});
         await dataManager.waitForInitialization();
         await cleanupTestDatabase(dataManager);
         const users = await createTestUsers(dataManager);
@@ -418,7 +418,7 @@ describe('Anonymous Document logging privacy', () => {
     test('non-anonymous creation should be logged at debug level (not info)', async () => {
         const {logger, entries} = createMemoryTestLogger('debug');
 
-        const dataManager = new NeDbWrapper(logger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: false});
+        const dataManager = new DatabaseWrapper(logger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: false});
         await dataManager.waitForInitialization();
         await cleanupTestDatabase(dataManager);
         const users = await createTestUsers(dataManager);
@@ -477,7 +477,7 @@ describe('Anonymous Document logging privacy', () => {
     test('anonymous creation should be logged at debug level (not info)', async () => {
         const {logger, entries} = createMemoryTestLogger('debug');
 
-        const dataManager = new NeDbWrapper(logger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: true});
+        const dataManager = new DatabaseWrapper(logger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: true});
         await dataManager.waitForInitialization();
         await cleanupTestDatabase(dataManager);
         const users = await createTestUsers(dataManager);

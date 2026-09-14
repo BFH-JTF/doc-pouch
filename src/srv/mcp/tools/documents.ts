@@ -1,5 +1,5 @@
 import type {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
-import NeDbWrapper from '../../NeDbWrapper.js';
+import DatabaseWrapper from '../../DatabaseWrapper.js';
 import SchemaValidator from '../../SchemaValidator.js';
 import type winston from 'winston';
 import {
@@ -31,7 +31,7 @@ function parseContent(content: unknown): unknown {
 
 export function registerDocumentTools(
     server: McpServer,
-    dataManager: NeDbWrapper,
+    dataManager: DatabaseWrapper,
     logger: winston.Logger,
     validator: SchemaValidator,
 ): void {

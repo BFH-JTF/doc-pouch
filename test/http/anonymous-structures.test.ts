@@ -1,7 +1,7 @@
 import request from 'supertest';
 import {Server} from 'http';
 import NetworkManager from '../../src/srv/NetworkManager.js';
-import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import DatabaseWrapper from '../../src/srv/DatabaseWrapper.js';
 import EmailService from '../../src/srv/EmailService.js';
 import type {I_CorsOption} from '../../src/types.js';
 import {
@@ -15,7 +15,7 @@ import {
 describe('Anonymous Structure Allowlist API Tests', () => {
     let server: Server;
     let networkManager: NetworkManager;
-    let dataManager: NeDbWrapper;
+    let dataManager: DatabaseWrapper;
     let adminToken: string;
     let userToken: string;
     let adminUser: any;
@@ -183,7 +183,7 @@ describe('Anonymous Structure Allowlist API Tests', () => {
 describe('Anonymous document creation with per-structure allowlist', () => {
     let server: Server;
     let networkManager: NetworkManager;
-    let dataManager: NeDbWrapper;
+    let dataManager: DatabaseWrapper;
     let adminToken: string;
     let userToken: string;
 
@@ -285,7 +285,7 @@ describe('Anonymous document creation with per-structure allowlist', () => {
 
     test('should reject anonymous document when global flag is off', async () => {
         const {logger} = createMemoryTestLogger('debug');
-        const disabledDm = new NeDbWrapper(logger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: false});
+        const disabledDm = new DatabaseWrapper(logger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: false});
         await disabledDm.waitForInitialization();
         const disabledEmailService = new EmailService(null, logger, 'http://localhost:3036');
         disabledDm.setEmailService(disabledEmailService);

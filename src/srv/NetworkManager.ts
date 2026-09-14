@@ -11,7 +11,7 @@ import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
 import type {I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
-import NeDbWrapper, {type DatabaseCollection, type ImportMode, type IImportResult} from "./NeDbWrapper.js";
+import DatabaseWrapper, {type DatabaseCollection, type ImportMode, type IImportResult} from "./DatabaseWrapper.js";
 import winston from "winston";
 import SchemaValidator from "./SchemaValidator.js";
 import IoSocketServer from "./IoSocketServer.js";
@@ -106,7 +106,7 @@ export default class NetworkManager {
     corsOptions: any;
     port: number;
     private readonly expressApp: express.Application;
-    dataManager: NeDbWrapper;
+    dataManager: DatabaseWrapper;
     private socketServer: IoSocketServer
     webServer: http.Server
     logger: winston.Logger
@@ -116,7 +116,7 @@ export default class NetworkManager {
     private mcpManager?: McpManager;
     emailService: EmailService;
 
-    constructor(logger: winston.Logger, dataManager: NeDbWrapper, port: number, corsOptions: I_CorsOption, runtimeOptions: {
+    constructor(logger: winston.Logger, dataManager: DatabaseWrapper, port: number, corsOptions: I_CorsOption, runtimeOptions: {
         anonymousDocumentsEnabled?: boolean
     } = {}, emailService: EmailService) {
         this.corsOptions = corsOptions;
@@ -544,7 +544,7 @@ export default class NetworkManager {
     public async stop(): Promise<void> {
         if (this.mcpManager) await this.mcpManager.close();
         this.socketServer.close();
-        this.dataManager.stop();
+        await this.dataManager.stop();
         return new Promise((resolve) => {
             this.webServer.close(() => resolve());
         });
@@ -1308,7 +1308,8 @@ export default class NetworkManager {
 
         this.expressApp.delete("/api-keys/:keyId", this.authenticate, writeRateLimiter, async (req, res) => {
             try {
-                const deleted = await this.dataManager.apiKeys.deleteApiKey(req.params.keyId, req.userid);
+                const keyId = req.params.keyId as string;
+                const deleted = await this.dataManager.apiKeys.deleteApiKey(keyId, req.userid);
                 if (deleted) {
                     res.status(200).json({message: "API key deleted"});
                 } else {
@@ -1355,12 +1356,13 @@ export default class NetworkManager {
                     res.status(401).json({error: "Not authorized"});
                     return;
                 }
-                const key = await this.dataManager.apiKeys.getApiKey(req.params.keyId);
+                const keyId = req.params.keyId as string;
+                const key = await this.dataManager.apiKeys.getApiKey(keyId);
                 if (!key) {
                     res.status(404).json({error: "API key not found"});
                     return;
                 }
-                await this.dataManager.apiKeys.deleteApiKey(req.params.keyId, key.userId);
+                await this.dataManager.apiKeys.deleteApiKey(keyId, key.userId);
                 res.status(200).json({message: "API key revoked"});
             } catch (error: any) {
                 res.status(500).json({error: error.message});

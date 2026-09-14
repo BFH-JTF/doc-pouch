@@ -1,8 +1,10 @@
 import {Server} from 'http';
 import NetworkManager from '../../src/srv/NetworkManager.js';
-import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import DatabaseWrapper from '../../src/srv/DatabaseWrapper.js';
+import StoreFactory, {storeConfigFromEnv} from '../../src/srv/storage/storeFactory.js';
+import {MongoDbHandle} from '../../src/srv/storage/MongoStore.js';
 import EmailService from '../../src/srv/EmailService.js';
-import {clearAllOidcData, initOidcDatabases, closeOidcDatabases} from '../../src/srv/OidcAdapter.js';
+import {clearAllOidcData, setOidcStoreFactory, initOidcDatabases, closeOidcDatabases} from '../../src/srv/OidcAdapter.js';
 import winston from 'winston';
 import {Writable} from 'stream';
 import type {I_CorsOption} from '../../src/types.js';
@@ -34,6 +36,55 @@ const OIDC_TEST_REDIRECT_URI = `http://localhost:${OIDC_TEST_PORT}/`;
 const OIDC_TEST_POST_LOGOUT_URI = `http://localhost:${OIDC_TEST_PORT}/`;
 const OIDC_TEST_REGISTRATION_TOKEN = 'docpouch-oidc-test-registration-token';
 const OIDC_TEST_COOKIE_KEY = 'docpouch-oidc-test-cookie-key';
+
+/**
+ * Storage backend used by the test suite. Defaults to in-memory NeDB.
+ * Set TEST_STORAGE_BACKEND=mongodb (plus MONGODB_URI) to run the entire
+ * suite against the MongoDB backend.
+ */
+export const TEST_STORAGE_BACKEND = (process.env.TEST_STORAGE_BACKEND || 'nedb').toLowerCase();
+
+let sharedTestStoreFactory: StoreFactory | null = null;
+
+/**
+ * Create (once) and await a StoreFactory for the test backend. When
+ * TEST_STORAGE_BACKEND=mongodb, MONGODB_URI must point at a disposable
+ * database (e.g. an in-memory server started by jest globalSetup).
+ */
+async function getTestStoreFactory(): Promise<StoreFactory> {
+    if (!sharedTestStoreFactory) {
+        const config = storeConfigFromEnv({
+            STORAGE_BACKEND: TEST_STORAGE_BACKEND,
+            MEMORY_ONLY: 'true',
+            MONGODB_URI: process.env.MONGODB_URI,
+            MONGODB_DB: process.env.MONGODB_DB || 'docpouch_test',
+        } as NodeJS.ProcessEnv);
+        sharedTestStoreFactory = new StoreFactory(config, testLogger);
+        await sharedTestStoreFactory.waitForInitialization();
+    }
+    return sharedTestStoreFactory;
+}
+
+/**
+ * Drop all collections of the test database (MongoDB backend only).
+ * Used between test files to isolate their state.
+ */
+export async function resetTestDatabase(): Promise<void> {
+    if (TEST_STORAGE_BACKEND !== 'mongodb') return;
+    const factory = await getTestStoreFactory();
+    const config = storeConfigFromEnv({
+        STORAGE_BACKEND: TEST_STORAGE_BACKEND,
+        MEMORY_ONLY: 'true',
+        MONGODB_URI: process.env.MONGODB_URI,
+        MONGODB_DB: process.env.MONGODB_DB || 'docpouch_test',
+    } as NodeJS.ProcessEnv);
+    const db = await MongoDbHandle.connect(config.mongodb.uri!, config.mongodb.dbName);
+    const collections = await db.listCollections().toArray();
+    for (const col of collections) {
+        await db.collection(col.name).deleteMany({});
+    }
+    void factory;
+}
 
 /**
  * Creates a dedicated winston logger backed by an in-memory buffer of
@@ -72,10 +123,11 @@ export function createMemoryTestLogger(level: string = 'debug'): { logger: winst
 
 /**
  * Creates a test server instance
- * @returns {Promise<{networkManager: NetworkManager, dataManager: NeDbWrapper, server: Server}>}
+ * @returns {Promise<{networkManager: NetworkManager, dataManager: DatabaseWrapper, server: Server}>}
  */
 export async function setupTestServer(options: { anonymousDocumentsEnabled?: boolean } = {}) {
-    const dataManager = new NeDbWrapper(testLogger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: options.anonymousDocumentsEnabled});
+    const storeFactory = await getTestStoreFactory();
+    const dataManager = new DatabaseWrapper(testLogger, {inMemoryOnly: true}, {anonymousDocumentsEnabled: options.anonymousDocumentsEnabled}, storeFactory);
 
     // Wait for database initialization to complete before starting tests
     await dataManager.waitForInitialization();
@@ -84,9 +136,9 @@ export async function setupTestServer(options: { anonymousDocumentsEnabled?: boo
     dataManager.setEmailService(emailService);
 
     // Let NetworkManager create and listen on its own server instance
-    const corsOptions = {
+    const corsOptions: I_CorsOption = {
         origin: `http://localhost:${TEST_PORT}`,
-        credentials: true
+        credentials: 'true'
     };
     const networkManager = new NetworkManager(testLogger, dataManager, TEST_PORT, corsOptions, {anonymousDocumentsEnabled: options.anonymousDocumentsEnabled}, emailService);
 
@@ -101,10 +153,10 @@ const JWT_SECRET = 'ThisIsMyVeryOwnAndCreativeSecret';
 
 /**
  * Creates test users for testing
- * @param {NeDbWrapper} dataManager - The database manager
+ * @param {DatabaseWrapper} dataManager - The database manager
  * @returns {Promise<{adminUser: any, regularUser: any, adminToken: string, userToken: string}>}
  */
-export async function createTestUsers(dataManager: NeDbWrapper) {
+export async function createTestUsers(dataManager: DatabaseWrapper) {
     const adminUser: I_UserCreation = {
         name: 'admin',
         password: 'adminpassword',
@@ -143,14 +195,22 @@ export function generateToken(user: I_UserEntry) {
 
 /**
  * Cleans up the test database
- * @param {NeDbWrapper} dataManager - The database manager
+ * @param {DatabaseWrapper} dataManager - The database manager
  */
-export async function cleanupTestDatabase(dataManager: NeDbWrapper) {
-    // Remove all records from NeDB collections
+export async function cleanupTestDatabase(dataManager: DatabaseWrapper) {
+    // Remove all records from all collections
     await dataManager.users.remove({});
     await dataManager.documents.remove({});
     await dataManager.structures.remove({});
     await dataManager.types.remove({});
+    await dataManager.anonymousStructures.remove({});
+    await dataManager.passwordResetTokens.remove({});
+    try {
+        await dataManager.apiKeys.deleteAllForUser('*none*');
+    } catch {
+        // best-effort: API keys are scoped per user; tests that create
+        // keys clean them up themselves
+    }
 }
 
 export const authenticatedRequest = (server: Server, token: string) => {
@@ -264,10 +324,15 @@ export async function setupOidcTestServer() {
     const envSnapshot = snapshotOidcEnv();
     applyOidcTestEnv();
 
-    initOidcDatabases(path.join(os.tmpdir(), `docpouch-oidc-test-${process.pid}-${Date.now()}`), true);
+    const storeFactory = await getTestStoreFactory();
+    if (TEST_STORAGE_BACKEND === 'mongodb') {
+        setOidcStoreFactory(storeFactory, path.join(os.tmpdir(), `docpouch-oidc-test-${process.pid}-${Date.now()}`), false);
+    } else {
+        initOidcDatabases(path.join(os.tmpdir(), `docpouch-oidc-test-${process.pid}-${Date.now()}`), true);
+    }
     await clearAllOidcData();
 
-    const dataManager = new NeDbWrapper(testLogger, {inMemoryOnly: true});
+    const dataManager = new DatabaseWrapper(testLogger, {inMemoryOnly: true}, {}, storeFactory);
     await dataManager.waitForInitialization();
 
     const emailService = new EmailService(null, testLogger, `http://localhost:${OIDC_TEST_PORT}`);
@@ -275,7 +340,7 @@ export async function setupOidcTestServer() {
 
     const corsOptions: I_CorsOption = {
         origin: `http://localhost:${OIDC_TEST_PORT}`,
-        allowedHeaders: 'Content-Type, Authorization, X-Socket-ID'
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Socket-ID']
     };
     const networkManager = new NetworkManager(testLogger, dataManager, OIDC_TEST_PORT, corsOptions, {}, emailService);
     await new Promise(resolve => setTimeout(resolve, 100));

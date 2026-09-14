@@ -1,7 +1,7 @@
 import request from 'supertest';
 import {Server} from 'http';
 import NetworkManager from '../../src/srv/NetworkManager.js';
-import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import DatabaseWrapper from '../../src/srv/DatabaseWrapper.js';
 import {
     setupTestServer,
     createTestUsers,
@@ -14,7 +14,7 @@ import type {I_DocumentCreation} from 'docpouch-client';
 describe('Document Update Edge Cases', () => {
     let server: Server;
     let networkManager: NetworkManager;
-    let dataManager: NeDbWrapper;
+    let dataManager: DatabaseWrapper;
     let adminToken: string;
     let userToken: string;
     let adminUser: any;

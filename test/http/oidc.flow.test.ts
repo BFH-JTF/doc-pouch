@@ -4,7 +4,7 @@ import {URL} from 'url';
 import crypto from 'crypto';
 import type {SuperAgentTest} from 'supertest';
 import NetworkManager from '../../src/srv/NetworkManager.js';
-import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import DatabaseWrapper from '../../src/srv/DatabaseWrapper.js';
 import {
     setupOidcTestServer,
     cleanupOidcState,
@@ -202,7 +202,7 @@ async function probeAuthorization(agent: SuperAgentTest): Promise<{ status: numb
 
 describe('OIDC Interactive Flow', () => {
     let server: Server;
-    let dataManager: NeDbWrapper;
+    let dataManager: DatabaseWrapper;
     let networkManager: NetworkManager;
     let restoreEnv: () => void;
 

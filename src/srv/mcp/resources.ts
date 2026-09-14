@@ -1,14 +1,14 @@
 import type {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import {ResourceTemplate} from '@modelcontextprotocol/sdk/server/mcp.js';
 import type {Variables} from '@modelcontextprotocol/sdk/shared/uriTemplate.js';
-import NeDbWrapper from '../NeDbWrapper.js';
+import DatabaseWrapper from '../DatabaseWrapper.js';
 import type winston from 'winston';
 import {mcpAuthContext} from './context.js';
 import {getErrorMessage} from './utils.js';
 
 export function registerResources(
     server: McpServer,
-    dataManager: NeDbWrapper,
+    dataManager: DatabaseWrapper,
     logger: winston.Logger,
 ): void {
     server.registerResource(

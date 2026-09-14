@@ -12,11 +12,17 @@ Ask AI about docPouch here: [![Ask DeepWiki](https://deepwiki.com/badge.svg)](ht
 DocPouch is primarily intended for:
 - **Development environments**: Ideal for prototyping and developing applications that need document storage
 - **Testing environments**: Perfect for testing applications without setting up complex database systems
-- **Secure internal environments**: Suitable for internal applications where security is not a major concern
+- **Internal environments**: Suitable for trusted internal applications
 
-> **Note**: DocPouch is not designed for high-performance production environments or applications requiring security
-> features. The database is file and text-based, prioritizing simplicity and a small footprint over performance.
-> Auth tokens are stored in localStorage for simplicity. This can be abused by Cross-Site Scripting.
+> **Note**: The default storage backend (NeDB) is not designed for high-performance production environments. It is
+> file and text-based, prioritizing simplicity and a small footprint over performance. For production deployments,
+> set `STORAGE_BACKEND=mongodb` to use a MongoDB server instead (see [Storage Backend](#storage-backend)).
+>
+> **Security**: DocPouch includes standard security features (JWT/OIDC authentication with PKCE, API keys, per-IP
+> rate limiting, CORS configuration, and secure cookies in production), but it is not intended for hostile,
+> public-facing deployments. Before any external exposure, harden the defaults: set a strong `JWT_SECRET`, change
+> the default `admin` password, and restrict `ALLOWED_ORIGINS` (the default is `*`). Auth tokens are stored in
+> localStorage for simplicity, which can be abused by Cross-Site Scripting.
 
 DocPouch handles users, documents, and document structures.
 ### Users
@@ -249,10 +255,37 @@ or in a `.env` file when running locally.
 | Variable      | Description                                                                                          | Default       |
 |---------------|------------------------------------------------------------------------------------------------------|---------------|
 | `PORT`        | The port the server will listen on.                                                                  | `3030`        |
-| `MEMORY_ONLY` | Set to `true` to use an in-memory database (data will be lost on restart).                           | `false`       |
-| `PREFIX`      | Prefix for database filenames.                                                                       | `docpouch-`   |
+| `MEMORY_ONLY` | Set to `true` to use an in-memory database (data will be lost on restart). NeDB backend only.        | `false`       |
+| `PREFIX`      | Prefix for database filenames. NeDB backend only.                                                    | `docpouch-`   |
 | `LOG_LEVEL`   | Application log level. One of `debug`, `info`, `warn`, `error`.                                      | `info`        |
 | `NODE_ENV`    | Node environment. When set to `production`, the server enforces secure OIDC cookies and CSP upgrade. | `development` |
+
+#### Storage Backend
+
+DocPouch supports two storage backends, selected via `STORAGE_BACKEND`:
+
+- **`nedb` (default)** — zero-config, file-based. Each collection is a single append-only file under `./db`.
+  Best suited for development, testing, and small internal deployments. All data is kept in memory and written
+  to plain text files, and only one DocPouch instance may access the files at a time.
+- **`mongodb`** — uses a MongoDB server for every collection (users, documents, structures, API keys, password
+  reset tokens, and all OIDC provider records). This makes DocPouch suitable for production environments:
+  it supports concurrent access from multiple DocPouch instances, real indexes, durable writes, backups via
+  standard MongoDB tooling, and it removes the plain-text `.db` files from the DocPouch host. Requires
+  `MONGODB_URI` to be set; fails fast at boot otherwise.
+
+| Variable         | Description                                                          | Default  |
+|------------------|----------------------------------------------------------------------|----------|
+| `STORAGE_BACKEND`| Storage backend to use: `nedb` or `mongodb`.                         | `nedb`   |
+| `MONGODB_URI`    | MongoDB connection string. Required when `STORAGE_BACKEND=mongodb`.  | (none)   |
+| `MONGODB_DB`     | MongoDB database name.                                               | `docpouch` |
+
+**Switching backends:** use the built-in export/import (`GET /database/export` → `POST /database/import`).
+API keys and dynamically registered OIDC clients are not part of the export and must be re-created after a
+backend switch (the built-in admin UI client registers itself automatically).
+
+> **Note on encryption at rest:** switching to MongoDB alone does not encrypt your data — MongoDB stores data
+> unencrypted unless you enable filesystem/volume encryption (e.g. BitLocker, LUKS) or MongoDB Enterprise
+> encryption-at-rest. For sensitive data, combine the MongoDB backend with volume encryption.
 
 #### Security Configuration
 
@@ -343,6 +376,35 @@ services:
       - ALLOWED_ORIGINS=https://example.com,https://app.example.com
       # RATE_LIMIT_MAX=100
       # RATE_LIMIT_WINDOW=15m
+    restart: unless-stopped
+```
+
+**Using Docker Compose with the MongoDB backend (production):**
+
+```yaml
+services:
+  doc-pouch:
+    image: ghcr.io/bfh-jtf/doc-pouch:latest
+    ports:
+      - "3030:3030"
+    volumes:
+      - "./log:/app/log"
+    environment:
+      - PORT=3030
+      - STORAGE_BACKEND=mongodb
+      - MONGODB_URI=mongodb://mongo:27017
+      - MONGODB_DB=docpouch
+      - JWT_SECRET=your-secure-secret-here
+      - SESSION_TIMEOUT=24h
+      - ALLOWED_ORIGINS=https://example.com,https://app.example.com
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:8
+    volumes:
+      - "./mongo-data:/data/db"
     restart: unless-stopped
 ```
 

@@ -1,5 +1,5 @@
 import type {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
-import NeDbWrapper, {type DatabaseCollection, type ImportMode} from '../../NeDbWrapper.js';
+import DatabaseWrapper, {type DatabaseCollection, type ImportMode} from '../../DatabaseWrapper.js';
 import type winston from 'winston';
 import {
     ExportDatabaseSchema,
@@ -61,7 +61,7 @@ function parseImportMode(mode: string): ImportMode {
 
 export function registerDatabaseTools(
     server: McpServer,
-    dataManager: NeDbWrapper,
+    dataManager: DatabaseWrapper,
     logger: winston.Logger,
 ): void {
     server.registerTool('export_database', {

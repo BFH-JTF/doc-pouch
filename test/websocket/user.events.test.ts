@@ -1,7 +1,7 @@
 import {Server} from 'http';
 import {io, Socket} from 'socket.io-client';
 import NetworkManager from '../../src/srv/NetworkManager.js';
-import NeDbWrapper from '../../src/srv/NeDbWrapper.js';
+import DatabaseWrapper from '../../src/srv/DatabaseWrapper.js';
 import {
     setupTestServer,
     createTestUsers,
@@ -15,7 +15,7 @@ import type {I_UserCreation, I_UserUpdate} from 'docpouch-client';
 describe('User WebSocket Events Tests', () => {
     let server: Server;
     let networkManager: NetworkManager;
-    let dataManager: NeDbWrapper;
+    let dataManager: DatabaseWrapper;
     let adminToken: string;
     let userToken: string;
     let adminSocket: Socket;

@@ -1,6 +1,6 @@
 import type express from 'express';
 import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import NeDbWrapper from '../NeDbWrapper.js';
+import DatabaseWrapper from '../DatabaseWrapper.js';
 import type winston from 'winston';
 import SchemaValidator from '../SchemaValidator.js';
 import EmailService from '../EmailService.js';
@@ -11,7 +11,7 @@ import {mcpAuthContext} from './context.js';
 export default class McpManager {
     constructor(
         private readonly app: express.Application,
-        private readonly dataManager: NeDbWrapper,
+        private readonly dataManager: DatabaseWrapper,
         private readonly logger: winston.Logger,
         private readonly validator: SchemaValidator,
         private readonly oidcProvider: any,

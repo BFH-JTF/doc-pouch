@@ -13,6 +13,7 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --detectOpenHandles",
     "test:http": "node --experimental-vm-modules node_modules/jest/bin/jest.js test/http --runInBand",
     "test:websocket": "node --experimental-vm-modules node_modules/jest/bin/jest.js test/websocket --runInBand",
+    "test:mongodb": "cross-env TEST_STORAGE_BACKEND=mongodb node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --detectOpenHandles",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch --runInBand"
   },
   "repository": {
@@ -36,6 +37,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "jsonwebtoken": "9.0.3",
+    "mongodb": "^7.6.0",
     "multer": "2.3.0",
     "node-fetch": "^3.3.2",
     "nodemailer": "^9.1.0",
@@ -68,7 +70,9 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/tsconfig": "^0.9.1",
     "babel-jest": "^30.5.0",
+    "cross-env": "^10.1.0",
     "jest": "^30.5.0",
+    "mongodb-memory-server": "^11.2.0",
     "semantic-release": "^25.0.9",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.2.2",

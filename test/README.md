@@ -65,7 +65,7 @@ To run the tests, you need to have Node.js and npm installed. Then, you can use 
 # Install dependencies
 npm install
 
-# Run all tests
+# Run all tests (in-memory NeDB backend)
 npm test
 
 # Run specific test categories
@@ -75,6 +75,16 @@ npm run test:integration # Run integration tests (future use)
 
 # Run tests in watch mode (useful during development)
 npm run test:watch
+```
+
+### Running the Tests Against the MongoDB Backend
+
+The entire test suite (plus the MongoDB-specific unit tests in `test/unit/storage.test.ts`)
+can be run against the MongoDB backend. An in-memory MongoDB is started automatically
+by the Jest global setup — no Docker or local MongoDB installation is required:
+
+```bash
+npm run test:mongodb
 ```
 
 ## Test Environment
