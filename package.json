@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@mdi/font": "^7.4.47",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@seald-io/nedb": "^4.1.2",
     "@types/nodemailer": "^8.0.1",
     "adm-zip": "^0.6.1",
@@ -41,8 +41,8 @@
     "nodemailer": "^9.1.0",
     "oidc-provider": "^9.12.0",
     "semver": "^7.8.5",
-    "socket.io": "^4.8.3",
-    "vue": "^3.5.42",
+    "socket.io": "^4.8.4",
+    "vue": "^3.5.43",
     "vuetify": "^4.1.12",
     "winston": "^3.19.0",
     "yup": "^1.7.1"
