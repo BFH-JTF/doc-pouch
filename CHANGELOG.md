@@ -1,3 +1,10 @@
+## [1.25.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.2...v1.25.3) (2026-10-04)
+
+
+### Bug Fixes
+
+* **ci:** use npm ci and only commit staged OpenAPI version changes in Release workflow ([20dd763](https://github.com/BFH-JTF/doc-pouch/commit/20dd763134a99dae94923950d53b87405215bcc9))
+
 ## [1.25.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.1...v1.25.2) (2026-09-10)
 
 
