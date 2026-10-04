@@ -48,7 +48,7 @@
     "yup": "^1.7.1"
   },
   "devDependencies": {
-    "@babel/core": "^8.0.1",
+    "@babel/core": "^8.0.5",
     "@babel/preset-env": "^8.0.2",
     "@babel/preset-typescript": "^8.0.1",
     "@semantic-release/changelog": "^7.0.0",
