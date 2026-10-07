@@ -1,3 +1,10 @@
+## [1.25.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.3...v1.25.4) (2026-10-07)
+
+
+### Bug Fixes
+
+* **ci:** respect manual-review package list in Dependabot auto-merge gating ([909a741](https://github.com/BFH-JTF/doc-pouch/commit/909a741b44bf528bf9a91f0de05ddf66ae8838fd))
+
 ## [1.25.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.2...v1.25.3) (2026-10-04)
 
 
