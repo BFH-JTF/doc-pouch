@@ -17,12 +17,53 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Enable auto-merge for grouped dev updates
-        if: |
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-          steps.metadata.outputs.group == 'dev-minor-patch'
+      # Decide eligibility:
+      # 1. Packages below are always manual-review (mirrors exclude-patterns
+      #    in .github/dependabot.yml) - even when Dependabot files them as
+      #    individual PRs.
+      # 2. Otherwise eligible: dev-minor-patch group PRs, or single
+      #    minor/patch version updates.
+      - name: Compute eligibility
+        id: eligibility
+        env:
+          NAMES: ${{ steps.metadata.outputs.dependency-names }}
+          GROUP: ${{ steps.metadata.outputs.group }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        run: |
+          manual=false
+          for pkg in nodemailer oidc-provider vuetify multer vite; do
+            if echo "$NAMES" | grep -qi "$pkg"; then
+              manual=true
+              echo "manual-review package detected: $pkg"
+            fi
+          done
+
+          eligible=true
+          if [ "$manual" = "true" ]; then eligible=false; fi
+
+          is_low_risk=false
+          if [ "$UPDATE_TYPE" = "version-update:semver-patch" ] || [ "$UPDATE_TYPE" = "version-update:semver-minor" ]; then
+            is_low_risk=true
+          fi
+          if [ "$GROUP" = "dev-minor-patch" ]; then
+            is_low_risk=true
+          fi
+          if [ "$is_low_risk" != "true" ]; then eligible=false; fi
+
+          echo "manual=$manual" >> "$GITHUB_OUTPUT"
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          echo "names=$NAMES | group=$GROUP | type=$UPDATE_TYPE | manual=$manual | eligible=$eligible"
+
+      - name: Enable auto-merge for eligible low-risk updates
+        if: steps.eligibility.outputs.eligible == 'true'
         run: gh pr merge --auto --merge "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip auto-merge (manual review required)
+        if: steps.eligibility.outputs.eligible == 'false'
+        run: |
+          echo "Auto-merge not enabled (manual review required)."
+          echo "reason: manual-review package or update-type not low-risk"
+          exit 0
