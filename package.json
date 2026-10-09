@@ -71,11 +71,11 @@
     "jest": "^30.5.2",
     "semantic-release": "^25.0.9",
     "socket.io-client": "^4.8.4",
-    "supertest": "^7.3.0",
+    "supertest": "^7.3.1",
     "ts-jest": "^29.4.14",
     "typescript": "^6.0.3",
     "vite": "^8.3.2",
-    "vue-tsc": "^3.3.11"
+    "vue-tsc": "^3.3.12"
   },
   "overrides": {
     "@babel/core": "$@babel/core"
