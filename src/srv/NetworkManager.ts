@@ -10,7 +10,7 @@ import {
 import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
-import type {I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
+import type {I_UserCreation, I_UserEntry, I_UserUpdate, I_AssignableRole} from "docpouch-client";
 import {effectiveRole, isAssignableRole} from "./roles.js";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode, type IImportResult} from "./NeDbWrapper.js";
 import winston from "winston";
@@ -1140,6 +1140,8 @@ export default class NetworkManager {
                 // Changing isAdmin or role always needs a super-admin, also for the own profile
                 // (otherwise a user could make themselves admin).
                 const changesPrivileges = ("isAdmin" in validatedObject) || ("role" in validatedObject);
+                const requestedIsAdmin = "isAdmin" in validatedObject ? (validatedObject.isAdmin as boolean | undefined) : undefined;
+                const requestedRole = "role" in validatedObject ? (validatedObject.role as I_AssignableRole | undefined) : undefined;
                 const checkPermission = async () => {
                     if (req.userid === userID && !changesPrivileges) {
                         return true; // User can update their own profile
@@ -1147,8 +1149,12 @@ export default class NetworkManager {
                     return await this.dataManager.isAdmin(req.userid);
                 };
                 checkPermission().then(async (isAuthorized: boolean) => {
-                    if (!isAuthorized)
+                    if (!isAuthorized) {
+                        if (changesPrivileges) {
+                            this.logger.warn(`Denied privilege change attempt: actor=${req.userid} target=${userID} requested=${JSON.stringify({isAdmin: requestedIsAdmin, role: requestedRole})}`);
+                        }
                         return res.status(401).json({error: "Not authorized to update this user"});
+                    }
 
                     const updateData: I_UserUpdate = {};
                     updateData._id = userID;
@@ -1157,9 +1163,10 @@ export default class NetworkManager {
                     if (req.body.department) updateData.department = req.body.department;
                     if (req.body.group) updateData.group = req.body.group;
                     if (req.body.isAdmin !== undefined) updateData.isAdmin = req.body.isAdmin;
-                    if ("role" in validatedObject && isAssignableRole(validatedObject.role))
-                        updateData.role = validatedObject.role;
+                    if (isAssignableRole(requestedRole))
+                        updateData.role = requestedRole;
 
+                    const priorUser = await this.dataManager.getUserByID(userID).catch(() => null);
                     this.dataManager.updateUser(userID, updateData)
                         .then(async (numUpdated: number) => {
                             if (numUpdated < 1) {
@@ -1167,6 +1174,20 @@ export default class NetworkManager {
                             } else if (numUpdated > 1)
                                 res.status(500).json({error: "Multiple users with the same ID found"});
                             else {
+                                if (changesPrivileges) {
+                                    const oldIsAdmin = priorUser?.isAdmin ?? false;
+                                    const oldRole: string = priorUser?.role ?? "member";
+                                    const diffs: string[] = [];
+                                    if (updateData.isAdmin !== undefined && oldIsAdmin !== updateData.isAdmin) {
+                                        diffs.push(`isAdmin ${oldIsAdmin} -> ${updateData.isAdmin}`);
+                                    }
+                                    if (updateData.role !== undefined && oldRole !== updateData.role) {
+                                        diffs.push(`role ${oldRole} -> ${updateData.role}`);
+                                    }
+                                    if (diffs.length > 0) {
+                                        this.logger.info(`Privilege change for user ${userID} (${priorUser?.name ?? "unknown"}): ${diffs.join(", ")} by ${req.userid}`);
+                                    }
+                                }
                                 this.socketServer.sendEventToAdmins(req.socketID, "changedUser", {changedUser: updateData})
                                 res.status(200).json({message: "User has been successfully updated"});
                             }

@@ -150,6 +150,36 @@ describe('Roles and protected structures', () => {
         expect(bad.status).not.toBe(200);
     });
 
+    test('denied privilege change attempts are logged', async () => {
+        const warned: string[] = [];
+        const originalWarn = networkManager.logger.warn;
+        networkManager.logger.warn = ((message: any, ...meta: any[]) => {
+            warned.push(typeof message === 'string' ? message : JSON.stringify(message));
+            return originalWarn.call(networkManager.logger, message, ...meta);
+        }) as typeof networkManager.logger.warn;
+        try {
+            await request(server).patch(`/users/update/${member._id}`).set('Authorization', `Bearer ${memberToken}`).send({role: 'admin'});
+            expect(warned.some((m) => /Denied privilege change attempt/.test(m))).toBe(true);
+        } finally {
+            networkManager.logger.warn = originalWarn;
+        }
+    });
+
+    test('privilege changes are logged with old and new values', async () => {
+        const infos: string[] = [];
+        const originalInfo = networkManager.logger.info;
+        networkManager.logger.info = ((message: any, ...meta: any[]) => {
+            infos.push(typeof message === 'string' ? message : JSON.stringify(message));
+            return originalInfo.call(networkManager.logger, message, ...meta);
+        }) as typeof networkManager.logger.info;
+        try {
+            await request(server).patch(`/users/update/${member._id}`).set('Authorization', `Bearer ${superToken}`).send({role: 'manager'});
+            expect(infos.some((m) => new RegExp(`Privilege change for user ${member._id}.*role member -> manager`).test(m))).toBe(true);
+        } finally {
+            networkManager.logger.info = originalInfo;
+        }
+    });
+
     test('super-admins create users with a role', async () => {
         const res = await request(server).post('/users/create').set('Authorization', `Bearer ${superToken}`).send({name: 'mgr2', password: 'managerpassword2', email: 'm2@example.com', department: 'IT', group: 'Users', isAdmin: false, role: 'manager'});
         expect(res.status).toBe(200);
