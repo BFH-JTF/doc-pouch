@@ -321,33 +321,53 @@ or in a `.env` file when running locally.
 
 #### Rate Limiting
 
-DocPouch applies per-IP rate limits to protect against abuse. There are five limiters, each with its own built-in
+DocPouch applies rate limits to protect against abuse. There are five limiters, each with its own built-in
 default:
 
-| Limiter          | Applies to                                   | Default `max` | Default window |
-|------------------|----------------------------------------------|---------------|----------------|
-| `api`            | General read endpoints (`GET`)               | `100`         | `15m`          |
-| `write`          | Mutating endpoints (`POST`/`PATCH`/`DELETE`) | `30`          | `15m`          |
-| `auth`           | Login & interaction endpoints                | `5`           | `15m`          |
-| `forgotPassword` | Password-reset request endpoint              | `5`           | `15m`          |
-| `resetPassword`  | Password-reset submission endpoint           | `10`          | `15m`          |
+| Limiter          | Applies to                                   | Keyed by      | Default `max` | Default window |
+|------------------|----------------------------------------------|---------------|---------------|----------------|
+| `api`            | General read endpoints (`GET`)               | IP            | `100`         | `15m`          |
+| `write`          | Mutating endpoints (`POST`/`PATCH`/`DELETE`) | IP            | `30`          | `15m`          |
+| `auth`           | Login & interaction endpoints                | IP + username | `5`           | `15m`          |
+| `forgotPassword` | Password-reset request endpoint              | IP            | `5`           | `15m`          |
+| `resetPassword`  | Password-reset submission endpoint           | IP            | `10`          | `15m`          |
 
 When a limit is exceeded the server responds with HTTP `429 Too Many Requests`. Rate limiting is automatically disabled
 when `NODE_ENV=test`.
 
+The `auth` limiter keys clients by the submitted username and IP address, so several people behind the same NAT
+router are not locked out by each other's failed logins. Requests without a usable username (e.g. OIDC consent
+steps) fall back to IP-only keying.
+
 The two environment variables below provide a **single global override** — when set, they apply to *all five*
 limiters at once. When unset, the per-limiter defaults from the table above are used.
 
-| Variable            | Description                                                               | Default         |
-|---------------------|---------------------------------------------------------------------------|-----------------|
-| `RATE_LIMIT_MAX`    | Maximum number of requests per window per IP. Must be a positive integer. | *(per limiter)* |
-| `RATE_LIMIT_WINDOW` | Window duration. Accepts duration strings: `30s`, `15m`, `1h`, `2d`.      | `15m`           |
+| Variable            | Description                                                                                      | Default         |
+|---------------------|--------------------------------------------------------------------------------------------------|-----------------|
+| `RATE_LIMIT_MAX`    | Maximum number of requests per window per key (IP, or IP + username for `auth`). Positive integer. | *(per limiter)* |
+| `RATE_LIMIT_WINDOW` | Window duration. Accepts duration strings: `30s`, `15m`, `1h`, `2d`.                              | `15m`           |
 
 > **Note**: Setting a single global override trades per-endpoint granularity for simplicity. For example, setting
 > `RATE_LIMIT_MAX=50` raises the auth limit from 5 to 50 but lowers the API limit from 100 to 50. If you need
 > different values per limiter, leave these unset and edit `src/srv/rateLimiters.ts` directly.
 
-The server trusts `X-Forwarded-*` headers (`trust proxy: true`), so it works behind a reverse proxy out of the box.
+#### Trusted Proxy Resolution
+
+`X-Forwarded-*` headers are only honored for trusted proxy hops; which hops are trusted is controlled by the
+`TRUST_PROXY` environment variable.
+
+| `TRUST_PROXY` value                     | Meaning                                                                          |
+|-----------------------------------------|----------------------------------------------------------------------------------|
+| *(unset)*                               | Trust only loopback proxies (nginx / Caddy / Traefik on the same host)            |
+| `false`                                 | Ignore `X-Forwarded-*`; the client IP is the direct peer address                  |
+| `true`                                  | Trust every hop — **unsafe**: lets a client spoof its IP and bypass IP rate limits |
+| `1`, `2`, …                             | Trust the given number of proxy hops                                             |
+| `loopback`, `linklocal`, `uniquelocal`  | Trust the predefined proxy-addr address groups                                    |
+| `10.1.2.3, 192.168.0.0/16`              | Trust specific IP addresses / CIDR subnets (comma-separated)                      |
+
+> **Note**: When the app runs inside Docker or behind a remote proxy whose address is not a loopback address, set
+> `TRUST_PROXY` accordingly — for example `uniquelocal` or the proxy's static IP. Otherwise all clients appear to
+> come from the proxy address and share the `api` / `write` buckets.
 
 #### Example Configuration
 
@@ -371,6 +391,7 @@ services:
       - ALLOWED_ORIGINS=https://example.com,https://app.example.com
       # RATE_LIMIT_MAX=100
       # RATE_LIMIT_WINDOW=15m
+      # TRUST_PROXY=loopback
     restart: unless-stopped
 ```
 
@@ -386,6 +407,7 @@ ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 ALLOWED_HEADERS=Content-Type, Authorization, X-Requested-With
 # RATE_LIMIT_MAX=100
 # RATE_LIMIT_WINDOW=15m
+# TRUST_PROXY=loopback
 ```
 
 **Using Docker CLI:**
@@ -586,8 +608,9 @@ end_session URL yourself. The full flow is documented in [`docs/authentication.m
 - **Check auth**: `client.isAuthenticated()` checks token validity based on method.
 - **Supported scopes**: `openid`, `profile`, `email`, `offline_access`.
 - **Discovery**: `GET /.well-known/openid-configuration` and `GET /oidc/jwks`.
-- **Reverse proxy**: The OIDC provider is configured with `proxy: true` and `trust proxy: true` so that it works
-  correctly behind nginx / Caddy / Traefik.
+- **Reverse proxy**: The OIDC provider is configured with `proxy: true` and forwarded headers are trusted
+  according to the `TRUST_PROXY` environment variable (default: loopback), so it works correctly behind
+  nginx / Caddy / Traefik.
 
 ## Real-Time Updates
 

@@ -32,6 +32,7 @@ import jwt from "jsonwebtoken";
 import {JWTOptions, parseDurationToSeconds} from "./webTokenStuff.js";
 import EmailService from "./EmailService.js";
 import {generatePassword} from "./passwordGenerator.js";
+import {resolveTrustProxy} from "./trustProxy.js";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
@@ -123,7 +124,7 @@ export default class NetworkManager {
         this.corsOptions = corsOptions;
         this.port = port;
         this.expressApp = express();
-        this.expressApp.set('trust proxy', true);
+        this.expressApp.set('trust proxy', resolveTrustProxy());
         this.dataManager = dataManager;
         this.logger = logger;
         this.anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
@@ -570,8 +571,9 @@ export default class NetworkManager {
         // Validate a post-logout redirect target so we never perform an
         // open redirect to an attacker-controlled URL. Allows relative
         // paths ("/", "/path") and same-host absolute URLs (matching the
-        // request Host header, honoring x-forwarded-host because
-        // expressApp.set('trust proxy', true) is set in the constructor).
+        // request Host header, honoring x-forwarded-host for trusted
+        // proxies, since expressApp.set('trust proxy', resolveTrustProxy())
+        // is set in the constructor).
         // Loopback addresses (localhost, 127.0.0.1, ::1) are treated as
         // equivalent so test clients and RPs using different loopback
         // names for the same port are accepted.
