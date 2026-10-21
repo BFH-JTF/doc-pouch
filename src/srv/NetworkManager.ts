@@ -11,7 +11,7 @@ import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
 import type {I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
-import {effectiveRole} from "./roles.js";
+import {effectiveRole, isAssignableRole} from "./roles.js";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode, type IImportResult} from "./NeDbWrapper.js";
 import winston from "winston";
 import SchemaValidator from "./SchemaValidator.js";
@@ -1121,7 +1121,7 @@ export default class NetworkManager {
                         _id: user._id,
                         name: user.name,
                         isAdmin: user.isAdmin || false,
-                        role: effectiveRole(user as any),
+                        role: effectiveRole(user),
                         email: user.email,
                     });
                 } else {
@@ -1157,7 +1157,8 @@ export default class NetworkManager {
                     if (req.body.department) updateData.department = req.body.department;
                     if (req.body.group) updateData.group = req.body.group;
                     if (req.body.isAdmin !== undefined) updateData.isAdmin = req.body.isAdmin;
-                    if ((validatedObject as any).role !== undefined) (updateData as any).role = (validatedObject as any).role;
+                    if ("role" in validatedObject && isAssignableRole(validatedObject.role))
+                        updateData.role = validatedObject.role;
 
                     this.dataManager.updateUser(userID, updateData)
                         .then(async (numUpdated: number) => {

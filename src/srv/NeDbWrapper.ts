@@ -875,7 +875,7 @@ export default class NeDbWrapper {
     // Effective role of a user (see roles.ts). Unknown users are members.
     async getUserRole(userID: string): Promise<Role> {
         const result = await this.users.query({_id: userID});
-        return effectiveRole(result.length > 0 ? (result[0] as any) : null);
+        return effectiveRole(result.length > 0 ? (result[0] as I_UserEntry) : null);
     }
 
     async userHasRole(userID: string, required: Role): Promise<boolean> {
@@ -886,7 +886,7 @@ export default class NeDbWrapper {
     async requiredRoleFor(type: number, subType: number): Promise<Role | null> {
         if (typeof type !== "number" || typeof subType !== "number") return null;
         const results = await this.protectedStructures.query({type, subType});
-        return results.length > 0 ? ((results[0] as any).minRole as Role) : null;
+        return results.length > 0 ? (results[0] as unknown as I_ProtectedStructureEntry).minRole : null;
     }
 
     // Rejects with ROLE_REQUIRED_FOR_STRUCTURE when the user may not write documents of this structure
