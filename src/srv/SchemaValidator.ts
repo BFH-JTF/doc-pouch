@@ -13,6 +13,7 @@ export default class SchemaValidator {
     structureUpdateSchema: ObjectSchema<object>;
     documentFetchSchema: ObjectSchema<object>;
     anonymousStructureSetSchema: ObjectSchema<object>;
+    protectedStructureSetSchema: ObjectSchema<object>;
     anonymousStructureRemoveSchema: ObjectSchema<object>;
     private logger: winston.Logger;
 
@@ -26,6 +27,7 @@ export default class SchemaValidator {
             department: string().required(),
             group: string().required(),
             isAdmin: boolean().required(),
+            role: string().optional().oneOf(["member", "manager", "admin"]),
         });
 
         this.userLoginSchema = object({
@@ -39,6 +41,7 @@ export default class SchemaValidator {
             department: string().optional(),
             group: string().optional(),
             isAdmin: boolean().optional(),
+            role: string().optional().oneOf(["member", "manager", "admin"]),
         });
 
         this.forgotPasswordSchema = object({
@@ -139,6 +142,12 @@ export default class SchemaValidator {
             subType: number().required(),
         });
 
+        this.protectedStructureSetSchema = object({
+            type: number().required(),
+            subType: number().required(),
+            minRole: string().required().oneOf(["manager", "admin", "superadmin"]),
+        });
+
         this.anonymousStructureRemoveSchema = object({
             type: number().required(),
             subType: number().required(),
@@ -180,6 +189,9 @@ export default class SchemaValidator {
                 break;
             case "structureUpdate":
                 res = this.structureUpdateSchema.validateSync(userInput, { abortEarly: false, stripUnknown: true });
+                break;
+            case "protectedStructureSet":
+                res = this.protectedStructureSetSchema.validateSync(userInput, {abortEarly: false, stripUnknown: true});
                 break;
             case "anonymousStructureSet":
                 res = this.anonymousStructureSetSchema.validateSync(userInput, {abortEarly: false, stripUnknown: true});

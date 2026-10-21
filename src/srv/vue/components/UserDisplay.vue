@@ -84,7 +84,7 @@
           <v-col cols="12">
             <div class="d-flex align-center">
               <v-switch
-                label="Administrator"
+                label="Super-admin"
                 v-model="userIsAdmin"
                 color="primary"
                 @update:model-value="updateIsAdmin"
@@ -93,7 +93,29 @@
                 <template v-slot:activator="{ props }">
                   <v-icon v-bind="props" icon="mdi-information-outline" size="small" class="ml-2"></v-icon>
                 </template>
-                Administrators can manage all users, documents and data structures. Regular users can only manage their own documents.
+                Super-admins can manage all users, roles, documents, data structures and protection rules.
+              </v-tooltip>
+            </div>
+          </v-col>
+
+          <!-- role (ignored for super-admins) -->
+          <v-col cols="12">
+            <div class="d-flex align-center">
+              <v-select
+                label="Role"
+                v-model="userRole"
+                :items="roleItems"
+                :disabled="!!userIsAdmin"
+                variant="outlined"
+                density="compact"
+                @update:model-value="updateRole"
+              ></v-select>
+              <v-tooltip location="top">
+                <template v-slot:activator="{ props }">
+                  <v-icon v-bind="props" icon="mdi-information-outline" size="small" class="ml-2"></v-icon>
+                </template>
+                member: own documents. manager: also documents of structures protected for managers.
+                admin: also data structures and documents protected for admins.
               </v-tooltip>
             </div>
           </v-col>
@@ -123,6 +145,8 @@ const emit = defineEmits<{
 const username = ref(props.user?.name);
 const email = ref(props.user?.email);
 const userIsAdmin = ref(props.user?.isAdmin);
+const userRole = ref((props.user as any)?.role || 'member');
+const roleItems = ['member', 'manager', 'admin'];
 const department = ref(props.user?.department);
 const group = ref(props.user?.group);
 
@@ -153,6 +177,7 @@ watch(() => props.user, (newUser) => {
   username.value = newUser.name;
   email.value = newUser.email;
   userIsAdmin.value = newUser.isAdmin;
+  userRole.value = (newUser as any).role || 'member';
   department.value = newUser.department;
   group.value = newUser.group;
   resetResult.value = null;
@@ -206,6 +231,12 @@ function updateIsAdmin(value: boolean | null) {
     emit('user-updated', props.user._id, 'isAdmin', value);
   } else {
     console.error('Cannot update isAdmin: user id is undefined', props.user);
+  }
+}
+
+function updateRole(value: string | null) {
+  if (props.user?._id !== undefined && value) {
+    emit('user-updated', props.user._id, 'role', value);
   }
 }
 

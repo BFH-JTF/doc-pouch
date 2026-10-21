@@ -11,6 +11,7 @@ import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
 import type {I_UserCreation, I_UserEntry, I_UserUpdate} from "docpouch-client";
+import {effectiveRole} from "./roles.js";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode, type IImportResult} from "./NeDbWrapper.js";
 import winston from "winston";
 import SchemaValidator from "./SchemaValidator.js";
@@ -1120,6 +1121,7 @@ export default class NetworkManager {
                         _id: user._id,
                         name: user.name,
                         isAdmin: user.isAdmin || false,
+                        role: effectiveRole(user as any),
                         email: user.email,
                     });
                 } else {
@@ -1135,17 +1137,18 @@ export default class NetworkManager {
 
             if (validatedObject !== false && req.params.userID !== undefined) {
                 const userID = req.params.userID as string;
+                // Changing isAdmin or role always needs a super-admin, also for the own profile
+                // (otherwise a user could make themselves admin).
+                const changesPrivileges = ("isAdmin" in validatedObject) || ("role" in validatedObject);
                 const checkPermission = async () => {
-                    if (req.userid === userID && !("isAdmin" in validatedObject)) {
+                    if (req.userid === userID && !changesPrivileges) {
                         return true; // User can update their own profile
                     }
                     return await this.dataManager.isAdmin(req.userid);
                 };
                 checkPermission().then(async (isAuthorized: boolean) => {
-                    if (req.userid !== userID) {
-                        if (!isAuthorized)
-                            return res.status(401).json({error: "Not authorized to update this user"});
-                    }
+                    if (!isAuthorized)
+                        return res.status(401).json({error: "Not authorized to update this user"});
 
                     const updateData: I_UserUpdate = {};
                     updateData._id = userID;
@@ -1154,6 +1157,7 @@ export default class NetworkManager {
                     if (req.body.department) updateData.department = req.body.department;
                     if (req.body.group) updateData.group = req.body.group;
                     if (req.body.isAdmin !== undefined) updateData.isAdmin = req.body.isAdmin;
+                    if ((validatedObject as any).role !== undefined) (updateData as any).role = (validatedObject as any).role;
 
                     this.dataManager.updateUser(userID, updateData)
                         .then(async (numUpdated: number) => {
@@ -1449,7 +1453,12 @@ export default class NetworkManager {
                     })
                     .catch((error) => {
                         const message = error instanceof Error ? error.message : String(error);
-                        if (message === "ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE") {
+                        if (message === "ROLE_REQUIRED_FOR_STRUCTURE") {
+                            res.status(403).json({
+                                error: "ROLE_REQUIRED_FOR_STRUCTURE",
+                                message: "Your role may not create documents of this structure."
+                            });
+                        } else if (message === "ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE") {
                             res.status(400).json({
                                 error: "ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE",
                                 message: "Anonymous document creation is not allowed for this structure type. The administrator must enable it first."
@@ -1604,6 +1613,47 @@ export default class NetworkManager {
             }
         });
 
+        // Protected structures: documents of these type/subType pairs need a minimum role
+        this.expressApp.get("/structures/protected/list", this.authenticate, apiRateLimiter, (req, res) => {
+            this.dataManager.getProtectedStructures().then((entries) => {
+                res.status(200).json(entries);
+            }).catch((error) => {
+                res.status(500).json({error: error.message || error});
+            });
+        });
+
+        this.expressApp.post("/structures/protected/set", this.authenticate, writeRateLimiter, (req, res) => {
+            if (this.validator.getValidatedObject("protectedStructureSet", req.body)) {
+                this.dataManager.setProtectedStructure(req.body.type, req.body.subType, req.body.minRole, req.userid).then((entry) => {
+                    res.status(200).json(entry);
+                }).catch((error) => {
+                    if (error instanceof Error && error.message === "Only super-admins can manage protected structures") {
+                        res.status(401).json({error: error.message});
+                    } else {
+                        res.status(500).json({error: error.message || error});
+                    }
+                });
+            } else {
+                res.status(400).json({error: "Invalid protected structure data"});
+            }
+        });
+
+        this.expressApp.delete("/structures/protected/remove", this.authenticate, writeRateLimiter, (req, res) => {
+            if (this.validator.getValidatedObject("anonymousStructureRemove", req.body)) {
+                this.dataManager.removeProtectedStructure(req.body.type, req.body.subType, req.userid).then((numRemoved) => {
+                    res.status(200).json({removed: numRemoved});
+                }).catch((error) => {
+                    if (error instanceof Error && error.message === "Only super-admins can manage protected structures") {
+                        res.status(401).json({error: error.message});
+                    } else {
+                        res.status(500).json({error: error.message || error});
+                    }
+                });
+            } else {
+                res.status(400).json({error: "Invalid protected structure data"});
+            }
+        });
+
         // Anonymous structure allowlist endpoints
         this.expressApp.get("/structures/anonymous/list", this.authenticate, apiRateLimiter, (req, res) => {
             this.dataManager.getAnonymousAllowedStructures().then((entries) => {
@@ -1720,6 +1770,9 @@ export default class NetworkManager {
                     archive.append(JSON.stringify(exportData.users, null, 2), {name: 'docpouch-users.json'});
                     archive.append(JSON.stringify(exportData.documents, null, 2), {name: 'docpouch-documents.json'});
                     archive.append(JSON.stringify(exportData.structures, null, 2), {name: 'docpouch-structures.json'});
+                    if (exportData.protectedStructures !== undefined) {
+                        archive.append(JSON.stringify(exportData.protectedStructures, null, 2), {name: 'docpouch-protected-structures.json'});
+                    }
                     await archive.finalize();
                     return;
                 } catch (error) {
@@ -1770,6 +1823,9 @@ export default class NetworkManager {
 
                             if (parsed.anonymousStructures && Array.isArray(parsed.anonymousStructures)) {
                                 await this.dataManager.importAnonymousStructures(parsed.anonymousStructures, mode);
+                            }
+                            if (parsed.protectedStructures && Array.isArray(parsed.protectedStructures)) {
+                                await this.dataManager.importProtectedStructures(parsed.protectedStructures, mode);
                             }
 
                             safeDeleteFile(uploadedFile.path);
@@ -1826,6 +1882,16 @@ export default class NetworkManager {
                                 }
                             }
                         }
+                        if (entryName.includes('protected-structures') || entryName.includes('protected_structures')) {
+                            const content = entry.getData().toString('utf8');
+                            if (entryName.endsWith('.json')) {
+                                collectionsData.protectedStructures = JSON.parse(content);
+                            } else if (entryName.endsWith('.db')) {
+                                collectionsData.protectedStructures = content.split('\n')
+                                    .filter((line: string) => line.trim().length > 0)
+                                    .map((line: string) => JSON.parse(line));
+                            }
+                        }
                         if (entryName.includes('anonymous-structures') || entryName.includes('anonymous_structures')) {
                             const content = entry.getData().toString('utf8');
                             if (entryName.endsWith('.json')) {
@@ -1848,6 +1914,9 @@ export default class NetworkManager {
 
                     if (collectionsData.anonymousStructures && Array.isArray(collectionsData.anonymousStructures)) {
                         await this.dataManager.importAnonymousStructures(collectionsData.anonymousStructures, mode);
+                    }
+                    if (collectionsData.protectedStructures && Array.isArray(collectionsData.protectedStructures)) {
+                        await this.dataManager.importProtectedStructures(collectionsData.protectedStructures, mode);
                     }
 
                     safeDeleteFile(uploadedFile.path);
