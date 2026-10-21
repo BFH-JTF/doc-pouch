@@ -151,6 +151,15 @@ export function registerDatabaseTools(
 
             const result = await dataManager.importCollections(importData, mode);
 
+            let anonymousImported: { created: number, removed: number } | undefined;
+            if (scope === 'all' && Array.isArray((importData as Record<string, unknown>).anonymousStructures)) {
+                anonymousImported = await dataManager.importAnonymousStructures((importData as Record<string, any>).anonymousStructures, mode);
+            }
+            let protectedImported: { created: number } | undefined;
+            if (scope === 'all' && Array.isArray((importData as Record<string, unknown>).protectedStructures)) {
+                protectedImported = await dataManager.importProtectedStructures((importData as Record<string, any>).protectedStructures as any[], mode);
+            }
+
             const summary = {
                 users: {
                     created: result.users.created.length,
@@ -166,6 +175,8 @@ export function registerDatabaseTools(
                 },
                 mode,
                 scope,
+                ...(anonymousImported !== undefined ? {anonymousStructures: {created: anonymousImported.created}} : {}),
+                ...(protectedImported !== undefined ? {protectedStructures: {created: protectedImported.created}} : {}),
                 message: 'Database import completed successfully.',
             };
 

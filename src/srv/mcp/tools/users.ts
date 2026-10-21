@@ -116,6 +116,7 @@ export function registerUserTools(
                 department: args.department,
                 group: args.group,
                 isAdmin: args.isAdmin,
+                ...(args.role !== undefined ? {role: args.role} : {}),
             };
             const validated = validator.getValidatedObject('userCreation', inputObj);
             if (!validated) {
@@ -175,9 +176,9 @@ export function registerUserTools(
             if (!isAdmin && args.id !== userid) {
                 return {content: [{type: 'text', text: 'Error: can only update your own profile'}], isError: true};
             }
-            if (!isAdmin && args.isAdmin !== undefined) {
+            if (!isAdmin && (args.isAdmin !== undefined || args.role !== undefined)) {
                 return {
-                    content: [{type: 'text', text: 'Error: admin access required to change isAdmin'}],
+                    content: [{type: 'text', text: 'Error: super-admin access required to change isAdmin or role'}],
                     isError: true
                 };
             }
@@ -187,6 +188,7 @@ export function registerUserTools(
             if (args.department !== undefined) inputObj.department = args.department;
             if (args.group !== undefined) inputObj.group = args.group;
             if (args.isAdmin !== undefined) inputObj.isAdmin = args.isAdmin;
+            if (args.role !== undefined) inputObj.role = args.role;
 
             const validated = validator.getValidatedObject('userUpdate', inputObj);
             if (!validated) {

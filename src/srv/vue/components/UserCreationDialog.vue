@@ -65,8 +65,20 @@
                 <v-switch
                   v-model="newUser.isAdmin"
                   color="primary"
-                  label="Administrator"
+                  label="Super-admin"
                 ></v-switch>
+              </v-col>
+
+              <!-- Role -->
+              <v-col cols="12">
+                <v-select
+                  v-model="newUser.role"
+                  :items="['member', 'manager', 'admin']"
+                  :disabled="newUser.isAdmin"
+                  label="Role"
+                  variant="outlined"
+                  density="compact"
+                ></v-select>
               </v-col>
             </v-row>
           </v-container>
@@ -141,7 +153,8 @@ const newUser = reactive({
   email: '',
   department: '',
   group: '',
-  isAdmin: false
+  isAdmin: false,
+  role: 'member'
 });
 
 // Form validation rules
@@ -187,6 +200,7 @@ async function submitForm() {
       name: newUser.name,
       email: newUser.email,
       isAdmin: newUser.isAdmin,
+      role: newUser.role,
       department: newUser.department,
       group: newUser.group
     } as I_UserCreation);
@@ -219,6 +233,7 @@ function resetForm() {
   newUser.name = '';
   newUser.email = '';
   newUser.isAdmin = false;
+  newUser.role = 'member';
   errorMessage.value = '';
   successMessage.value = '';
   formValid.value = false;

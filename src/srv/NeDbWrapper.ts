@@ -13,9 +13,12 @@ import {
     type I_DocumentQuery,
     type I_DocumentUpdate,
     type I_DataStructure,
+    type I_AnonymousStructureEntry,
+    type I_ProtectedStructureEntry,
 } from "docpouch-client";
 import ApiKeyManager from "./ApiKeyManager.js";
 import EmailService from "./EmailService.js";
+import {type Role, effectiveRole, hasRole, isAssignableRole} from "./roles.js";
 
 
 // Type declaration to help TypeScript understand Nedb constructor
@@ -37,12 +40,7 @@ export interface IDatabaseExportData {
     documents: any[];
     structures: any[];
     anonymousStructures?: any[];
-}
-
-export interface I_AnonymousStructureEntry {
-    _id?: string;
-    type: number;
-    subType: number;
+    protectedStructures?: any[];
 }
 
 /**
@@ -62,6 +60,7 @@ export default class NeDbWrapper {
     documents: CustomStore
     types: CustomStore // only for backwards compatibility pre 1.9.0
     anonymousStructures: CustomStore
+    protectedStructures: CustomStore
     apiKeys: any
     passwordResetTokens: CustomStore
     logger: winston.Logger
@@ -106,6 +105,9 @@ export default class NeDbWrapper {
             this.passwordResetTokens = new CustomStore(undefined,
                 "Password Reset Tokens", "Collection of password reset tokens")
             this.passwordResetTokens.datastore.setAutocompactionInterval(1000 * 60 * 5);
+            this.protectedStructures = new CustomStore(undefined,
+                "Protected Structures", "Structure type/subType pairs whose documents require a minimum role")
+            this.protectedStructures.datastore.setAutocompactionInterval(1000 * 60 * 30);
         } else {
             this.logger.info("Using database files in " + this.dbPath);
             if (this.filenamePrefix === undefined)
@@ -130,6 +132,9 @@ export default class NeDbWrapper {
             this.passwordResetTokens = new CustomStore(`${this.dbPath}/${this.filenamePrefix}reset-tokens.db`,
                 "Password Reset Tokens", "Collection of password reset tokens")
             this.passwordResetTokens.datastore.setAutocompactionInterval(1000 * 60 * 5);
+            this.protectedStructures = new CustomStore(`${this.dbPath}/${this.filenamePrefix}protected-structures.db`,
+                "Protected Structures", "Structure type/subType pairs whose documents require a minimum role")
+            this.protectedStructures.datastore.setAutocompactionInterval(1000 * 60 * 30);
         }
         this.initializationPromise = this.initializeDatabase();
     }
@@ -147,11 +152,12 @@ export default class NeDbWrapper {
     }
 
     async exportAllData(): Promise<IDatabaseExportData> {
-        const [users, documents, structures, anonymousStructures] = await Promise.all([
+        const [users, documents, structures, anonymousStructures, protectedStructures] = await Promise.all([
             this.users.query({}),
             this.documents.query({}),
             this.structures.query({}),
             this.anonymousStructures.query({}),
+            this.protectedStructures.query({}),
         ]);
 
         return {
@@ -159,6 +165,7 @@ export default class NeDbWrapper {
             documents,
             structures,
             anonymousStructures,
+            protectedStructures,
         };
     }
 
@@ -168,6 +175,7 @@ export default class NeDbWrapper {
         this.documents.datastore.stopAutocompaction();
         this.types.datastore.stopAutocompaction();
         this.anonymousStructures.datastore.stopAutocompaction();
+        this.protectedStructures.datastore.stopAutocompaction();
         this.apiKeys.stopAutocompaction();
         this.passwordResetTokens.datastore.stopAutocompaction();
     }
@@ -339,6 +347,19 @@ export default class NeDbWrapper {
                     return;
                 }
 
+                // Protected structures: the old and (if changed) the new structure must allow the user
+                try {
+                    await this.assertStructureWriteAllowed(document.type, document.subType, requestingUserID);
+                    const newType = (updateData as any).type ?? document.type;
+                    const newSubType = (updateData as any).subType ?? document.subType;
+                    if (newType !== document.type || newSubType !== document.subType) {
+                        await this.assertStructureWriteAllowed(newType, newSubType, requestingUserID);
+                    }
+                } catch {
+                    reject(403);
+                    return;
+                }
+
                 const isAdmin = await this.isAdmin(requestingUserID);
 
                 // Capture a possible owner change so we can route it through
@@ -497,19 +518,37 @@ export default class NeDbWrapper {
             if (mode === "add" || mode === "replace") {
                 const existing = await this.anonymousStructures.query({type: entry.type, subType: entry.subType});
                 if (existing.length === 0) {
-                    await this.anonymousStructures.add({type: entry.type, subType: entry.subType} as any);
+                    await this.anonymousStructures.add({type: entry.type, subType: entry.subType});
                     created++;
                 }
             } else if (mode === "skip") {
                 const existing = await this.anonymousStructures.query({type: entry.type, subType: entry.subType});
                 if (existing.length === 0) {
-                    await this.anonymousStructures.add({type: entry.type, subType: entry.subType} as any);
+                    await this.anonymousStructures.add({type: entry.type, subType: entry.subType});
                     created++;
                 }
             }
         }
         const removed = mode === "replace" ? (data.length === 0 ? 0 : 0) : 0;
         return {created, removed};
+    }
+
+    async importProtectedStructures(data: any[], mode: ImportMode = "replace"): Promise<{ created: number }> {
+        if (mode === "replace") {
+            await this.protectedStructures.remove({});
+        }
+        let created = 0;
+        for (const entry of data) {
+            if (typeof entry.type !== "number" || typeof entry.subType !== "number" || !isProtectionRole(entry.minRole)) {
+                continue;
+            }
+            const existing = await this.protectedStructures.query({type: entry.type, subType: entry.subType});
+            if (existing.length === 0) {
+                await this.protectedStructures.add({type: entry.type, subType: entry.subType, minRole: entry.minRole});
+                created++;
+            }
+        }
+        return {created};
     }
 
     // Structure methods with access control
@@ -652,7 +691,8 @@ export default class NeDbWrapper {
                                 group: newUser.group,
                                 name: newUser.name,
                                 password: hash,
-                                isAdmin: newUser.isAdmin
+                                isAdmin: newUser.isAdmin,
+                                role: isAssignableRole(newUser.role) ? newUser.role : "member",
                             })
                                 .then((result) => {
                                     const {password: _, ...safeUser} = newUser;
@@ -828,9 +868,66 @@ export default class NeDbWrapper {
         })
     }
 
+    // Effective role of a user (see roles.ts). Unknown users are members.
+    async getUserRole(userID: string): Promise<Role> {
+        const result = await this.users.query({_id: userID});
+        return effectiveRole(result.length > 0 ? (result[0] as I_UserEntry) : null);
+    }
+
+    async userHasRole(userID: string, required: Role): Promise<boolean> {
+        return hasRole(await this.getUserRole(userID), required);
+    }
+
+    // Lowest role required to write documents of a structure, or null if unprotected
+    async requiredRoleFor(type: number, subType: number): Promise<Role | null> {
+        if (typeof type !== "number" || typeof subType !== "number") return null;
+        const results = await this.protectedStructures.query({type, subType});
+        return results.length > 0 && "minRole" in results[0] ? results[0].minRole : null;
+    }
+
+    // Rejects with ROLE_REQUIRED_FOR_STRUCTURE when the user may not write documents of this structure
+    async assertStructureWriteAllowed(type: number, subType: number, userID: string): Promise<void> {
+        const required = await this.requiredRoleFor(type, subType);
+        if (required && !(await this.userHasRole(userID, required))) {
+            throw new Error("ROLE_REQUIRED_FOR_STRUCTURE");
+        }
+    }
+
+    async getProtectedStructures(): Promise<I_ProtectedStructureEntry[]> {
+        const results = await this.protectedStructures.query({});
+        return results.map((r: any) => ({type: r.type, subType: r.subType, minRole: r.minRole}));
+    }
+
+    async setProtectedStructure(type: number, subType: number, minRole: unknown, requestingUserID: string): Promise<I_ProtectedStructureEntry> {
+        if (!(await this.userHasRole(requestingUserID, "superadmin"))) {
+            throw new Error("Only super-admins can manage protected structures");
+        }
+        if (!isProtectionRole(minRole)) {
+            throw new Error("minRole must be manager, admin or superadmin");
+        }
+        const existing = await this.protectedStructures.query({type, subType});
+        const existingId = existing.length > 0 ? existing[0]._id : undefined;
+        if (existingId !== undefined) {
+            await this.protectedStructures.update(existingId, {minRole});
+        } else {
+            await this.protectedStructures.add({type, subType, minRole});
+        }
+        this.logger.info(`Protected structure set: type=${type}, subType=${subType}, minRole=${minRole}`);
+        return {type, subType, minRole};
+    }
+
+    async removeProtectedStructure(type: number, subType: number, requestingUserID: string): Promise<number> {
+        if (!(await this.userHasRole(requestingUserID, "superadmin"))) {
+            throw new Error("Only super-admins can manage protected structures");
+        }
+        const removed = await this.protectedStructures.remove({type, subType});
+        this.logger.info(`Protected structure removed: type=${type}, subType=${subType}`);
+        return removed;
+    }
+
     createStructure(structure: I_StructureCreation, requestingUserID: string): Promise<I_DataStructure> {
         return new Promise((resolve, reject) => {
-            this.isAdmin(requestingUserID).then((isAdmin) => {
+            this.userHasRole(requestingUserID, "admin").then((isAdmin) => {
                 if (!isAdmin) {
                     reject(new Error("Only admins can create structures"));
                     return;
@@ -864,7 +961,7 @@ export default class NeDbWrapper {
 
     updateStructure(structureID: string, newStructure: I_DataStructure, requestingUserID: string): Promise<number> {
         return new Promise((resolve, reject) => {
-            this.isAdmin(requestingUserID).then((isAdmin) => {
+            this.userHasRole(requestingUserID, "admin").then((isAdmin) => {
                 if (!isAdmin)
                     reject(401);
                 else {
@@ -925,7 +1022,7 @@ export default class NeDbWrapper {
 
     removeStructure(structureID: string, requestingUserID: string): Promise<number> {
         return new Promise((resolve, reject) => {
-            this.isAdmin(requestingUserID).then((isAdmin) => {
+            this.userHasRole(requestingUserID, "admin").then((isAdmin) => {
                 if (!isAdmin) {
                     reject(401);
                     return;
@@ -982,7 +1079,7 @@ export default class NeDbWrapper {
                         resolve(results[0] as I_AnonymousStructureEntry);
                         return;
                     }
-                    this.anonymousStructures.add({type, subType} as any).then((result) => {
+                    this.anonymousStructures.add({type, subType}).then((result) => {
                         this.logger.info(`Added anonymous allowlist entry: type=${type}, subType=${subType}`);
                         resolve(result as I_AnonymousStructureEntry);
                     }).catch(reject);
@@ -1082,6 +1179,11 @@ export default class NeDbWrapper {
     }
 
     createDocument(document: I_DocumentCreation, requestingUserID: string, anonymous: boolean = false): Promise<I_DocumentEntry> {
+        return this.assertStructureWriteAllowed(document.type, document.subType, requestingUserID)
+            .then(() => this.createDocumentUnchecked(document, requestingUserID, anonymous));
+    }
+
+    private createDocumentUnchecked(document: I_DocumentCreation, requestingUserID: string, anonymous: boolean): Promise<I_DocumentEntry> {
         return new Promise((resolve, reject) => {
             // Determine the owner for the document
             let ownerId = requestingUserID;
@@ -1193,7 +1295,14 @@ export default class NeDbWrapper {
                         return;
                     }
                     let document = result[0] as I_DocumentEntry;
-                    this.isAdmin(requestingUserID).then((isAdmin) => {
+                    Promise.all([
+                        this.isAdmin(requestingUserID),
+                        this.assertStructureWriteAllowed(document.type, document.subType, requestingUserID).then(() => true, () => false),
+                    ]).then(([isAdmin, roleAllowed]) => {
+                        if (!roleAllowed) {
+                            reject(403);
+                            return;
+                        }
                         if (isAdmin || document.owner === requestingUserID) {
                             this.documents.remove({_id: documentID}).then((numRemoved) => {
                                 if (numRemoved > 0) {
@@ -1322,13 +1431,13 @@ class CustomStore {
         });
     }
 
-    async add(inputData: I_DocumentCreationOwned | I_UserCreation | I_StructureCreation): Promise<I_DocumentEntry | I_UserEntry | I_DataStructure> {
+    async add(inputData: I_DocumentCreationOwned | I_UserCreation | I_StructureCreation | I_AnonymousStructureEntry | I_ProtectedStructureEntry): Promise<I_DocumentEntry | I_UserEntry | I_DataStructure | I_AnonymousStructureEntry | I_ProtectedStructureEntry> {
         return new Promise((resolve, reject) => {
             this.datastore.insert(inputData, (err: Error | null, newDocument: any) => {
                 if (err) {
                     reject(err);
                 } else {
-                    resolve(newDocument as I_DocumentEntry | I_UserEntry | I_DataStructure);
+                    resolve(newDocument as I_DocumentEntry | I_UserEntry | I_DataStructure | I_AnonymousStructureEntry | I_ProtectedStructureEntry);
                 }
             });
         });
@@ -1346,9 +1455,9 @@ class CustomStore {
         });
     }
 
-    async query(query: object): Promise<I_DocumentEntry[] | I_UserEntry[] | I_DataStructure[]> {
+    async query(query: object): Promise<(I_DocumentEntry | I_UserEntry | I_DataStructure | I_AnonymousStructureEntry | I_ProtectedStructureEntry)[]> {
         return new Promise((resolve, reject) => {
-            this.datastore.find(query, (err: any, newDocument: I_DocumentEntry[] | I_UserEntry[]) => {
+            this.datastore.find(query, (err: any, newDocument: (I_DocumentEntry | I_UserEntry | I_DataStructure | I_AnonymousStructureEntry | I_ProtectedStructureEntry)[]) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -1395,4 +1504,8 @@ class CustomStore {
             );
         });
     }
+}
+
+function isProtectionRole(value: unknown): value is I_ProtectedStructureEntry["minRole"] {
+    return value === "manager" || value === "admin" || value === "superadmin";
 }
