@@ -145,7 +145,7 @@ const emit = defineEmits<{
 const username = ref(props.user?.name);
 const email = ref(props.user?.email);
 const userIsAdmin = ref(props.user?.isAdmin);
-const userRole = ref((props.user as any)?.role || 'member');
+const userRole = ref(props.user?.role || 'member');
 const roleItems = ['member', 'manager', 'admin'];
 const department = ref(props.user?.department);
 const group = ref(props.user?.group);
@@ -177,7 +177,7 @@ watch(() => props.user, (newUser) => {
   username.value = newUser.name;
   email.value = newUser.email;
   userIsAdmin.value = newUser.isAdmin;
-  userRole.value = (newUser as any).role || 'member';
+  userRole.value = newUser.role || 'member';
   department.value = newUser.department;
   group.value = newUser.group;
   resetResult.value = null;

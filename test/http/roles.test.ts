@@ -46,8 +46,8 @@ describe('Roles and protected structures', () => {
         superToken = users.adminToken;
         member = users.regularUser;
         memberToken = users.userToken;
-        manager = await dataManager.createUser({name: 'mgr', password: 'managerpassword', email: 'm@example.com', department: 'IT', group: 'Users', isAdmin: false, role: 'manager'} as any);
-        admin = await dataManager.createUser({name: 'adm', password: 'adminrolepassword', email: 'a@example.com', department: 'IT', group: 'Users', isAdmin: false, role: 'admin'} as any);
+        manager = await dataManager.createUser({name: 'mgr', password: 'managerpassword', email: 'm@example.com', department: 'IT', group: 'Users', isAdmin: false, role: 'manager'});
+        admin = await dataManager.createUser({name: 'adm', password: 'adminrolepassword', email: 'a@example.com', department: 'IT', group: 'Users', isAdmin: false, role: 'admin'});
         managerToken = generateToken(manager);
         adminToken = generateToken(admin);
         for (const t of [PROTECTED, ADMIN_ONLY, FREE]) {
@@ -117,7 +117,7 @@ describe('Roles and protected structures', () => {
 
     test('removing a protected document needs the role', async () => {
         const created = await request(server).post('/docs/create').set('Authorization', `Bearer ${managerToken}`).send(doc(PROTECTED));
-        await dataManager.updateUser(manager._id, {role: 'member'} as any);   // demoted
+        await dataManager.updateUser(manager._id, {role: 'member'});   // demoted
         const del = await request(server).delete(`/docs/remove/${created.body._id}`).set('Authorization', `Bearer ${managerToken}`);
         expect(del.status).toBe(403);
     });
