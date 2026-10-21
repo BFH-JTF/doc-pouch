@@ -73,7 +73,7 @@ export function registerStructureTools(
             return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
         }
         try {
-            const isAdmin = await dataManager.isAdmin(userid);
+            const isAdmin = await dataManager.userHasRole(userid, 'admin');
             if (!isAdmin) {
                 return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
             }
@@ -106,7 +106,7 @@ export function registerStructureTools(
             return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
         }
         try {
-            const isAdmin = await dataManager.isAdmin(userid);
+            const isAdmin = await dataManager.userHasRole(userid, 'admin');
             if (!isAdmin) {
                 return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
             }
@@ -149,7 +149,7 @@ export function registerStructureTools(
             return {content: [{type: 'text', text: 'Error: not authenticated'}], isError: true};
         }
         try {
-            const isAdmin = await dataManager.isAdmin(userid);
+            const isAdmin = await dataManager.userHasRole(userid, 'admin');
             if (!isAdmin) {
                 return {content: [{type: 'text', text: 'Error: admin access required'}], isError: true};
             }

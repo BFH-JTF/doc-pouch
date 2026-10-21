@@ -170,7 +170,9 @@ export const CreateUserSchema = z.object({
     group: z.string().min(1)
         .describe('Group the user belongs to within their department (e.g. "Backend", "Frontend").'),
     isAdmin: z.boolean()
-        .describe('Whether the new user should have administrator privileges. Admins can manage all users, structures, and database operations.'),
+        .describe('Whether the new user should be a super-admin. Super-admins can manage all users, roles, structures, protection rules and database operations.'),
+    role: z.enum(['member', 'manager', 'admin']).optional()
+        .describe('Role of the new user (default member). manager may write documents of structures protected for managers; admin may additionally manage structures.'),
 });
 
 export const UpdateUserSchema = z.object({
@@ -185,7 +187,9 @@ export const UpdateUserSchema = z.object({
     group: z.string().optional()
         .describe('New group for the user.'),
     isAdmin: z.boolean().optional()
-        .describe('New admin status. Only admins can change this field. Changing a user to admin grants full system management privileges.'),
+        .describe('New super-admin status. Only super-admins can change this field. Changing a user to super-admin grants full system management privileges.'),
+    role: z.enum(['member', 'manager', 'admin']).optional()
+        .describe('New role (member, manager, admin). Only super-admins can change this field.'),
 });
 
 export const DeleteUserSchema = z.object({

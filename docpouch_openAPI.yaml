@@ -83,7 +83,7 @@ paths:
   /users/update/{userID}:
     patch:
       summary: Update user
-      description: Update any user (as admin) or your own user applying the provided attributes
+      description: "Update any user (as super-admin) or your own user applying the provided attributes. Changing the isAdmin flag or the role always requires super-admin privileges, also for the caller's own account."
       tags:
         - administration
       security:
@@ -171,9 +171,15 @@ paths:
            rejected with HTTP 400 (error code `ANONYMOUS_DOCUMENTS_DISABLED`).
         2. The document's `type`/`subType` pair to be present in the
            anonymous-structure allowlist (managed via
-           `/structures/anonymous/set`). If the structure is not in the
-           allowlist, the request is rejected with HTTP 400 (error code
-           `ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE`).
+            `/structures/anonymous/set`). If the structure is not in the
+            allowlist, the request is rejected with HTTP 400 (error code
+            `ANONYMOUS_NOT_ALLOWED_FOR_STRUCTURE`).
+
+        If the document's `type`/`subType` pair is protected by a minimum-role
+        rule (see `/structures/protected/set`) and the caller's role is below
+        that role, the request is rejected with HTTP 403 (error code
+        `ROLE_REQUIRED_FOR_STRUCTURE`). The same rule applies to document
+        updates and removals.
       tags:
         - documents
       security:
@@ -205,6 +211,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         401:
           description: "User is unauthorized to create new documents"
+        403:
+          description: "Caller's role is below the protected structure's minimum role (error code ROLE_REQUIRED_FOR_STRUCTURE)"
 
   /docs/list:
     get:
@@ -260,7 +268,7 @@ paths:
   /docs/update/{documentID}:
     patch:
       summary: Update a document by applying the provided attributes
-      description: "Users can update their own documents fully. Users with shared access (via group or department) can only update the content field. Only document owners can change sharing settings."
+      description: "Users can update their own documents fully. Users with shared access (via group or department) can only update the content field. Only document owners can change sharing settings. If the document's structure is protected by a minimum-role rule, the caller needs at least that role regardless of ownership or shared access."
       tags:
         - documents
       security:
@@ -285,6 +293,8 @@ paths:
           description: "Document has been successfully updated"
         401:
           description: "Not authorized to update this document"
+        403:
+          description: "Caller's role is below the protected structure's minimum role (error code ROLE_REQUIRED_FOR_STRUCTURE)"
         404:
           description: "Document not found"
 
@@ -308,6 +318,8 @@ paths:
           description: "Document successfully deleted"
         401:
           description: "Not authorized to delete this document"
+        403:
+          description: "Caller's role is below the protected structure's minimum role (error code ROLE_REQUIRED_FOR_STRUCTURE)"
         404:
           description: "Document not found"
 
@@ -487,6 +499,85 @@ paths:
           description: "Invalid request data"
         401:
           description: "Not authorized (admin only)"
+
+  /structures/protected/list:
+    get:
+      summary: List structures with a minimum-role rule
+      description: "Returns all structure type/subType pairs whose documents require a minimum role to create, change or remove. Available to any authenticated user."
+      tags:
+        - data structures
+      security:
+        - userAuth: [ ]
+        - adminAuth: [ ]
+      responses:
+        200:
+          description: "Array of protected-structure rules"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProtectedStructureEntry"
+        401:
+          description: "Not authenticated"
+
+  /structures/protected/set:
+    post:
+      summary: Require a minimum role for a structure
+      description: "Require a minimum role for creating, changing and removing documents of a structure type/subType pair. Users with a lower role are rejected with HTTP 403 (error code ROLE_REQUIRED_FOR_STRUCTURE). Super-admin only."
+      tags:
+        - data structures
+      security:
+        - adminAuth: [ ]
+      requestBody:
+        description: "The structure and the minimum role to require"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProtectedStructureSetRequest"
+      responses:
+        200:
+          description: "Rule stored"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProtectedStructureEntry"
+        400:
+          description: "Invalid request data"
+        401:
+          description: "Not authorized (super-admin only)"
+
+  /structures/protected/remove:
+    delete:
+      summary: Remove a minimum-role rule from a structure
+      description: "Remove the minimum-role rule of a structure type/subType pair. After removal the structure behaves like an unprotected structure again. Super-admin only."
+      tags:
+        - data structures
+      security:
+        - adminAuth: [ ]
+      requestBody:
+        description: "The type/subType pair whose rule should be removed"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProtectedStructureSetRequest"
+      responses:
+        200:
+          description: "Rule removed"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  removed:
+                    type: number
+                    description: "Number of rules removed"
+        400:
+          description: "Invalid request data"
+        401:
+          description: "Not authorized (super-admin only)"
 
   /version/check:
     get:
@@ -1338,8 +1429,16 @@ components:
           example: "auto-created"
         isAdmin:
           type: boolean
-          description: "Whether the user has administrator privileges"
+          description: "Whether the user has super-admin privileges. Super-admins manage all users, roles, documents, data structures, protection rules and the database."
           example: true
+        role:
+          type: string
+          enum:
+            - member
+            - manager
+            - admin
+          description: "Role of the user (effective super-admin role comes from the isAdmin flag instead). Roles are ordered: a higher role includes all rights of the lower ones."
+          example: "member"
       required:
         - _id
         - name
@@ -1373,7 +1472,14 @@ components:
         isAdmin:
           type: boolean
           example: false
-          description: "Flag indicating if the user has administrator privileges"
+          description: "Flag indicating if the user has super-admin privileges. Only super-admins can create users."
+        role:
+          type: string
+          enum:
+            - member
+            - manager
+            - admin
+          description: "Role of the new user (member by default). Super-admin privileges are expressed by the isAdmin flag instead."
       required:
         - name
         - password
@@ -1383,7 +1489,7 @@ components:
 
     UserUpdate:
       type: object
-      description: "Data element needed to trigger a user update"
+      description: "Data element needed to trigger a user update. Changing isAdmin or role requires super-admin privileges."
       properties:
         name:
           type: string
@@ -1400,7 +1506,14 @@ components:
         isAdmin:
           type: boolean
           example: false
-          description: "Flag indicating if the user has administrator privileges"
+          description: "Flag indicating if the user has super-admin privileges. Only super-admins can change this field."
+        role:
+          type: string
+          enum:
+            - member
+            - manager
+            - admin
+          description: "New role of the user. Only super-admins can change this field."
         department:
           type: string
           description: "The department the user is part of"
@@ -1629,6 +1742,58 @@ components:
           type: number
           description: "The structure subtype identifier"
           example: 11
+      required:
+        - type
+        - subType
+
+    ProtectedStructureEntry:
+      type: object
+      description: "A minimum-role rule for a structure. Documents of the type/subType pair can only be created, changed and removed by users whose effective role is at least minRole. Rules are configured at runtime by a super-admin; nothing application-specific is built in."
+      properties:
+        _id:
+          type: string
+          description: "Unique ID of the rule"
+        type:
+          type: number
+          description: "The structure type identifier"
+          example: 17
+        subType:
+          type: number
+          description: "The structure subtype identifier"
+          example: 11
+        minRole:
+          type: string
+          enum:
+            - manager
+            - admin
+            - superadmin
+          description: "Lowest role that may create, change or remove documents of this structure"
+          example: "manager"
+      required:
+        - type
+        - subType
+        - minRole
+
+    ProtectedStructureSetRequest:
+      type: object
+      description: "Request body for setting or removing a minimum-role rule for a structure type/subType pair. For removal only type and subType are required."
+      properties:
+        type:
+          type: number
+          description: "The structure type identifier"
+          example: 17
+        subType:
+          type: number
+          description: "The structure subtype identifier"
+          example: 11
+        minRole:
+          type: string
+          enum:
+            - manager
+            - admin
+            - superadmin
+          description: "Lowest role that may create, change or remove documents of this structure"
+          example: "manager"
       required:
         - type
         - subType

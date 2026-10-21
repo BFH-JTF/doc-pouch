@@ -1,3 +1,11 @@
+# [1.26.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.4...v1.26.0) (2026-10-21)
+
+
+### Features
+
+* audit log for user privilege changes and SECURITY.md ([e14a4ca](https://github.com/BFH-JTF/doc-pouch/commit/e14a4cac753cdb029d229203a5694cf9b4bedf2f))
+* roles (member, manager, admin, superadmin) and protected structures ([e4b8b38](https://github.com/BFH-JTF/doc-pouch/commit/e4b8b380be7db73e640384e0638a062277e4205e))
+
 ## [1.25.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.3...v1.25.4) (2026-10-07)
 
 

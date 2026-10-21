@@ -22,6 +22,34 @@ DocPouch handles users, documents, and document structures.
 ### Users
 A user entry describes a system user including the name, password, role, and email (if provided)
 
+#### Roles
+
+Every user has one of four roles. A higher role includes all rights of the lower ones:
+
+| Role         | Stored as                             | Rights (in addition to the role below)                                                   |
+|--------------|---------------------------------------|------------------------------------------------------------------------------------------|
+| `member`     | `role: "member"` (default)            | read and write own documents and documents shared with them                              |
+| `manager`    | `role: "manager"`                     | write documents of structures protected with `minRole: "manager"`                        |
+| `admin`      | `role: "admin"`                       | create, change and remove structures; documents protected with `minRole: "admin"`        |
+| `superadmin` | `isAdmin: true`                       | users and roles, protection rules, database export/import, documents of all users        |
+
+Only super-admins change `isAdmin` or `role` (also on their own account). `GET /users/whoami` returns the effective
+role.
+
+#### Protected Structures
+
+A super-admin can require a minimum role for creating, changing and removing the documents of a structure
+(`type`/`subType`). The rule applies to owners and to users with shared access alike. Requests without the role
+are rejected with HTTP `403` and the error code `ROLE_REQUIRED_FOR_STRUCTURE`.
+
+| Endpoint                       | Method | Auth                   | Description                                                       |
+|--------------------------------|--------|------------------------|-------------------------------------------------------------------|
+| `/structures/protected/list`   | GET    | Any authenticated user | List all rules (`type`, `subType`, `minRole`)                     |
+| `/structures/protected/set`    | POST   | Super-admin            | Body `{ type, subType, minRole }`, `minRole`: manager/admin/superadmin |
+| `/structures/protected/remove` | DELETE | Super-admin            | Body `{ type, subType }`                                          |
+
+The rules are part of the JSON database export and import.
+
 ### Documents
 
 Documents store the main data. They can be all sort of data objects as long as they can be express in JSON. They can
@@ -415,9 +443,11 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 
 ### Data Structure Management
 - `GET /structures/list` - Get all data structures
-- `POST /structures/create` - Create a new data structure (admin only)
-- `PATCH /structures/update/{structureID}` - Update an existing data structure (admin only)
-- `DELETE /structures/remove/{structureID}` - Remove a data structure (admin only)
+- `POST /structures/create` - Create a new data structure (role admin or super-admin)
+- `PATCH /structures/update/{structureID}` - Update an existing data structure (role admin or super-admin)
+- `DELETE /structures/remove/{structureID}` - Remove a data structure (role admin or super-admin)
+- `GET /structures/protected/list`, `POST /structures/protected/set`, `DELETE /structures/protected/remove` -
+  Minimum roles per structure (see [Protected Structures](#protected-structures))
 
 ### Anonymous Structure Allowlist
 
