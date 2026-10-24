@@ -1,7 +1,7 @@
 import request from 'supertest';
 import express, {type Express, type Request} from 'express';
-import {authRateLimiter, authKeyGenerator} from '../../src/srv/rateLimiters.js';
-import {resolveTrustProxy, type TrustProxySetting} from '../../src/srv/trustProxy.js';
+import {authRateLimiter, authIpRateLimiter, authKeyGenerator} from '../../src/srv/rateLimiters.js';
+import {stripUntrustedForwardedHeaders, resolveTrustProxy, type TrustProxySetting} from '../../src/srv/trustProxy.js';
 
 function buildEchoApp(trustSetting: TrustProxySetting | 'default'): Express {
     const app = express();
@@ -138,5 +138,53 @@ describe('authRateLimiter username+IP keying', () => {
     test('IPv6 addresses are grouped into subnets for the key', () => {
         expect(authKeyGenerator({body: {name: 'alice'}, ip: '2001:db8::1'} as unknown as Request))
             .toMatch(/^2001:db8::\/\d{1,3}:alice$/);
+    });
+});
+
+describe('authIpRateLimiter IP-wide cap', () => {
+    let app: Express;
+    const previousNodeEnv = process.env.NODE_ENV;
+
+    const post = (clientIp: string, body: Record<string, unknown>) =>
+        request(app).post('/login').set('X-Forwarded-For', clientIp).send(body);
+
+    beforeAll(() => {
+        process.env.NODE_ENV = 'development';
+        const limiterApp = express();
+        limiterApp.set('trust proxy', 'loopback');
+        limiterApp.use(stripUntrustedForwardedHeaders('loopback'));
+        limiterApp.use(express.json());
+        limiterApp.post('/login', authIpRateLimiter, authRateLimiter, (req, res) => {
+            res.status(200).json({ip: req.ip});
+        });
+        app = limiterApp;
+    });
+
+    afterAll(() => {
+        process.env.NODE_ENV = previousNodeEnv;
+    });
+
+    test('rotating usernames cannot bypass the IP-wide cap', async () => {
+        const natIp = '198.51.100.40';
+        for (let attempt = 0; attempt < 30; attempt++) {
+            const response = await post(natIp, {name: `spray-user-${attempt}`, password: 'secret'});
+            expect(response.status).toBe(200);
+        }
+        const blocked = await post(natIp, {name: 'spray-user-overflow', password: 'secret'});
+        expect(blocked.status).toBe(429);
+        expect(blocked.text).toContain('Too many authentication attempts');
+        expect(typeof blocked.headers['ratelimit-limit']).toBe('string');
+    });
+
+    test('the per-(IP, username) bucket still applies before the IP-wide cap is reached', async () => {
+        const natIp = '198.51.100.42';
+        for (let attempt = 0; attempt < 5; attempt++) {
+            expect((await post(natIp, {name: 'focused-target', password: 'secret'})).status).toBe(200);
+        }
+        expect((await post(natIp, {name: 'focused-target', password: 'secret'})).status).toBe(429);
+    });
+
+    test('a different IP is unaffected by the cap of another IP', async () => {
+        expect((await post('198.51.100.41', {name: 'spray-user-0', password: 'secret'})).status).toBe(200);
     });
 });

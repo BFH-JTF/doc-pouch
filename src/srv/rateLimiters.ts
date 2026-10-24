@@ -74,6 +74,15 @@ export const authRateLimiter = rateLimit({
     skip: skipInTest,
 });
 
+export const authIpRateLimiter = rateLimit({
+    windowMs: resolveWindowMs('15m', 15 * 60 * 1000),
+    max: resolveMax(30),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many authentication attempts, please try again later.',
+    skip: skipInTest,
+});
+
 export const forgotPasswordRateLimiter = rateLimit({
     windowMs: resolveWindowMs('15m', 15 * 60 * 1000),
     max: resolveMax(5),

@@ -338,7 +338,7 @@ or in a `.env` file when running locally.
 
 #### Rate Limiting
 
-DocPouch applies rate limits to protect against abuse. There are five limiters, each with its own built-in
+DocPouch applies rate limits to protect against abuse. There are six limiters, each with its own built-in
 default:
 
 | Limiter          | Applies to                                   | Keyed by      | Default `max` | Default window |
@@ -346,6 +346,7 @@ default:
 | `api`            | General read endpoints (`GET`)               | IP            | `100`         | `15m`          |
 | `write`          | Mutating endpoints (`POST`/`PATCH`/`DELETE`) | IP            | `30`          | `15m`          |
 | `auth`           | Login & interaction endpoints                | IP + username | `5`           | `15m`          |
+| `authIp`         | Login & interaction endpoints                | IP            | `30`          | `15m`          |
 | `forgotPassword` | Password-reset request endpoint              | IP            | `5`           | `15m`          |
 | `resetPassword`  | Password-reset submission endpoint           | IP            | `10`          | `15m`          |
 
@@ -354,9 +355,10 @@ when `NODE_ENV=test`.
 
 The `auth` limiter keys clients by the submitted username and IP address, so several people behind the same NAT
 router are not locked out by each other's failed logins. Requests without a usable username (e.g. OIDC consent
-steps) fall back to IP-only keying.
+steps) fall back to IP-only keying. The `authIp` limiter applies an additional IP-wide cap on top, so an
+attacker rotating usernames from a single IP stays bounded at 30 login attempts per window.
 
-The two environment variables below provide a **single global override** — when set, they apply to *all five*
+The two environment variables below provide a **single global override** — when set, they apply to *all six*
 limiters at once. When unset, the per-limiter defaults from the table above are used.
 
 | Variable            | Description                                                                                      | Default         |
