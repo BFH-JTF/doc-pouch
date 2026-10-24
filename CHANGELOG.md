@@ -1,3 +1,10 @@
+## [1.26.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.26.0...v1.26.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **security:** key auth rate limiter by IP+username, make proxy trust explicit ([98714f4](https://github.com/BFH-JTF/doc-pouch/commit/98714f482e899dab64b34b0ccd1c99f1a89a43ee))
+
 # [1.26.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.25.4...v1.26.0) (2026-10-21)
 
 
