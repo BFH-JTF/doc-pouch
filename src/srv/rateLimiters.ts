@@ -1,5 +1,17 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, {ipKeyGenerator} from 'express-rate-limit';
+import type {Request} from 'express';
 import {parseDurationToSeconds} from './webTokenStuff.js';
+
+const USERNAME_KEY_MAX_LENGTH = 128;
+
+export function authKeyGenerator(req: Request): string {
+    const submittedName: unknown = req.body?.name;
+    const clientIp = req.ip ?? 'unknown';
+    if (typeof submittedName !== 'string' || submittedName.length === 0) {
+        return ipKeyGenerator(clientIp);
+    }
+    return `${ipKeyGenerator(clientIp)}:${submittedName.slice(0, USERNAME_KEY_MAX_LENGTH)}`;
+}
 
 const skipInTest = () => process.env.NODE_ENV === 'test';
 
@@ -55,6 +67,7 @@ export const writeRateLimiter = rateLimit({
 export const authRateLimiter = rateLimit({
     windowMs: resolveWindowMs('15m', 15 * 60 * 1000),
     max: resolveMax(5),
+    keyGenerator: authKeyGenerator,
     standardHeaders: true,
     legacyHeaders: false,
     message: 'Too many authentication attempts, please try again later.',
