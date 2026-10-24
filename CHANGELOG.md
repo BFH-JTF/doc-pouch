@@ -1,3 +1,10 @@
+# [1.27.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.26.2...v1.27.0) (2026-10-24)
+
+
+### Features
+
+* IP-wide secondary cap for the auth rate limiter ([df5aef8](https://github.com/BFH-JTF/doc-pouch/commit/df5aef8401dbbb3505371b7fa09bb4899a95c2df)), closes [#98](https://github.com/BFH-JTF/doc-pouch/issues/98) [#103](https://github.com/BFH-JTF/doc-pouch/issues/103)
+
 ## [1.26.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.26.1...v1.26.2) (2026-10-24)
 
 
