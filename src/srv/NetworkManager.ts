@@ -32,7 +32,7 @@ import jwt from "jsonwebtoken";
 import {JWTOptions, parseDurationToSeconds} from "./webTokenStuff.js";
 import EmailService from "./EmailService.js";
 import {generatePassword} from "./passwordGenerator.js";
-import {resolveTrustProxy} from "./trustProxy.js";
+import {resolveTrustProxy, stripUntrustedForwardedHeaders} from "./trustProxy.js";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
@@ -125,6 +125,7 @@ export default class NetworkManager {
         this.port = port;
         this.expressApp = express();
         this.expressApp.set('trust proxy', resolveTrustProxy());
+        this.expressApp.use(stripUntrustedForwardedHeaders());
         this.dataManager = dataManager;
         this.logger = logger;
         this.anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;

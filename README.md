@@ -385,6 +385,10 @@ limiters at once. When unset, the per-limiter defaults from the table above are 
 > **Note**: When the app runs inside Docker or behind a remote proxy whose address is not a loopback address, set
 > `TRUST_PROXY` accordingly — for example `uniquelocal` or the proxy's static IP. Otherwise all clients appear to
 > come from the proxy address and share the `api` / `write` buckets.
+>
+> Forwarded headers sent by clients whose direct connection does not come from a trusted proxy hop are removed
+> before request handling. They can therefore neither influence the client-IP resolution (rate limiting) nor the
+> forwarded-header detection of the OIDC provider mounted under the same HTTP server.
 
 #### Example Configuration
 
