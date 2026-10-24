@@ -1,3 +1,10 @@
+## [1.26.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.26.1...v1.26.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* **security:** strip forwarded headers from peers outside the trusted proxy chain ([ce95c25](https://github.com/BFH-JTF/doc-pouch/commit/ce95c25264b3d86e72c96e6024fa5639b421109e)), closes [#102](https://github.com/BFH-JTF/doc-pouch/issues/102)
+
 ## [1.26.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.26.0...v1.26.1) (2026-10-24)
 
 
