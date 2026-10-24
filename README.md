@@ -608,9 +608,9 @@ end_session URL yourself. The full flow is documented in [`docs/authentication.m
 - **Check auth**: `client.isAuthenticated()` checks token validity based on method.
 - **Supported scopes**: `openid`, `profile`, `email`, `offline_access`.
 - **Discovery**: `GET /.well-known/openid-configuration` and `GET /oidc/jwks`.
-- **Reverse proxy**: The OIDC provider is configured with `proxy: true` and forwarded headers are trusted
-  according to the `TRUST_PROXY` environment variable (default: loopback), so it works correctly behind
-  nginx / Caddy / Traefik.
+- **Reverse proxy**: The OIDC provider is configured with `proxy: true`, so it works correctly behind nginx /
+  Caddy / Traefik. The effective client IP (used for rate limiting and forwarded-host validation) is resolved
+  according to the `TRUST_PROXY` environment variable (default: loopback).
 
 ## Real-Time Updates
 
