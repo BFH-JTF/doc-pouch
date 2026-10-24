@@ -289,6 +289,23 @@ or in a `.env` file when running locally.
 | `JWT_SECRET`      | Secret key used to sign JWT tokens. **Change in production!**                                             | `ThisIsMyVeryOwnAndCreativeSecret` |
 | `SESSION_TIMEOUT` | Session timeout for JWT tokens and OIDC sessions. Accepts duration strings like `24h`, `8h`, `30m`, `7d`. | `24h`                              |
 
+#### Email Configuration (SMTP)
+
+| Variable      | Description                                                                                              | Default                        |
+|---------------|----------------------------------------------------------------------------------------------------------|--------------------------------|
+| `SMTP_HOST`   | SMTP server host. If unset, email delivery is disabled and generated passwords are returned in API responses as a fallback. | *(disabled)* |
+| `SMTP_PORT`   | SMTP server port.                                                                                        | `587`                          |
+| `SMTP_SECURE` | Set to `true` for implicit TLS (typically port `465`); `false` uses STARTTLS on a plaintext connection.  | `false`                        |
+| `SMTP_USER`   | SMTP username. When empty, no authentication is attempted.                                               | *(empty)*                      |
+| `SMTP_PASS`   | SMTP password.                                                                                           | *(empty)*                      |
+| `SMTP_FROM`   | Displayed sender, e.g. `"DocPouch <noreply@example.com>"`.                                               | `DocPouch <noreply@localhost>` |
+
+> **Note**: `SMTP_FROM` must be a real, deliverable address on a domain that actually exists in DNS and whose
+> SPF/DKIM records authorize the configured SMTP server to send for it. Mail sent from a placeholder or
+> not-yet-registered domain is accepted by the SMTP server but is then junked or silently dropped by strict
+> receiving gateways (the recipient never sees it, and non-delivery reports are lost since the sender mailbox
+> does not exist).
+
 #### CORS Configuration
 
 | Variable          | Description                                     | Default                       |
