@@ -4,6 +4,7 @@ import {
     apiRateLimiter,
     writeRateLimiter,
     authRateLimiter,
+    authIpRateLimiter,
     forgotPasswordRateLimiter,
     resetPasswordRateLimiter
 } from './rateLimiters.js';
@@ -918,7 +919,7 @@ export default class NetworkManager {
         });
 
         // Handle login form submission
-        this.expressApp.post('/interaction/:uid', authRateLimiter, async (req, res) => {
+        this.expressApp.post('/interaction/:uid', authIpRateLimiter, authRateLimiter, async (req, res) => {
             this.logger.debug('=== Interaction POST Request ===');
             this.logger.debug('URL: ' + req.url);
             this.logger.debug('Method: ' + req.method);
@@ -1075,7 +1076,7 @@ export default class NetworkManager {
             res.status(405).json({error: "Method Not Allowed. Use POST for login."});
         })
 
-        this.expressApp.post("/users/login", authRateLimiter, (req: Request, res: Response) => {
+        this.expressApp.post("/users/login", authIpRateLimiter, authRateLimiter, (req: Request, res: Response) => {
             this.logger.info("Login request received");
 
             try {
