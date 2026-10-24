@@ -1,3 +1,6 @@
+import proxyAddr from 'proxy-addr';
+import type {RequestHandler} from 'express';
+
 export type TrustProxySetting = boolean | number | string;
 
 const PROXY_ADDR_NAMES = ['loopback', 'linklocal', 'uniquelocal'];
@@ -53,4 +56,40 @@ export function resolveTrustProxy(env: NodeJS.ProcessEnv = process.env): TrustPr
         return tokens.join(',');
     }
     throw new Error(`Invalid TRUST_PROXY value "${value}". Accepted: loopback, linklocal, uniquelocal, a hop count (e.g. 1), true, false, or a comma-separated list of IP addresses / CIDR subnets (e.g. 10.1.2.3, 192.168.0.0/16).`);
+}
+
+const FORWARDED_HEADERS = ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'forwarded'];
+
+export function compiledTrustFn(setting: TrustProxySetting): (addr: string, index: number) => boolean {
+    if (setting === true) {
+        return () => true;
+    }
+    if (setting === false) {
+        return () => false;
+    }
+    if (typeof setting === 'number') {
+        return (_addr: string, index: number) => index < setting;
+    }
+    return proxyAddr.compile(setting);
+}
+
+function normalizeDirectPeer(address: string | undefined): string | undefined {
+    if (!address) {
+        return undefined;
+    }
+    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(address);
+    return mapped ? mapped[1] : address;
+}
+
+export function stripUntrustedForwardedHeaders(trustSetting?: TrustProxySetting): RequestHandler {
+    const trustFn = compiledTrustFn(trustSetting ?? resolveTrustProxy());
+    return (req, res, next) => {
+        const peer = normalizeDirectPeer(req.socket?.remoteAddress);
+        if (peer === undefined || !trustFn(peer, 0)) {
+            for (const header of FORWARDED_HEADERS) {
+                delete req.headers[header];
+            }
+        }
+        next();
+    };
 }
