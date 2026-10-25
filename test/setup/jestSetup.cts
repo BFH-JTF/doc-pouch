@@ -1,5 +1,13 @@
 process.env.NODE_ENV = 'test';
 
+// The server no longer falls back to a publicly known JWT signing secret
+// (see webTokenStuff.resolveJwtSecret): an unconfigured environment gets a
+// random per-process secret. Tests forge and verify tokens, so a
+// deterministic secret must be configured before any module reads it.
+if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = 'docpouch-test-jwt-secret';
+}
+
 // Increase timeout for all tests
 jest.setTimeout(30000);
 

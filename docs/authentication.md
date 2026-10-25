@@ -381,7 +381,7 @@ whether `name` and `email` are included in the `/oidc/me` user info endpoint res
 | `OIDC_REDIRECT_URI`             | Default redirect URI for the built-in admin UI client.                                                | `${OIDC_ISSUER}/`                                |
 | `OIDC_POST_LOGOUT_REDIRECT_URI` | Default post-logout redirect URI for the built-in admin UI client. Falls back to `OIDC_REDIRECT_URI`. | `${OIDC_ISSUER}/`                                |
 | `OIDC_AUTO_CONSENT_CLIENTS`     | Comma-separated client IDs granted silent consent (first-party apps only). All other clients show a consent screen. | `docpouch-admin-ui`                |
-| `OIDC_COOKIE_KEY`               | Secret for OIDC session cookies. **Change in production!**                                            | `docpouch-cookie-secret-change-in-production`    |
+| `OIDC_COOKIE_KEY`               | Secret for OIDC session cookies. **Required in production**; unset in development a random per-process key is used. | *(random per-process)*                           |
 | `OIDC_COOKIE_SECURE`            | Set to `true` when running directly with HTTPS; leave unset behind a reverse proxy.                   | `false` (auto-`true` when `NODE_ENV=production`) |
 
 Copy `.env.example` to `.env` and configure these values. When `NODE_ENV=production`, `OIDC_COOKIE_SECURE` is

@@ -286,8 +286,9 @@ or in a `.env` file when running locally.
 
 | Variable          | Description                                                                                               | Default                            |
 |-------------------|-----------------------------------------------------------------------------------------------------------|------------------------------------|
-| `JWT_SECRET`      | Secret key used to sign JWT tokens. **Change in production!**                                             | `ThisIsMyVeryOwnAndCreativeSecret` |
+| `JWT_SECRET`      | Secret key used to sign JWT tokens. **Required in production** (`NODE_ENV=production` refuses to start without it). Unset in development: a random per-process secret is used. | *(random per-process)*             |
 | `SESSION_TIMEOUT` | Session timeout for JWT tokens and OIDC sessions. Accepts duration strings like `24h`, `8h`, `30m`, `7d`. | `24h`                              |
+| `ADMIN_INITIAL_PASSWORD` | Password for the `admin` account created on the first start (empty database). When unset, a strong random password is generated and printed once to the console. | *(random, printed once)*           |
 
 #### Email Configuration (SMTP)
 
@@ -322,7 +323,7 @@ or in a `.env` file when running locally.
 | `OIDC_REDIRECT_URI`             | Redirect URI for the built-in admin UI client. Leave unset to use the issuer root.                                  | `${OIDC_ISSUER}/`                             |
 | `OIDC_POST_LOGOUT_REDIRECT_URI` | Post-logout redirect URI for the built-in admin UI client. Falls back to `OIDC_REDIRECT_URI`.                       | `${OIDC_ISSUER}/`                             |
 | `OIDC_AUTO_CONSENT_CLIENTS`     | Comma-separated client IDs whose consent is granted silently (first-party apps only). All other clients are shown a consent screen. | `docpouch-admin-ui`                           |
-| `OIDC_COOKIE_KEY`               | Secret key used to encrypt/sign OIDC session cookies. **Change in production!**                                     | `docpouch-cookie-secret-change-in-production` |
+| `OIDC_COOKIE_KEY`               | Secret key used to sign OIDC session cookies. **Required in production** (`NODE_ENV=production` refuses to start without it). Unset in development: a random per-process key is used. | *(random per-process)*                        |
 | `OIDC_COOKIE_SECURE`            | Set to `true` when running the server directly with HTTPS. Leave unset when behind a TLS-terminating reverse proxy. | `false`                                       |
 
 #### MCP Configuration
@@ -459,9 +460,11 @@ To persist your data and logs, ensure you mount volumes for `/app/db` and `/app/
 On the first start, DocPouch creates a default administrator account:
 
 - **Username**: `admin`
-- **Password**: `adminSecret`
+- **Password**: a strong random value, printed **once** to the console at first startup
+  (or the value of `ADMIN_INITIAL_PASSWORD` if configured)
 
-> **Security Note**: Please change the administrator password immediately after the first login.
+> **Security Note**: Store the printed password immediately, then change it after the first login.
+> It is not written to any log file and is not shown again.
 
 ## API
 

@@ -108,6 +108,29 @@ function escapeHtml(value: string): string {
 }
 
 /**
+ * Resolves the OIDC session-cookie signing key (#108).
+ *
+ * - When `OIDC_COOKIE_KEY` is configured (after trimming), it is used.
+ * - When it is missing and `NODE_ENV=production`, startup fails closed:
+ *   session cookies must never be signed with a publicly known constant.
+ * - Otherwise (development/test without configuration) a random
+ *   per-process key is generated (warned about). OIDC sessions then do
+ *   not survive restarts, but cannot be forged.
+ */
+export function resolveOidcCookieKey(env: NodeJS.ProcessEnv = process.env): string {
+    const configured = env.OIDC_COOKIE_KEY?.trim();
+    if (configured && configured.length > 0) {
+        return configured;
+    }
+    if (env.NODE_ENV === "production") {
+        throw new Error(
+            "OIDC_COOKIE_KEY must be set to a strong random value when NODE_ENV=production. Generate one with: openssl rand -base64 32"
+        );
+    }
+    return crypto.randomBytes(32).toString("base64");
+}
+
+/**
  * oidc-provider interaction uids are base64url tokens ([A-Za-z0-9_-]).
  * A request parameter that does not match this shape can never be a real
  * interaction uid, so it is rejected before it is ever interpolated into
@@ -245,11 +268,19 @@ export default class NetworkManager {
         const issuer = process.env.OIDC_ISSUER;
         this.logger.info(`Initializing OIDC provider with issuer: ${issuer}`);
 
+        // #108: the cookie signing key comes from configuration; a missing
+        // key fails closed in production and falls back to a random
+        // per-process key (warned about) elsewhere.
+        if (!process.env.OIDC_COOKIE_KEY?.trim()) {
+            this.logger.warn('OIDC_COOKIE_KEY is not set; using a random per-process key. OIDC sessions will not survive restarts. Set OIDC_COOKIE_KEY in production.');
+        }
+        const oidcCookieKeys = [resolveOidcCookieKey()];
+
         this.oidcProvider = new oidc.Provider(issuer, {
             adapter: OidcAdapter,
             jwks: jwks,
             cookies: {
-                keys: [process.env.OIDC_COOKIE_KEY || 'docpouch-cookie-secret-change-in-production'],
+                keys: oidcCookieKeys,
                 long: {
                     secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
                     httpOnly: true,
@@ -574,7 +605,7 @@ export default class NetworkManager {
 
         // Configure trusted headers for proxy
         this.oidcProvider.app.proxy = true;
-        this.oidcProvider.app.keys = [process.env.OIDC_COOKIE_KEY || 'docpouch-cookie-secret-change-in-production'];
+        this.oidcProvider.app.keys = oidcCookieKeys;
 
         this.webServer = this.expressApp.listen(this.port, () => {
             const networkInterfaces = os.networkInterfaces();

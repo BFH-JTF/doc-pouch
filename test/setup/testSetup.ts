@@ -96,8 +96,9 @@ export async function setupTestServer(options: { anonymousDocumentsEnabled?: boo
     return {networkManager, dataManager, server: networkManager.webServer};
 }
 
-// Secret key for JWT generation (this should match what's in your actual app)
-const JWT_SECRET = 'ThisIsMyVeryOwnAndCreativeSecret';
+// Secret key for JWT generation — matches the deterministic secret pinned
+// in jestSetup.cts (the server reads the same environment variable).
+const JWT_SECRET = process.env.JWT_SECRET as string;
 
 /**
  * Creates test users for testing

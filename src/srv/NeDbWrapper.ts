@@ -1327,8 +1327,19 @@ export default class NeDbWrapper {
     private async initializeDatabase(): Promise<void> {
         const userCount = await this.users.count({});
         if (userCount < 1) {
+            // #108: the initial administrator no longer has a hardcoded
+            // password. ADMIN_INITIAL_PASSWORD lets operators pre-configure
+            // it; otherwise a strong per-install random value is generated
+            // and printed once to stdout. It is deliberately not written to
+            // the log files, because log/general.log persists on disk.
+            const configuredPassword = process.env.ADMIN_INITIAL_PASSWORD?.trim();
+            if (configuredPassword !== undefined && (configuredPassword.length < 8 || configuredPassword.length === 0)) {
+                throw new Error("ADMIN_INITIAL_PASSWORD must be at least 8 characters long");
+            }
+            const initialPassword = configuredPassword || crypto.randomBytes(24).toString("base64url");
+
             const addedUser = await this.createUser({
-                password: "adminSecret",
+                password: initialPassword,
                 name: "admin",
                 department: "administration",
                 group: "auto-created",
@@ -1337,6 +1348,22 @@ export default class NeDbWrapper {
             const {password: _, ...safeAdmin} = addedUser as any;
             this.logger.info(`Created new admin user: ${JSON.stringify(safeAdmin)}`);
             this.logger.warn("Initial admin created without email — set an email address to enable password recovery");
+            if (!configuredPassword && process.env.NODE_ENV !== "test") {
+                process.stdout.write([
+                    "",
+                    "=======================================================================",
+                    " DocPouch created the initial administrator account.",
+                    "",
+                    "   Username: admin",
+                    `   Password: ${initialPassword}`,
+                    "",
+                    " Store this password now and change it immediately after",
+                    " logging in. It is not shown again and is not written to",
+                    " any log file. Preconfigure it with ADMIN_INITIAL_PASSWORD.",
+                    "=======================================================================",
+                    "",
+                ].join("\n"));
+            }
         }
 
         this.logger.info("Database initialization complete");
