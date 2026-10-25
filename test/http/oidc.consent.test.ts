@@ -245,4 +245,19 @@ describe('OIDC consent screen for non-first-party clients', () => {
         const redirectedPath = new URL(res.headers.location as string, 'http://localhost:3032/').pathname;
         expect(redirectedPath).toBe(new URL(consentPath, 'http://localhost:3032/').pathname);
     });
+
+    test('a non-uid-shaped interaction parameter is rejected before any rendering', async () => {
+        const evilUid = encodeURIComponent('abc"><script>alert(1)</script>');
+
+        const getRes = await request(server).get(`/interaction/${evilUid}`).redirects(0);
+        expect(getRes.status).toBe(400);
+        expect(getRes.text).not.toContain('<script>');
+
+        const postRes = await request(server)
+            .post(`/interaction/${evilUid}`)
+            .type('form')
+            .send({name: 'user', password: 'userpassword'});
+        expect(postRes.status).toBe(400);
+        expect(postRes.text).not.toContain('<script>');
+    });
 });

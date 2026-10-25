@@ -108,6 +108,16 @@ function escapeHtml(value: string): string {
 }
 
 /**
+ * oidc-provider interaction uids are base64url tokens ([A-Za-z0-9_-]).
+ * A request parameter that does not match this shape can never be a real
+ * interaction uid, so it is rejected before it is ever interpolated into
+ * an HTML template or a redirect target.
+ */
+function isValidInteractionUid(uid: string | string[] | undefined): uid is string {
+    return typeof uid === 'string' && /^[A-Za-z0-9_-]+$/.test(uid) && uid.length <= 128;
+}
+
+/**
  * Human-readable descriptions for the OIDC scopes offered on the consent
  * screen. Unknown scopes are rendered as their raw (escaped) name.
  */
@@ -947,6 +957,12 @@ export default class NetworkManager {
         // Serve OIDC login page
         this.expressApp.get('/interaction/:uid', apiRateLimiter, async (req, res) => {
             try {
+                // The uid is interpolated into the rendered HTML, so a
+                // non-uid-shaped parameter is rejected up front.
+                if (!isValidInteractionUid(req.params.uid)) {
+                    res.status(400).send('Invalid interaction');
+                    return;
+                }
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
 
                 if (interaction.prompt?.name === 'consent') {
@@ -964,7 +980,7 @@ export default class NetworkManager {
                             .join('');
                         let html = this.resolveServerHtml('oidc-consent.html');
                         html = html.replace(/__NONCE__/g, res.locals.nonce);
-                        html = html.replace(/__UID__/g, req.params.uid as string);
+                        html = html.replace(/__UID__/g, escapeHtml(req.params.uid));
                         html = html.replace(/__CLIENT_NAME__/g, escapeHtml(clientName));
                         html = html.replace(/__SCOPES__/g, scopesHtml);
                         res.type('html').send(html);
@@ -992,7 +1008,7 @@ export default class NetworkManager {
                     : path.resolve(process.cwd(), 'src/srv/oidc-login.html');
                 let html = fs.readFileSync(htmlPath, 'utf8');
                 html = html.replace(/__NONCE__/g, res.locals.nonce);
-                html = html.replace(/__UID__/g, req.params.uid as string);
+                html = html.replace(/__UID__/g, escapeHtml(req.params.uid));
                 res.type('html').send(html);
             } catch (err) {
                 res.status(400).send('Invalid or expired login session. Please try again.');
@@ -1023,6 +1039,11 @@ export default class NetworkManager {
             this.logger.debug('Method: ' + req.method);
             this.logger.debug('Params: ' + JSON.stringify(req.params));
             
+            if (!isValidInteractionUid(req.params.uid)) {
+                res.status(400).json({error: 'Invalid interaction'});
+                return;
+            }
+
             try {
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
                 this.logger.debug('Interaction details: ' + JSON.stringify(interaction, null, 2));
