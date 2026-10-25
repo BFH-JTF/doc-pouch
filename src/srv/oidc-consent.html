@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>DocPouch - Authorize Application</title>
+    <style nonce="__NONCE__">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo-img {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 12px;
+        }
+
+        .logo h1 {
+            color: #667eea;
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .logo p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .client-info {
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+        }
+
+        .client-info strong {
+            color: #333;
+        }
+
+        .scopes {
+            margin-bottom: 20px;
+        }
+
+        .scopes h2 {
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .scopes ul {
+            list-style: none;
+        }
+
+        .scopes li {
+            font-size: 14px;
+            color: #555;
+            padding: 8px 12px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        #allowButton {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        #denyButton {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+    </style>
+</head>
+<body>
+<div class="login-container">
+    <div class="logo">
+        <img alt="DocPouch" class="logo-img" src="/oidc/static/docPouch.png">
+        <h1>DocPouch</h1>
+        <p>Authorize application</p>
+    </div>
+
+    <div class="client-info">
+        <strong>__CLIENT_NAME__</strong><br>
+        is requesting access to your account
+    </div>
+
+    <form id="consentForm" action="/interaction/__UID__" method="POST">
+        <div class="scopes">
+            <h2>This will allow the application to:</h2>
+            <ul>
+                __SCOPES__
+            </ul>
+        </div>
+
+        <div class="button-row">
+            <button id="denyButton" name="consent" type="submit" value="no">Deny</button>
+            <button id="allowButton" name="consent" type="submit" value="yes">Allow</button>
+        </div>
+    </form>
+</div>
+
+<script nonce="__NONCE__">
+    document.getElementById('consentForm').addEventListener('submit', () => {
+        const allowButton = document.getElementById('allowButton');
+        const denyButton = document.getElementById('denyButton');
+        allowButton.disabled = true;
+        denyButton.disabled = true;
+        allowButton.textContent = 'Redirecting...';
+    });
+</script>
+</body>
+</html>

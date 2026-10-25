@@ -85,6 +85,39 @@ function parseImportMode(rawMode: unknown): ImportMode {
     throw new Error("Invalid import mode. Allowed values: replace, add, skip.");
 }
 
+/**
+ * Origin of the configured OIDC issuer (scheme + host + port, no path).
+ * Used to derive the redirect URIs of the first-party client from
+ * trusted configuration instead of client-controlled request headers (#106).
+ */
+function issuerOrigin(issuer: string): string {
+    try {
+        return new URL(issuer).origin;
+    } catch {
+        return issuer.replace(/\/oidc\/?$/, '');
+    }
+}
+
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
+ * Human-readable descriptions for the OIDC scopes offered on the consent
+ * screen. Unknown scopes are rendered as their raw (escaped) name.
+ */
+const OIDC_SCOPE_DESCRIPTIONS: Record<string, string> = {
+    openid: 'Verify your identity',
+    profile: 'Read your profile (name)',
+    email: 'Read your email address',
+    offline_access: 'Keep access while you are offline (refresh tokens)',
+};
+
 export function cspMiddleware(req: Request, res: Response, next: NextFunction) {
     const nonce = crypto.randomBytes(16).toString('base64');
     res.locals.nonce = nonce;
@@ -116,6 +149,8 @@ export default class NetworkManager {
     validator: SchemaValidator
     oidcProvider: any
     private readonly anonymousDocumentsEnabled: boolean;
+    private readonly autoConsentClientIds: Set<string>;
+    private readonly dynamicRegistrationEnabled: boolean;
     private mcpManager?: McpManager;
     emailService: EmailService;
 
@@ -130,6 +165,24 @@ export default class NetworkManager {
         this.dataManager = dataManager;
         this.logger = logger;
         this.anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
+        // #107: clients whose consent is granted silently (first-party
+        // applications). Every other client must be approved explicitly by
+        // the signed-in user on the consent screen.
+        this.autoConsentClientIds = new Set(
+            (process.env.OIDC_AUTO_CONSENT_CLIENTS || 'docpouch-admin-ui')
+                .split(',')
+                .map(entry => entry.trim())
+                .filter(entry => entry.length > 0)
+        );
+        // #107: when OIDC_REGISTRATION_TOKEN is unset (or blank), dynamic
+        // client registration fails closed. oidc-provider treats an undefined
+        // initialAccessToken as "no authentication required", which would
+        // leave POST /oidc/reg open to anyone.
+        const registrationToken = process.env.OIDC_REGISTRATION_TOKEN?.trim();
+        this.dynamicRegistrationEnabled = registrationToken !== undefined && registrationToken.length > 0;
+        if (!this.dynamicRegistrationEnabled) {
+            this.logger.warn('OIDC_REGISTRATION_TOKEN is not set; dynamic client registration is disabled.');
+        }
         this.validator = new SchemaValidator(logger);
         this.emailService = emailService;
         dataManager.setEmailService(emailService);
@@ -422,24 +475,26 @@ export default class NetworkManager {
                 backchannelLogout: {enabled: true},
                 pushedAuthorizationRequests: {enabled: true},
                 registration: {
-                    enabled: true,
-                    initialAccessToken: process.env.OIDC_REGISTRATION_TOKEN,
+                    // #107: registration is only enabled when a registration
+                    // token is configured; see dynamicRegistrationEnabled.
+                    enabled: this.dynamicRegistrationEnabled,
+                    initialAccessToken: this.dynamicRegistrationEnabled ? registrationToken : undefined,
                     issueRegistrationAccessToken: true,
                     secretFactory: (ctx) => {
                         return crypto.randomBytes(64).toString('base64url');
                     }
                 },
-                registrationManagement: {enabled: true, rotateRegistrationAccessToken: false},
+                registrationManagement: {enabled: this.dynamicRegistrationEnabled, rotateRegistrationAccessToken: false},
             },
             // Additional configuration for proper logout handling
             clients: [
                 {
                     client_id: 'docpouch-admin-ui',
                     client_name: 'DocPouch Admin UI',
-                    redirect_uris: [process.env.OIDC_REDIRECT_URI || `${issuer.replace('/oidc', '')}/`],
+                    redirect_uris: [process.env.OIDC_REDIRECT_URI || `${issuerOrigin(issuer)}/`],
                     post_logout_redirect_uris: [
-                        process.env.OIDC_POST_LOGOUT_REDIRECT_URI || process.env.OIDC_REDIRECT_URI || `${issuer.replace('/oidc', '')}/`,
-                        `${issuer.replace('/oidc', '')}/oidc/logout-redirect`,
+                        process.env.OIDC_POST_LOGOUT_REDIRECT_URI || process.env.OIDC_REDIRECT_URI || `${issuerOrigin(issuer)}/`,
+                        `${issuerOrigin(issuer)}/oidc/logout-redirect`,
                     ],
                     grant_types: ['authorization_code', 'refresh_token'],
                     response_types: ['code'],
@@ -566,6 +621,18 @@ export default class NetworkManager {
         };
     }
 
+    /**
+     * Reads a server-rendered HTML template from the build output
+     * (production) or the source tree (development).
+     */
+    private resolveServerHtml(filename: string): string {
+        const distPath = path.resolve(process.cwd(), 'dist/srv', filename);
+        if (fs.existsSync(distPath)) {
+            return fs.readFileSync(distPath, 'utf8');
+        }
+        return fs.readFileSync(path.resolve(process.cwd(), 'src/srv', filename), 'utf8');
+    }
+
     private initializeExpress(): void {
         const vuePath = path.resolve(process.cwd(), 'dist/srv/vue');
         this.logger.info(`Serving static files from: ${vuePath}`);
@@ -623,31 +690,42 @@ export default class NetworkManager {
                     res.json({configured: false});
                     return;
                 }
-                const host = req.headers.host || `localhost:${this.port}`;
-                const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
-                const redirectUri = `${protocol}://${host}/`;
+                // #106: the redirect URIs are derived from trusted
+                // configuration only (OIDC_ISSUER / OIDC_REDIRECT_URI). The
+                // request Host and X-Forwarded-Proto headers are
+                // client-controlled and must not influence the URIs
+                // registered for the first-party client.
+                const origin = issuerOrigin(process.env.OIDC_ISSUER);
+                const redirectUri = process.env.OIDC_REDIRECT_URI || `${origin}/`;
+                const postLogoutUri = process.env.OIDC_POST_LOGOUT_REDIRECT_URI || process.env.OIDC_REDIRECT_URI || `${origin}/`;
+                const logoutRedirectUri = `${origin}/oidc/logout-redirect`;
                 const clientId = 'docpouch-admin-ui';
                 const clientAdapter = new OidcAdapter('Client');
                 const existing = await clientAdapter.find(clientId);
 
                 let registeredClientId: string | null = null;
 
-                const logoutRedirectUri = `${protocol}://${host}/oidc/logout-redirect`;
+                // The trusted URI lists replace the stored ones instead of
+                // being appended. This keeps the lists bounded and purges
+                // any URIs that older versions registered from request
+                // headers (#106).
+                const desiredUris = [redirectUri];
+                const desiredPostLogoutUris = [postLogoutUri, logoutRedirectUri];
 
                 if (existing) {
                     registeredClientId = (existing.client_id || existing._id || clientId) as string;
                     const existingUris = existing.redirect_uris || [];
                     const existingPostLogoutUris = existing.post_logout_redirect_uris || [];
-                    const updatedUris = existingUris.includes(redirectUri) ? existingUris : [...existingUris, redirectUri];
-                    const updatedPostLogoutUris = existingPostLogoutUris.includes(logoutRedirectUri) ? existingPostLogoutUris : [...existingPostLogoutUris, logoutRedirectUri];
-                    if (updatedUris !== existingUris || updatedPostLogoutUris !== existingPostLogoutUris) {
+                    const urisChanged = JSON.stringify(existingUris) !== JSON.stringify(desiredUris);
+                    const postLogoutChanged = JSON.stringify(existingPostLogoutUris) !== JSON.stringify(desiredPostLogoutUris);
+                    if (urisChanged || postLogoutChanged) {
                         await clientAdapter.upsert(registeredClientId, {
                             ...existing,
-                            redirect_uris: updatedUris,
-                            post_logout_redirect_uris: updatedPostLogoutUris,
+                            redirect_uris: desiredUris,
+                            post_logout_redirect_uris: desiredPostLogoutUris,
                         }, existing.expiresAt);
-                        this.logger.info(`Updated OIDC client redirect URIs: ${JSON.stringify(updatedUris)}`);
-                        this.logger.info(`Updated OIDC client post-logout redirect URIs: ${JSON.stringify(updatedPostLogoutUris)}`);
+                        this.logger.info(`Updated OIDC client redirect URIs: ${JSON.stringify(desiredUris)}`);
+                        this.logger.info(`Updated OIDC client post-logout redirect URIs: ${JSON.stringify(desiredPostLogoutUris)}`);
                     }
                 } else {
                     // Create client with fixed ID (skip dynamic registration for admin UI)
@@ -655,8 +733,8 @@ export default class NetworkManager {
                         const client = new this.oidcProvider.Client({
                             client_id: clientId,
                             client_name: 'DocPouch Admin UI',
-                            redirect_uris: [redirectUri],
-                            post_logout_redirect_uris: [logoutRedirectUri],
+                            redirect_uris: desiredUris,
+                            post_logout_redirect_uris: desiredPostLogoutUris,
                             grant_types: ['authorization_code', 'refresh_token'],
                             response_types: ['code'],
                             token_endpoint_auth_method: 'none',
@@ -682,7 +760,7 @@ export default class NetworkManager {
                     issuer: process.env.OIDC_ISSUER,
                     clientId: registeredClientId,
                     redirectUri,
-                    postLogoutRedirectUri: `${protocol}://${host}/oidc/logout-redirect`,
+                    postLogoutRedirectUri: logoutRedirectUri,
                     scope: 'openid profile email offline_access',
                 });
             } catch (err: any) {
@@ -871,8 +949,28 @@ export default class NetworkManager {
             try {
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
 
-                // Auto-accept consent for the admin UI (user already authenticated)
                 if (interaction.prompt?.name === 'consent') {
+                    // #107: only first-party clients are auto-accepted. Every
+                    // other client must be approved explicitly by the signed-in
+                    // user on the consent screen before scopes are granted.
+                    if (!this.autoConsentClientIds.has(String(interaction.params?.client_id))) {
+                        const client = interaction.params?.client_id
+                            ? await this.oidcProvider.Client.find(interaction.params.client_id)
+                            : null;
+                        const clientName = (client?.clientName || interaction.params?.client_id || 'Unknown client') as string;
+                        const missingScopes: string[] = interaction.prompt.details?.missingOIDCScope || [];
+                        const scopesHtml = missingScopes
+                            .map(scope => `<li>${escapeHtml(OIDC_SCOPE_DESCRIPTIONS[scope] || scope)}</li>`)
+                            .join('');
+                        let html = this.resolveServerHtml('oidc-consent.html');
+                        html = html.replace(/__NONCE__/g, res.locals.nonce);
+                        html = html.replace(/__UID__/g, req.params.uid as string);
+                        html = html.replace(/__CLIENT_NAME__/g, escapeHtml(clientName));
+                        html = html.replace(/__SCOPES__/g, scopesHtml);
+                        res.type('html').send(html);
+                        return;
+                    }
+                    // Auto-accept consent for the admin UI (user already authenticated)
                     const grant = new this.oidcProvider.Grant({
                         accountId: interaction.session?.accountId,
                         clientId: interaction.params?.client_id,
@@ -941,6 +1039,18 @@ export default class NetworkManager {
                         return;
                     }
                     this.logger.debug('Login successful for user: ' + user._id);
+                    // #107: only first-party clients get consent granted
+                    // together with the login. For every other client the
+                    // login round finishes on its own; the provider then
+                    // issues a consent prompt, which the GET handler renders
+                    // as an approval screen.
+                    if (!this.autoConsentClientIds.has(String(interaction.params?.client_id))) {
+                        await this.oidcProvider.interactionFinished(req, res, {
+                            login: {accountId: user._id}
+                        }, {mergeWithLastSubmission: true});
+                        this.logger.debug('Login interaction finished (consent prompt follows)');
+                        return;
+                    }
                     // Complete login and immediately grant consent for all requested scopes
                     const grant = new this.oidcProvider.Grant({
                         accountId: user._id,
@@ -959,6 +1069,36 @@ export default class NetworkManager {
                     this.logger.debug('Login and consent interaction finished');
                     return;
                 } else if (prompt?.name === 'consent') {
+                    // #107: first-party clients keep the silent auto-accept
+                    // behavior; every other client goes through the consent
+                    // screen (see the GET handler) and only a decision
+                    // submitted from that screen grants the scopes.
+                    if (!this.autoConsentClientIds.has(String(interaction.params?.client_id))) {
+                        if (req.body?.consent === 'no') {
+                            await this.oidcProvider.interactionFinished(req, res, {
+                                error: 'access_denied',
+                                error_description: 'The end-user denied the authorization request.',
+                            }, {mergeWithLastSubmission: true});
+                            return;
+                        }
+                        if (req.body?.consent !== 'yes') {
+                            res.redirect(`/interaction/${uid}`);
+                            return;
+                        }
+                        const grant = new this.oidcProvider.Grant({
+                            accountId: interaction.session?.accountId,
+                            clientId: interaction.params?.client_id,
+                        });
+                        if (prompt.details?.missingOIDCScope) {
+                            grant.addOIDCScope(prompt.details.missingOIDCScope.join(' '));
+                        }
+                        if (prompt.details?.missingOIDCClaims) {
+                            grant.addOIDCClaims(prompt.details.missingOIDCClaims);
+                        }
+                        const grantId = await grant.save();
+                        await this.oidcProvider.interactionFinished(req, res, {consent: {grantId}}, {mergeWithLastSubmission: true});
+                        return;
+                    }
                     const grant = new this.oidcProvider.Grant({
                         accountId: interaction.session?.accountId,
                         clientId: interaction.params?.client_id,

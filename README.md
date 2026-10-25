@@ -318,9 +318,10 @@ or in a `.env` file when running locally.
 | Variable                        | Description                                                                                                         | Default                                       |
 |---------------------------------|---------------------------------------------------------------------------------------------------------------------|-----------------------------------------------|
 | `OIDC_ISSUER`                   | Base URL of the OIDC provider.                                                                                      | `http://localhost:3030`                       |
-| `OIDC_REGISTRATION_TOKEN`       | Token required for dynamic OIDC client registration (initial access token).                                         | (none — must be set for OIDC use)             |
+| `OIDC_REGISTRATION_TOKEN`       | Bearer token required for dynamic client registration (`POST /oidc/reg`). When unset (or blank), dynamic registration is **disabled**. | (none — registration disabled)                 |
 | `OIDC_REDIRECT_URI`             | Redirect URI for the built-in admin UI client. Leave unset to use the issuer root.                                  | `${OIDC_ISSUER}/`                             |
 | `OIDC_POST_LOGOUT_REDIRECT_URI` | Post-logout redirect URI for the built-in admin UI client. Falls back to `OIDC_REDIRECT_URI`.                       | `${OIDC_ISSUER}/`                             |
+| `OIDC_AUTO_CONSENT_CLIENTS`     | Comma-separated client IDs whose consent is granted silently (first-party apps only). All other clients are shown a consent screen. | `docpouch-admin-ui`                           |
 | `OIDC_COOKIE_KEY`               | Secret key used to encrypt/sign OIDC session cookies. **Change in production!**                                     | `docpouch-cookie-secret-change-in-production` |
 | `OIDC_COOKIE_SECURE`            | Set to `true` when running the server directly with HTTPS. Leave unset when behind a TLS-terminating reverse proxy. | `false`                                       |
 
@@ -574,13 +575,24 @@ In addition, the server exposes a few DocPouch-specific endpoints:
 
 DocPouch automatically registers a fixed OIDC client (`client_id: docpouch-admin-ui`) for the bundled admin UI.
 It uses PKCE (`token_endpoint_auth_method: none`) so the UI can log in without storing a client secret. The
-redirect and post-logout URIs default to the issuer root, but can be overridden with `OIDC_REDIRECT_URI` and
-`OIDC_POST_LOGOUT_REDIRECT_URI`. `GET /api/oidc-client-config` is what the UI uses to discover this client.
+redirect and post-logout URIs are derived from trusted server configuration — the issuer root by default,
+overridable with `OIDC_REDIRECT_URI` and `OIDC_POST_LOGOUT_REDIRECT_URI`. Request headers (such as `Host` or
+`X-Forwarded-Proto`) never influence the registered URIs. `GET /api/oidc-client-config` is what the UI uses
+to discover this client.
+
+### Consent
+
+Clients listed in `OIDC_AUTO_CONSENT_CLIENTS` (by default only `docpouch-admin-ui`) are granted consent
+silently during login. Every other client — including all clients registered through dynamic registration —
+must be approved by the signed-in user on the consent screen that DocPouch serves during the authorization
+flow. Denying on that screen aborts the request with `access_denied`.
 
 ### Registering your own client
 
 External tools (or you, when integrating DocPouch into your own application) register their own client through
-dynamic client registration. You need an `OIDC_REGISTRATION_TOKEN` from the DocPouch administrator.
+dynamic client registration. You need an `OIDC_REGISTRATION_TOKEN` from the DocPouch administrator. If no
+token is configured, dynamic client registration is disabled. Note that clients registered this way always go
+through the user-facing consent screen described above.
 
 ```ts
 import DbPouchClient from 'docpouch-client';
