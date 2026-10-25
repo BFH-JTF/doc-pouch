@@ -8,6 +8,14 @@ if (!process.env.JWT_SECRET) {
     process.env.JWT_SECRET = 'docpouch-test-jwt-secret';
 }
 
+// Generated passwords are only returned in API/MCP responses when
+// PASSWORD_IN_RESPONSE=true (#114). The existing suites assert the
+// fallback behavior, so the opt-in stays enabled for the test environment;
+// passwordResponseGating.test.ts toggles it off to verify the default.
+if (!process.env.PASSWORD_IN_RESPONSE) {
+    process.env.PASSWORD_IN_RESPONSE = 'true';
+}
+
 // Increase timeout for all tests
 jest.setTimeout(30000);
 

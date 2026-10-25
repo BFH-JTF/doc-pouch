@@ -15,11 +15,22 @@ export default class IoSocketServer {
         this.wsClientList = [];
         this.JWTOptions = JWTOptions;
         this.networkManager = networkManager;
+        // #116: the WebSocket CORS policy follows the operator-configured
+        // REST policy (ALLOWED_ORIGINS / ALLOWED_HEADERS) instead of a
+        // hardcoded wildcard.
+        const configuredCors = (networkManager.corsOptions ?? {}) as {origin?: unknown, allowedHeaders?: unknown};
+        const corsOrigin = (Array.isArray(configuredCors.origin) || typeof configuredCors.origin === 'string')
+            ? configuredCors.origin
+            : '*';
+        const corsAllowedHeaders = Array.isArray(configuredCors.allowedHeaders)
+            ? configuredCors.allowedHeaders
+            : ['Content-Type', 'Authorization', 'X-Socket-ID'];
         this.ioSocket = new Server(this.networkManager.webServer, {
             cors: {
-                origin: "*",
+                origin: corsOrigin as string | string[],
                 methods: ["GET", "POST"],
-                credentials: true
+                credentials: true,
+                allowedHeaders: corsAllowedHeaders as string[]
             },
             allowEIO3: true
         });
@@ -134,8 +145,16 @@ export default class IoSocketServer {
         }
     }
 
-    sendEventToAdmins(sourceID: string | undefined, event: I_EventString, data?: I_WsMessage) {
+    async sendEventToAdmins(sourceID: string | undefined, event: I_EventString, data?: I_WsMessage) {
         for (const client of this.wsClientList) {
+            if (!client.userid) {
+                continue;
+            }
+            // #116: privileges are re-evaluated against the database on
+            // every dispatch, so a demoted admin stops receiving admin
+            // events immediately instead of keeping them until the socket
+            // reconnects.
+            client.isAdmin = await this.networkManager.dataManager.isAdmin(client.userid);
             if (client.isAdmin) {
                 this.sendEventToClient(sourceID, client, event, data);
             }
@@ -222,14 +241,17 @@ export default class IoSocketServer {
                 }
             }
 
-            // Always send to admins, excluding the source if specified
-            const adminClients = this.wsClientList.filter(client =>
-                client.isAdmin &&
-                (!sourceID || client.socket.id !== sourceID)
-            );
-
-            for (const client of adminClients) {
-                this.sendEventToClient(sourceID, client, event, data);
+            // Always send to admins, excluding the source if specified.
+            // #116: privileges are re-evaluated against the database per
+            // dispatch (see sendEventToAdmins).
+            for (const client of this.wsClientList) {
+                if (!client.userid) {
+                    continue;
+                }
+                client.isAdmin = await this.networkManager.dataManager.isAdmin(client.userid);
+                if (client.isAdmin && (!sourceID || client.socket.id !== sourceID)) {
+                    this.sendEventToClient(sourceID, client, event, data);
+                }
             }
 
         } catch (error) {

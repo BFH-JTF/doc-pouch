@@ -294,12 +294,13 @@ or in a `.env` file when running locally.
 
 | Variable      | Description                                                                                              | Default                        |
 |---------------|----------------------------------------------------------------------------------------------------------|--------------------------------|
-| `SMTP_HOST`   | SMTP server host. If unset, email delivery is disabled and generated passwords are returned in API responses as a fallback. | *(disabled)* |
+| `SMTP_HOST`   | SMTP server host. If unset, email delivery is disabled; generated passwords are then **refused** unless `PASSWORD_IN_RESPONSE=true`. | *(disabled)* |
 | `SMTP_PORT`   | SMTP server port.                                                                                        | `587`                          |
 | `SMTP_SECURE` | Set to `true` for implicit TLS (typically port `465`); `false` uses STARTTLS on a plaintext connection.  | `false`                        |
 | `SMTP_USER`   | SMTP username. When empty, no authentication is attempted.                                               | *(empty)*                      |
 | `SMTP_PASS`   | SMTP password.                                                                                           | *(empty)*                      |
 | `SMTP_FROM`   | Displayed sender, e.g. `"DocPouch <noreply@example.com>"`.                                               | `DocPouch <noreply@localhost>` |
+| `PASSWORD_IN_RESPONSE` | Set to `true` to allow returning generated passwords in API/MCP responses when email delivery is unavailable (legacy fallback; off by default). | `false`        |
 
 > **Note**: `SMTP_FROM` must be a real, deliverable address on a domain that actually exists in DNS and whose
 > SPF/DKIM records authorize the configured SMTP server to send for it. Mail sent from a placeholder or

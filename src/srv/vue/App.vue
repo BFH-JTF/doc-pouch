@@ -492,7 +492,11 @@ function handleLoginSuccess(loginInformation: I_LoginResponse | null) {
 
 async function checkForUpdates() {
   try {
-    const response = await fetch('/version/check');
+    // #117: the version endpoint is authenticated like every other API
+    // route, so the exact server version is not disclosed anonymously.
+    const response = await fetch('/version/check', {
+      headers: authToken.value ? {Authorization: `Bearer ${authToken.value}`} : {}
+    });
     if (response.ok) {
       const data = await response.json();
       if (data.hasUpdate) {

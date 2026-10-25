@@ -14,6 +14,7 @@ describe('Version Check API', () => {
     let server: Server;
     let networkManager: NetworkManager;
     let dataManager: NeDbWrapper;
+    let adminToken: string;
 
     beforeAll(async () => {
         const setup = await setupTestServer();
@@ -24,7 +25,8 @@ describe('Version Check API', () => {
 
     beforeEach(async () => {
         await cleanupTestDatabase(dataManager);
-        await createTestUsers(dataManager);
+        const users = await createTestUsers(dataManager);
+        adminToken = users.adminToken;
     });
 
     afterAll(async () => {
@@ -32,10 +34,10 @@ describe('Version Check API', () => {
     });
 
     test('GET /version/check returns 200 with a result object or 503 if not yet cached', async () => {
-        const response = await request(server).get('/version/check');
-        // The endpoint is unauthenticated. It may return 200 with a result object
-        // (when the update checker has been able to reach the network) or 503
-        // when the cached result is not available yet.
+        const response = await authenticatedRequest(server, adminToken).get('/version/check');
+        // May return 200 with a result object (when the update checker has
+        // been able to reach the network) or 503 when the cached result is
+        // not available yet.
         expect([200, 503]).toContain(response.status);
         if (response.status === 200) {
             expect(response.body).toHaveProperty('hasUpdate');
@@ -47,9 +49,9 @@ describe('Version Check API', () => {
         }
     });
 
-    test('GET /version/check is accessible without authentication', async () => {
+    test('GET /version/check requires authentication (#117)', async () => {
         const response = await request(server).get('/version/check');
-        // Should never be 401 - this is a public endpoint
-        expect(response.status).not.toBe(401);
+        // The exact server version must not be disclosed anonymously.
+        expect(response.status).toBe(401);
     });
 });

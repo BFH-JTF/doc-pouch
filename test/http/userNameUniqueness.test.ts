@@ -54,7 +54,7 @@ describe('Username uniqueness (#111)', () => {
                 isAdmin: false,
             });
 
-        expect(res.status).toBe(500);
+        expect(res.status).toBe(409);
         expect(res.body.error).toContain('already exists');
 
         // Exactly one user named "user" must exist afterwards.

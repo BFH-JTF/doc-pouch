@@ -16,6 +16,15 @@ export interface EmailDeliveryResult {
     message: string;
 }
 
+/**
+ * #114: whether generated passwords may be returned in API/MCP responses
+ * when email delivery is unavailable. Off by default — the fallback is an
+ * explicit operator opt-in (PASSWORD_IN_RESPONSE=true).
+ */
+export function passwordInResponseAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+    return env.PASSWORD_IN_RESPONSE === 'true';
+}
+
 export default class EmailService {
     private transporter: Transporter | null = null;
     private readonly fromAddress: string;
@@ -43,7 +52,7 @@ export default class EmailService {
         } else {
             this.configured = false;
             if (!options.suppressWarning) {
-                this.logger.warn("EmailService: SMTP not configured. Email delivery is disabled. Passwords will be shown in API responses as fallback.");
+                this.logger.warn("EmailService: SMTP not configured. Email delivery is disabled. Generated passwords are NOT returned in API responses unless PASSWORD_IN_RESPONSE=true is set.");
             }
         }
     }
