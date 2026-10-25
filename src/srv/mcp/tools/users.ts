@@ -287,9 +287,12 @@ export function registerUserTools(
         try {
             const user = await dataManager.getUserByEmail(args.email);
             if (user) {
+                // #110: only the raw token is passed; EmailService builds the
+                // link from its trusted, configured base URL. The previous
+                // code passed a full URL (doubly concatenated by
+                // EmailService) with a hardcoded localhost fallback.
                 const token = await dataManager.createPasswordResetToken(user._id);
-                const baseUrl = process.env.BASE_URL || 'http://localhost:3030';
-                await emailService.sendForgotPasswordEmail(args.email, (user as any).name, `${baseUrl}/reset-password?token=${token}`);
+                await emailService.sendForgotPasswordEmail(args.email, (user as any).name, token);
             }
             return {
                 content: [{

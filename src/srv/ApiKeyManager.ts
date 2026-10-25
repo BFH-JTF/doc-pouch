@@ -68,11 +68,22 @@ export default class ApiKeyManager {
     }
 
     async verifyApiKey(fullKey: string): Promise<{ userId: string; keyId: string } | null> {
+        // #115: a syntax pre-check rejects malformed keys before any
+        // database work or hashing.
         if (!fullKey.startsWith("docpouch_key_")) {
             return null;
         }
+        const keyBody = fullKey.substring("docpouch_key_".length);
+        if (!/^[0-9a-f]{64}$/.test(keyBody)) {
+            return null;
+        }
 
-        const keys = await this.query({}) as I_ApiKey[];
+        // #115: candidates are narrowed by the stored key prefix (the
+        // first 8 hex characters) before any bcrypt compare. Bcrypt is
+        // deliberately expensive; comparing against every stored key for
+        // every failed bearer token allowed an unauthenticated CPU DoS.
+        const keyPrefix = keyBody.substring(0, 8);
+        const keys = await this.query({keyPrefix}) as I_ApiKey[];
         for (const key of keys) {
             if (key.expiresAt && key.expiresAt < Date.now()) {
                 continue;

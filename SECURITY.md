@@ -42,7 +42,10 @@ indicates when a newer release is available.
   the configured `ADMIN_INITIAL_PASSWORD`). It is not written to log files.
   Change it immediately after the first login.
 - Users with `isAdmin: true` (super-admins) can export the complete database,
-  including the password hashes of all users. Restrict super-admin accounts
+  including the password hashes of all users when the export request explicitly
+  passes `includeHashes=true` (the admin UI's backup/export menu does so
+  automatically). Hashes are stripped from exports and user listings otherwise.
+  Restrict super-admin accounts
   to the minimum necessary, and audit them regularly.
 - Every change of a user's `isAdmin`/`role` privilege is written to the server
   log (including denied attempts), so privilege escalation attempts and changes

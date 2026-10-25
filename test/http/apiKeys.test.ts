@@ -63,6 +63,30 @@ describe('API key generation (#109)', () => {
         expect(rejected).toBeNull();
     });
 
+    test('malformed keys are rejected before any hashing work (#115)', async () => {
+        // Wrong syntax: not 64 hex characters.
+        expect(await dataManager.apiKeys.verifyApiKey('docpouch_key_short')).toBeNull();
+        // Wrong syntax: non-hex characters.
+        expect(await dataManager.apiKeys.verifyApiKey(`docpouch_key_${'zz'.repeat(32)}`)).toBeNull();
+        // Wrong prefix entirely.
+        expect(await dataManager.apiKeys.verifyApiKey('wrong-prefix_abc')).toBeNull();
+    });
+
+    test('candidates are narrowed by the stored key prefix (#115)', async () => {
+        const created = await dataManager.apiKeys.createApiKey(userId, 'prefix-filter');
+        const verified = await dataManager.apiKeys.verifyApiKey(created.key);
+        expect(verified?.userId).toBe(userId);
+
+        // A well-formed key whose 8-char prefix matches no stored key is
+        // rejected without any bcrypt compare (the prefix query returns an
+        // empty candidate set). The prefix of the created key must not
+        // accidentally collide with the all-'f' prefix used here.
+        const unrelatedPrefix = `docpouch_key_${'f'.repeat(64)}`;
+        if (created.key.substring(13, 21) !== 'ffffffff') {
+            expect(await dataManager.apiKeys.verifyApiKey(unrelatedPrefix)).toBeNull();
+        }
+    });
+
     test('REST level: a generated key authenticates against a protected endpoint', async () => {
         const createRes = await request(server)
             .post('/api-keys/create')

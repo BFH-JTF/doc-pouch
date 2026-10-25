@@ -18,6 +18,7 @@ import {
 } from "docpouch-client";
 import ApiKeyManager from "./ApiKeyManager.js";
 import EmailService from "./EmailService.js";
+import {stripUserPasswords} from "./userSanitizer.js";
 import {type Role, effectiveRole, hasRole, isAssignableRole} from "./roles.js";
 
 
@@ -34,6 +35,14 @@ export interface INeDbOptions {
 
 export type DatabaseCollection = "users" | "documents" | "structures";
 export type ImportMode = "replace" | "add" | "skip";
+
+/**
+ * Pre-computed bcrypt hash used to equalize the timing of login attempts
+ * for unknown usernames. Without it, an unknown user fails noticeably
+ * faster than a wrong password for a real user, which leaks which
+ * usernames exist (#113).
+ */
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("docpouch-invalid-credentials", 10);
 
 export interface IDatabaseExportData {
     users: any[];
@@ -581,12 +590,14 @@ export default class NeDbWrapper {
                     if (isAdmin) {
                         // Admin can see all users
                         this.users.query({}).then((result) => {
-                            resolve(result as I_UserEntry[]);
+                            // #112: never leak bcrypt password hashes
+                            // across the API boundary.
+                            resolve(stripUserPasswords(result as I_UserEntry[]));
                         });
                     } else {
                         // Normal user can only see themselves
                         this.users.query({_id: requestingUserID}).then((result) => {
-                            resolve(result as I_UserEntry[]);
+                            resolve(stripUserPasswords(result as I_UserEntry[]));
                         });
                     }
                 });
@@ -677,8 +688,10 @@ export default class NeDbWrapper {
                 reject(new Error("Password must be at least 8 characters long"));
                 return;
             }
-            if (newUser.name.length < 1)
+            if (!newUser.name || newUser.name.length < 1) {
                 reject(new Error("User must have a name"));
+                return;
+            }
             this.users.count({name: newUser.name})
                 .then((count) => {
                     if (count > 0)
@@ -694,11 +707,22 @@ export default class NeDbWrapper {
                                 isAdmin: newUser.isAdmin,
                                 role: isAssignableRole(newUser.role) ? newUser.role : "member",
                             })
-                                .then((result) => {
+                                .then(async (result) => {
+                                    // TOCTOU defense: if a concurrent
+                                    // create raced past the pre-check, roll
+                                    // this insert back so the name stays
+                                    // unique.
+                                    const duplicates = (await this.users.query({name: newUser.name}))
+                                        .filter((u: any) => u._id !== (result as any)._id);
+                                    if (duplicates.length > 0) {
+                                        await this.users.remove({_id: (result as any)._id});
+                                        reject(new Error("User name already exists"));
+                                        return;
+                                    }
                                     const {password: _, ...safeUser} = newUser;
                                     this.logger.info("Created new user account: " + JSON.stringify(safeUser));
                                     resolve(result as I_UserEntry);
-                                })
+                                }).catch(reject);
                         })
                     }
                 })
@@ -773,13 +797,24 @@ export default class NeDbWrapper {
                         if (validated) {
                             resolve(user);
                         } else {
+                            this.logger.debug(`Login failed (wrong password) for user: ${username}`);
                             resolve(401);
                         }
                     }).catch(() => {
                         resolve(401);
                     });
                 } else {
-                    resolve(404);
+                    // #113: unknown usernames and wrong passwords must be
+                    // indistinguishable in status code and timing. The
+                    // dummy compare makes an unknown user cost the same as
+                    // a real one; the distinction is only logged
+                    // server-side.
+                    bcrypt.compare(password, DUMMY_PASSWORD_HASH).then(() => {
+                        this.logger.debug(`Login failed (unknown user): ${username}`);
+                        resolve(401);
+                    }).catch(() => {
+                        resolve(401);
+                    });
                 }
             }).catch((error) => {
                 reject(new Error("Database error: " + error));
@@ -814,43 +849,47 @@ export default class NeDbWrapper {
         });
     }
 
-    updateUser(userID: string, updateData: Partial<I_UserEntry>): Promise<number> {
-        return new Promise((resolve, reject) => {
-            this.users.query({_id: userID}).then((userDoc) => {
-                if (userDoc.length > 0) {
-                    const user = userDoc[0];
-                    if (!user) {
-                        reject(new Error("User not found"));
-                        return;
-                    }
+    async updateUser(userID: string, updateData: Partial<I_UserEntry>): Promise<number> {
+        const userDoc = await this.users.query({_id: userID});
+        if (userDoc.length === 0 || !userDoc[0]) {
+            throw new Error("User not found");
+        }
+        const user = userDoc[0] as I_UserEntry;
 
-                    if ("name" in updateData && updateData.name) {
-                        const newUserName = updateData.name;
+        // #111: the name uniqueness check runs BEFORE any write, excludes
+        // the user being updated (so keeping one's own name is allowed),
+        // and a failed check actually prevents the update. Previously the
+        // async check rejected the promise but the write still executed,
+        // which allowed duplicate usernames and login-by-name ambiguity.
+        const newName = updateData.name;
+        const renames = newName !== undefined && newName !== user.name;
+        if (renames) {
+            const conflicting = (await this.users.query({name: newName}))
+                .filter((u: any) => u._id !== userID);
+            if (conflicting.length > 0) {
+                throw new Error("User with this name already exists");
+            }
+        }
 
-                        this.users.count({name: newUserName}).then((count) => {
-                            if (count > 0) {
-                                reject(new Error("User with this name already exists"));
-                            }
-                        }).catch(reject);
-                    }
+        if (updateData.password) {
+            updateData.password = await bcrypt.hash(updateData.password, this.saltRounds);
+        }
 
-                    if ("password" in updateData && updateData.password) {
-                        bcrypt.hash(updateData.password, this.saltRounds).then((hash: string) => {
-                            updateData.password = hash;
-                            this.users.update(userID, updateData).then((result) => {
-                                resolve(result);
-                            }).catch(reject);
-                        })
-                    } else {
-                        this.users.update(userID, updateData).then((result) => {
-                            resolve(result);
-                        }).catch(reject);
-                    }
-                } else {
-                    reject(new Error("User not found"));
-                }
-            }).catch(reject);
-        });
+        const result = await this.users.update(userID, updateData);
+
+        // TOCTOU defense: re-check the invariant after the write. If a
+        // concurrent create/update raced past the pre-check, roll the
+        // rename back so usernames stay unique.
+        if (renames) {
+            const duplicates = (await this.users.query({name: newName}))
+                .filter((u: any) => u._id !== userID);
+            if (duplicates.length > 0) {
+                await this.users.update(userID, {name: user.name});
+                throw new Error("User with this name already exists");
+            }
+        }
+
+        return result;
     }
 
     isAdmin(userID: string): Promise<boolean> {

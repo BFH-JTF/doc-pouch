@@ -99,7 +99,7 @@ describe('User Management API Tests', () => {
             expect(response.status).toBe(405);
         });
 
-        test('should return 404 for non-existent user', async () => {
+        test('should return 401 (not 404) for a non-existent user — username enumeration (#113)', async () => {
             const response = await request(server)
                 .post('/users/login')
                 .send({
@@ -107,7 +107,10 @@ describe('User Management API Tests', () => {
                     password: 'password'
                 });
 
-            expect(response.status).toBe(404);
+            // Unknown usernames and wrong passwords must be
+            // indistinguishable, so both return 401 with the same body.
+            expect(response.status).toBe(401);
+            expect(response.body.error).toBe('Invalid user or password');
         });
     });
 

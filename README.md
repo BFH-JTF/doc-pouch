@@ -472,10 +472,13 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 
 ### User Management
 - `POST /users/login` - Authenticate a user and receive a JWT token
-- `GET /users/list` - List user information (all users for admins, own info for regular users)
+- `GET /users/list` - List user information (all users for admins, own info for regular users; password hashes are never returned)
 - `GET /users/whoami` - Get information about the current authenticated user
 - `POST /users/create` - Create a new user (admin only)
 - `PATCH /users/update/{userID}` - Update user information
+- `POST /users/forgot-password` - Request a password-reset email for an account
+- `POST /users/reset-password` - Set a new password with a single-use reset token (from the emailed
+  `${BASE_URL}/reset-password?token=...` link, which the admin UI handles automatically)
 - `DELETE /users/remove/{userID}` - Remove a user and all their documents (admin only)
 
 ### Document Management
@@ -510,6 +513,9 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
     - Query parameters:
         - `scope`: Export scope - `all` (default), `users`, `documents`, or `structures`
         - `format`: Export format - `zip` (default) or `json`
+        - `includeHashes`: Include bcrypt password hashes in the exported user records - `false` (default) or `true`.
+          Hashes are stripped unless this is set; pass `true` for backups whose restore must preserve credentials
+          (the admin UI's export menu does this automatically).
     - Example: `GET /database/export?scope=users&format=json`
 - `POST /database/import` - Import database (admin only)
     - Form data:

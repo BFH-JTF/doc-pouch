@@ -50,6 +50,16 @@ export default class EmailService {
         return this.configured;
     }
 
+    /**
+     * Builds the reset-password link from the trusted, configured base URL
+     * (#110). The reset token must be the raw token value; callers must
+     * never pass a complete URL here (older call sites did, producing
+     * doubly-concatenated, unusable links).
+     */
+    buildResetUrl(resetToken: string): string {
+        return `${this.baseUrl}/reset-password?token=${resetToken}`;
+    }
+
     async sendWelcomeEmail(to: string, username: string, password: string): Promise<EmailDeliveryResult> {
         if (!this.configured || !this.transporter) {
             return {sent: false, message: "SMTP not configured"};
@@ -104,7 +114,7 @@ export default class EmailService {
             return {sent: false, message: "SMTP not configured"};
         }
 
-        const resetUrl = `${this.baseUrl}/reset-password?token=${resetToken}`;
+        const resetUrl = this.buildResetUrl(resetToken);
         const subject = "Reset Your DocPouch Password";
         const text = [
             `Hello ${username},`,

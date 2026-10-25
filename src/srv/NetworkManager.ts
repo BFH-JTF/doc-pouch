@@ -34,6 +34,7 @@ import {JWTOptions, parseDurationToSeconds} from "./webTokenStuff.js";
 import EmailService from "./EmailService.js";
 import {generatePassword} from "./passwordGenerator.js";
 import {resolveTrustProxy, stripUntrustedForwardedHeaders} from "./trustProxy.js";
+import {stripUserPassword, stripUserPasswords, stripUserPasswordsFromExport} from "./userSanitizer.js";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
@@ -1231,7 +1232,9 @@ export default class NetworkManager {
 
                         this.dataManager.createUser(validatedObject as I_UserCreation)
                             .then(async (newUser) => {
-                                this.socketServer.sendEventToAdmins(req.socketID, "newUser", {newUser: newUser});
+                                // #112: never broadcast the password hash to
+                                // connected admin clients.
+                                this.socketServer.sendEventToAdmins(req.socketID, "newUser", {newUser: stripUserPassword(newUser as any)});
                                 const {password: _, ...safeNewUser} = newUser as any;
                                 this.logger.info(`New user created: ${JSON.stringify(safeNewUser)}`);
 
@@ -1391,8 +1394,13 @@ export default class NetworkManager {
                         .catch((error) => {
                             if (error.message.includes("not found")) {
                                 res.status(404).json({error: "User not found"});
+                            } else if (error.message.includes("already exists")) {
+                                // #111: a duplicate username is a client
+                                // conflict, not a server error — and unlike
+                                // before, the update is no longer applied.
+                                res.status(409).json({error: error.message});
                             } else {
-                                res.status(500).json({error: error.message});
+                                res.status(500).json({error: "Failed to update user"});
                             }
                         })
                 })
@@ -1472,8 +1480,12 @@ export default class NetworkManager {
                 const user = await this.dataManager.getUserByEmail(email);
                 if (user) {
                     const token = await this.dataManager.createPasswordResetToken(user._id);
-                    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.headers.host}`;
-                    await this.emailService.sendForgotPasswordEmail(email, (user as any).name, `${baseUrl}/reset-password?token=${token}`);
+                    // #110: only the raw token is passed; EmailService builds
+                    // the link from its trusted, configured base URL. The
+                    // previous code passed a full URL that EmailService
+                    // prefixed again (producing unusable links) and derived
+                    // the host from the client-controlled Host header.
+                    await this.emailService.sendForgotPasswordEmail(email, (user as any).name, token);
                 }
             } catch (error: any) {
                 this.logger.error(`Error processing forgot-password request: ${error.message}`);
@@ -1939,16 +1951,27 @@ export default class NetworkManager {
                     return res.status(400).json({error: (error as Error).message});
                 }
 
+                // #112: password hashes are stripped from exports unless the
+                // request explicitly opts in (includeHashes=true), e.g. for
+                // backups whose restore must preserve credentials.
+                const includeHashes = req.query.includeHashes === 'true';
+
                 try {
                     if (format === "json") {
                         if (scope === "all") {
                             const exportData = await this.dataManager.exportAllData();
+                            if (!includeHashes) {
+                                stripUserPasswordsFromExport(exportData);
+                            }
                             res.setHeader("Content-Type", "application/json");
                             res.setHeader("Content-Disposition", 'attachment; filename="docpouch-database.json"');
                             return res.status(200).send(JSON.stringify(exportData, null, 2));
                         }
 
-                        const scopedData = await this.dataManager.exportCollection(scope);
+                        let scopedData = await this.dataManager.exportCollection(scope);
+                        if (scope === "users" && !includeHashes) {
+                            scopedData = stripUserPasswords(scopedData);
+                        }
                         res.setHeader("Content-Type", "application/json");
                         res.setHeader("Content-Disposition", `attachment; filename="docpouch-${scope}.json"`);
                         return res.status(200).send(JSON.stringify(scopedData, null, 2));
@@ -1985,6 +2008,9 @@ export default class NetworkManager {
 
                     archive.pipe(output);
                     const exportData = await this.dataManager.exportAllData();
+                    if (!includeHashes) {
+                        stripUserPasswordsFromExport(exportData);
+                    }
                     archive.append(JSON.stringify(exportData.users, null, 2), {name: 'docpouch-users.json'});
                     archive.append(JSON.stringify(exportData.documents, null, 2), {name: 'docpouch-documents.json'});
                     archive.append(JSON.stringify(exportData.structures, null, 2), {name: 'docpouch-structures.json'});
@@ -2247,10 +2273,12 @@ export default class NetworkManager {
             this.socketServer.sendEventToAllClients(sourceID, "changedStructure", {changedStructure: structure});
         }
         for (const user of result.users.created) {
-            this.socketServer.sendEventToAdmins(sourceID, "newUser", {newUser: user});
+            // #112: never broadcast password hashes to connected admin
+            // clients.
+            this.socketServer.sendEventToAdmins(sourceID, "newUser", {newUser: stripUserPassword(user)});
         }
         for (const user of result.users.updated) {
-            this.socketServer.sendEventToAdmins(sourceID, "changedUser", {changedUser: user});
+            this.socketServer.sendEventToAdmins(sourceID, "changedUser", {changedUser: stripUserPassword(user)});
         }
         for (const document of result.documents.created) {
             this.socketServer.sendEventToDocumentAccessors(sourceID, document._id, "newDocument", {newDocument: document})
