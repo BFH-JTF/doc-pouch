@@ -89,7 +89,7 @@ export default class NeDbWrapper {
         this.filenamePrefix = options.filenamePrefix ?? undefined;
         this.dbPath = options.dbPath ?? "./db";
         this._anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
-        this.emailService = new EmailService(null, winstonLogger, ""); // placeholder; will be set via setEmailService
+        this.emailService = new EmailService(null, winstonLogger, "", {suppressWarning: true}); // placeholder; will be set via setEmailService
         if (!fs.existsSync(this.dbPath)) {
             fs.mkdirSync(this.dbPath);
         }

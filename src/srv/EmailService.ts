@@ -23,7 +23,7 @@ export default class EmailService {
     private readonly logger: winston.Logger;
     private readonly baseUrl: string;
 
-    constructor(smtpConfig: SmtpConfig | null, logger: winston.Logger, baseUrl: string) {
+    constructor(smtpConfig: SmtpConfig | null, logger: winston.Logger, baseUrl: string, options: {suppressWarning?: boolean} = {}) {
         this.logger = logger;
         this.baseUrl = baseUrl;
         this.fromAddress = smtpConfig?.from || "DocPouch <noreply@localhost>";
@@ -42,7 +42,9 @@ export default class EmailService {
             this.logger.info(`EmailService configured: SMTP ${smtpConfig.host}:${smtpConfig.port}, from=${this.fromAddress}`);
         } else {
             this.configured = false;
-            this.logger.warn("EmailService: SMTP not configured. Email delivery is disabled. Passwords will be shown in API responses as fallback.");
+            if (!options.suppressWarning) {
+                this.logger.warn("EmailService: SMTP not configured. Email delivery is disabled. Passwords will be shown in API responses as fallback.");
+            }
         }
     }
 
