@@ -1,3 +1,8 @@
+// Load .env before any other module import: several modules read
+// environment variables at module scope (e.g. webTokenStuff resolves the
+// JWT secret at import time), so dotenv must run first. ESM imports are
+// evaluated in order, hence this side-effect import comes first.
+import 'dotenv/config';
 import NetworkManager from "./NetworkManager.js";
 import NeDbWrapper, {type INeDbOptions} from "./NeDbWrapper.js";
 import EmailService, {type SmtpConfig} from "./EmailService.js";
@@ -6,9 +11,6 @@ import fs from "fs";
 import {checkForUpdates} from "./updateChecker.js";
 import {initOidcDatabases, setOidcAdapterLogger} from "./OidcAdapter.js";
 import type {I_CorsOption} from "../types.ts";
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || "*";
 const ALLOWED_HEADERS = process.env.ALLOWED_HEADERS || "Content-Type, Authorization, X-Socket-ID";

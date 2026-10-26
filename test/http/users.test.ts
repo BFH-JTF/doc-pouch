@@ -99,7 +99,7 @@ describe('User Management API Tests', () => {
             expect(response.status).toBe(405);
         });
 
-        test('should return 404 for non-existent user', async () => {
+        test('should return 401 (not 404) for a non-existent user — username enumeration (#113)', async () => {
             const response = await request(server)
                 .post('/users/login')
                 .send({
@@ -107,7 +107,10 @@ describe('User Management API Tests', () => {
                     password: 'password'
                 });
 
-            expect(response.status).toBe(404);
+            // Unknown usernames and wrong passwords must be
+            // indistinguishable, so both return 401 with the same body.
+            expect(response.status).toBe(401);
+            expect(response.body.error).toBe('Invalid user or password');
         });
     });
 
@@ -339,7 +342,9 @@ describe('User Management API Tests', () => {
             expect(response.body).toHaveProperty('_id');
             expect(response.body.name).toBe(newUser.name);
             expect(response.body.email).toBe(newUser.email);
-            // Since SMTP is not configured, the password should be in the response as fallback
+            // The test environment opts in to the legacy fallback
+            // (PASSWORD_IN_RESPONSE=true, see jestSetup.cts), so the
+            // auto-generated password is returned in the response.
             expect(response.body).toHaveProperty('password');
             expect(response.body.password.length).toBeGreaterThanOrEqual(8);
         });
@@ -361,8 +366,14 @@ describe('User Management API Tests', () => {
             expect(response.status).toBe(200);
             expect(response.body).toHaveProperty('_id');
             expect(response.body.name).toBe(newUser.name);
-            // Password should be shown as fallback since SMTP is not configured
-            expect(response.body).toHaveProperty('password');
+            // #114: with an explicit password the admin already knows it, so
+            // it is never echoed in the response — not even as a fallback.
+            expect(response.body).not.toHaveProperty('password');
+            // And the explicit password must authenticate the new user.
+            const loginResponse = await request(server)
+                .post('/users/login')
+                .send({name: newUser.name, password: newUser.password});
+            expect(loginResponse.status).toBe(200);
         });
 
         test('should reject user creation without email', async () => {

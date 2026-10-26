@@ -11,7 +11,7 @@ import {
 import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
-import type {I_UserCreation, I_UserEntry, I_UserUpdate, I_AssignableRole} from "docpouch-client";
+import type {I_UserCreation, I_UserEntry, I_UserUpdate, I_AssignableRole, I_DocumentEntry} from "docpouch-client";
 import {effectiveRole, isAssignableRole} from "./roles.js";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode, type IImportResult} from "./NeDbWrapper.js";
 import winston from "winston";
@@ -31,9 +31,10 @@ import {authenticateRequest} from "./mcp/auth.js";
 import McpManager from "./mcp/McpManager.js";
 import jwt from "jsonwebtoken";
 import {JWTOptions, parseDurationToSeconds} from "./webTokenStuff.js";
-import EmailService from "./EmailService.js";
+import EmailService, {passwordInResponseAllowed} from "./EmailService.js";
 import {generatePassword} from "./passwordGenerator.js";
 import {resolveTrustProxy, stripUntrustedForwardedHeaders} from "./trustProxy.js";
+import {stripUserPassword, stripUserPasswords, stripUserPasswordsFromExport} from "./userSanitizer.js";
 const DATABASE_COLLECTIONS: DatabaseCollection[] = ["users", "documents", "structures"];
 type DatabaseScope = DatabaseCollection | "all";
 type ExportFormat = "json" | "zip";
@@ -85,12 +86,82 @@ function parseImportMode(rawMode: unknown): ImportMode {
     throw new Error("Invalid import mode. Allowed values: replace, add, skip.");
 }
 
+/**
+ * Origin of the configured OIDC issuer (scheme + host + port, no path).
+ * Used to derive the redirect URIs of the first-party client from
+ * trusted configuration instead of client-controlled request headers (#106).
+ */
+function issuerOrigin(issuer: string): string {
+    try {
+        return new URL(issuer).origin;
+    } catch {
+        return issuer.replace(/\/oidc\/?$/, '');
+    }
+}
+
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
+ * Resolves the OIDC session-cookie signing key (#108).
+ *
+ * - When `OIDC_COOKIE_KEY` is configured (after trimming), it is used.
+ * - When it is missing and `NODE_ENV=production`, startup fails closed:
+ *   session cookies must never be signed with a publicly known constant.
+ * - Otherwise (development/test without configuration) a random
+ *   per-process key is generated (warned about). OIDC sessions then do
+ *   not survive restarts, but cannot be forged.
+ */
+export function resolveOidcCookieKey(env: NodeJS.ProcessEnv = process.env): string {
+    const configured = env.OIDC_COOKIE_KEY?.trim();
+    if (configured && configured.length > 0) {
+        return configured;
+    }
+    if (env.NODE_ENV === "production") {
+        throw new Error(
+            "OIDC_COOKIE_KEY must be set to a strong random value when NODE_ENV=production. Generate one with: openssl rand -base64 32"
+        );
+    }
+    return crypto.randomBytes(32).toString("base64");
+}
+
+/**
+ * oidc-provider interaction uids are base64url tokens ([A-Za-z0-9_-]).
+ * A request parameter that does not match this shape can never be a real
+ * interaction uid, so it is rejected before it is ever interpolated into
+ * an HTML template or a redirect target.
+ */
+function isValidInteractionUid(uid: string | string[] | undefined): uid is string {
+    return typeof uid === 'string' && /^[A-Za-z0-9_-]+$/.test(uid) && uid.length <= 128;
+}
+
+/**
+ * Human-readable descriptions for the OIDC scopes offered on the consent
+ * screen. Unknown scopes are rendered as their raw (escaped) name.
+ */
+const OIDC_SCOPE_DESCRIPTIONS: Record<string, string> = {
+    openid: 'Verify your identity',
+    profile: 'Read your profile (name)',
+    email: 'Read your email address',
+    offline_access: 'Keep access while you are offline (refresh tokens)',
+};
+
 export function cspMiddleware(req: Request, res: Response, next: NextFunction) {
     const nonce = crypto.randomBytes(16).toString('base64');
     res.locals.nonce = nonce;
+    // #119: 'strict-dynamic' was removed. It makes supporting browsers
+    // ignore host-source allowlists like 'self', which would block the
+    // SPA's <script src> tags (they do not carry the nonce). The nonce
+    // still gates the inline scripts of the interaction pages.
     const csp = [
         "default-src 'none'",
-        `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+        `script-src 'self' 'nonce-${nonce}'`,
         `style-src 'self' 'nonce-${nonce}'`,
         "img-src 'self' https:",
         "connect-src 'self'",
@@ -116,6 +187,8 @@ export default class NetworkManager {
     validator: SchemaValidator
     oidcProvider: any
     private readonly anonymousDocumentsEnabled: boolean;
+    private readonly autoConsentClientIds: Set<string>;
+    private readonly dynamicRegistrationEnabled: boolean;
     private mcpManager?: McpManager;
     emailService: EmailService;
 
@@ -130,6 +203,24 @@ export default class NetworkManager {
         this.dataManager = dataManager;
         this.logger = logger;
         this.anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
+        // #107: clients whose consent is granted silently (first-party
+        // applications). Every other client must be approved explicitly by
+        // the signed-in user on the consent screen.
+        this.autoConsentClientIds = new Set(
+            (process.env.OIDC_AUTO_CONSENT_CLIENTS || 'docpouch-admin-ui')
+                .split(',')
+                .map(entry => entry.trim())
+                .filter(entry => entry.length > 0)
+        );
+        // #107: when OIDC_REGISTRATION_TOKEN is unset (or blank), dynamic
+        // client registration fails closed. oidc-provider treats an undefined
+        // initialAccessToken as "no authentication required", which would
+        // leave POST /oidc/reg open to anyone.
+        const registrationToken = process.env.OIDC_REGISTRATION_TOKEN?.trim();
+        this.dynamicRegistrationEnabled = registrationToken !== undefined && registrationToken.length > 0;
+        if (!this.dynamicRegistrationEnabled) {
+            this.logger.warn('OIDC_REGISTRATION_TOKEN is not set; dynamic client registration is disabled.');
+        }
         this.validator = new SchemaValidator(logger);
         this.emailService = emailService;
         dataManager.setEmailService(emailService);
@@ -138,6 +229,14 @@ export default class NetworkManager {
         let jwks: any;
         if (fs.existsSync(jwksFile)) {
             jwks = JSON.parse(fs.readFileSync(jwksFile, 'utf8'));
+            // #119: the JWKS file contains the OIDC signing private key.
+            // Restrict it to the owning user, also fixing files written by
+            // older versions with the platform default (0644).
+            try {
+                fs.chmodSync(jwksFile, 0o600);
+            } catch {
+                // Windows ignores POSIX modes.
+            }
             this.logger.info('Loaded existing JWKS from disk');
         } else {
             // Generate static JWKS for token signing (development/simple setup)
@@ -171,7 +270,13 @@ export default class NetworkManager {
             if (!fs.existsSync(path.dirname(jwksFile))) {
                 fs.mkdirSync(path.dirname(jwksFile), {recursive: true});
             }
+            // #119: written with 0600 — the file holds the private key.
             fs.writeFileSync(jwksFile, JSON.stringify(jwks, null, 2), 'utf8');
+            try {
+                fs.chmodSync(jwksFile, 0o600);
+            } catch {
+                // Windows ignores POSIX modes.
+            }
             this.logger.info('Persisted new JWKS to disk');
         }
 
@@ -182,11 +287,19 @@ export default class NetworkManager {
         const issuer = process.env.OIDC_ISSUER;
         this.logger.info(`Initializing OIDC provider with issuer: ${issuer}`);
 
+        // #108: the cookie signing key comes from configuration; a missing
+        // key fails closed in production and falls back to a random
+        // per-process key (warned about) elsewhere.
+        if (!process.env.OIDC_COOKIE_KEY?.trim()) {
+            this.logger.warn('OIDC_COOKIE_KEY is not set; using a random per-process key. OIDC sessions will not survive restarts. Set OIDC_COOKIE_KEY in production.');
+        }
+        const oidcCookieKeys = [resolveOidcCookieKey()];
+
         this.oidcProvider = new oidc.Provider(issuer, {
             adapter: OidcAdapter,
             jwks: jwks,
             cookies: {
-                keys: [process.env.OIDC_COOKIE_KEY || 'docpouch-cookie-secret-change-in-production'],
+                keys: oidcCookieKeys,
                 long: {
                     secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
                     httpOnly: true,
@@ -222,7 +335,8 @@ export default class NetworkManager {
                         const xsrfMatch = form.match(/name="xsrf" value="([^"]+)"/);
                         ctx.logger?.debug({
                             event: 'logoutSource.render',
-                            xsrf: xsrfMatch ? xsrfMatch[1] : 'NOT_FOUND',
+                            // #119: never log the XSRF secret itself.
+                            xsrf: xsrfMatch ? '[present]' : 'NOT_FOUND',
                             sessionUid: ctx.oidc?.session?.uid,
                             sessionAccountId: ctx.oidc?.session?.accountId,
                             sessionDestroyed: ctx.oidc?.session?.destroyed,
@@ -261,7 +375,9 @@ export default class NetworkManager {
                         html = html.replace(/__NONCE__/g, ctx.res.locals?.nonce || '');
                         html = html.replace('__ACTION_URL__', actionMatch ? actionMatch[1] : '');
                         html = html.replace('__XSRF__', xsrfMatch ? xsrfMatch[1] : '');
-                        html = html.replace('__POST_LOGOUT_REDIRECT_URI__', cancelUrl);
+                        // #119: the return URL is HTML-escaped before being
+                        // interpolated into the template.
+                        html = html.replace('__POST_LOGOUT_REDIRECT_URI__', escapeHtml(cancelUrl));
                         ctx.body = html;
                     },
                     postLogoutSuccessSource: async function renderLogoutSuccessPage(ctx: any) {
@@ -422,24 +538,26 @@ export default class NetworkManager {
                 backchannelLogout: {enabled: true},
                 pushedAuthorizationRequests: {enabled: true},
                 registration: {
-                    enabled: true,
-                    initialAccessToken: process.env.OIDC_REGISTRATION_TOKEN,
+                    // #107: registration is only enabled when a registration
+                    // token is configured; see dynamicRegistrationEnabled.
+                    enabled: this.dynamicRegistrationEnabled,
+                    initialAccessToken: this.dynamicRegistrationEnabled ? registrationToken : undefined,
                     issueRegistrationAccessToken: true,
                     secretFactory: (ctx) => {
                         return crypto.randomBytes(64).toString('base64url');
                     }
                 },
-                registrationManagement: {enabled: true, rotateRegistrationAccessToken: false},
+                registrationManagement: {enabled: this.dynamicRegistrationEnabled, rotateRegistrationAccessToken: false},
             },
             // Additional configuration for proper logout handling
             clients: [
                 {
                     client_id: 'docpouch-admin-ui',
                     client_name: 'DocPouch Admin UI',
-                    redirect_uris: [process.env.OIDC_REDIRECT_URI || `${issuer.replace('/oidc', '')}/`],
+                    redirect_uris: [process.env.OIDC_REDIRECT_URI || `${issuerOrigin(issuer)}/`],
                     post_logout_redirect_uris: [
-                        process.env.OIDC_POST_LOGOUT_REDIRECT_URI || process.env.OIDC_REDIRECT_URI || `${issuer.replace('/oidc', '')}/`,
-                        `${issuer.replace('/oidc', '')}/oidc/logout-redirect`,
+                        process.env.OIDC_POST_LOGOUT_REDIRECT_URI || process.env.OIDC_REDIRECT_URI || `${issuerOrigin(issuer)}/`,
+                        `${issuerOrigin(issuer)}/oidc/logout-redirect`,
                     ],
                     grant_types: ['authorization_code', 'refresh_token'],
                     response_types: ['code'],
@@ -509,7 +627,7 @@ export default class NetworkManager {
 
         // Configure trusted headers for proxy
         this.oidcProvider.app.proxy = true;
-        this.oidcProvider.app.keys = [process.env.OIDC_COOKIE_KEY || 'docpouch-cookie-secret-change-in-production'];
+        this.oidcProvider.app.keys = oidcCookieKeys;
 
         this.webServer = this.expressApp.listen(this.port, () => {
             const networkInterfaces = os.networkInterfaces();
@@ -540,7 +658,8 @@ export default class NetworkManager {
         });
         this.socketServer = new IoSocketServer(this, {
             secret: JWTOptions.secret,
-            algorithm: JWTOptions.settings.algorithm
+            algorithm: JWTOptions.settings.algorithm,
+            issuer: JWTOptions.settings.issuer
         })
         this.initializeExpress();
     }
@@ -564,6 +683,18 @@ export default class NetworkManager {
             shareWithDepartment: doc.shareWithDepartment,
             owner: doc.owner,
         };
+    }
+
+    /**
+     * Reads a server-rendered HTML template from the build output
+     * (production) or the source tree (development).
+     */
+    private resolveServerHtml(filename: string): string {
+        const distPath = path.resolve(process.cwd(), 'dist/srv', filename);
+        if (fs.existsSync(distPath)) {
+            return fs.readFileSync(distPath, 'utf8');
+        }
+        return fs.readFileSync(path.resolve(process.cwd(), 'src/srv', filename), 'utf8');
     }
 
     private initializeExpress(): void {
@@ -601,6 +732,11 @@ export default class NetworkManager {
         };
 
         this.expressApp.use(cors(this.corsOptions));
+        // #119: the CSP middleware is mounted BEFORE the static handlers so
+        // the SPA's index.html is served with a Content-Security-Policy too.
+        // (It previously ran after express.static, so static/SPA responses
+        // shipped without any CSP header.)
+        this.expressApp.use(cspMiddleware);
         this.expressApp.use(express.static(vuePath, {
             setHeaders: (res, filePath) => {
                 if (filePath.endsWith('index.html')) {
@@ -608,12 +744,14 @@ export default class NetworkManager {
                 }
             }
         }));
-        // Serve OIDC login page and static assets
-        const oidcStaticPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv'))
-            ? path.resolve(process.cwd(), 'dist/srv')
-            : path.resolve(process.cwd(), 'src/srv');
+        // Serve OIDC assets (login/logout/consent pages reference
+        // /oidc/static/docPouch.png). #119: the mount is restricted to the
+        // assets directory — it previously exposed the whole dist/srv
+        // directory, including compiled backend code.
+        const oidcStaticPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/assets'))
+            ? path.resolve(process.cwd(), 'dist/srv/assets')
+            : path.resolve(process.cwd(), 'src/srv/assets');
         this.expressApp.use('/oidc/static', express.static(oidcStaticPath));
-        this.expressApp.use(cspMiddleware);
         this.expressApp.disable('etag'); // Disable ETag header to prevent caching of responses
 
         // OIDC client config endpoint (must be before the OIDC provider mount)
@@ -623,31 +761,42 @@ export default class NetworkManager {
                     res.json({configured: false});
                     return;
                 }
-                const host = req.headers.host || `localhost:${this.port}`;
-                const protocol = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
-                const redirectUri = `${protocol}://${host}/`;
+                // #106: the redirect URIs are derived from trusted
+                // configuration only (OIDC_ISSUER / OIDC_REDIRECT_URI). The
+                // request Host and X-Forwarded-Proto headers are
+                // client-controlled and must not influence the URIs
+                // registered for the first-party client.
+                const origin = issuerOrigin(process.env.OIDC_ISSUER);
+                const redirectUri = process.env.OIDC_REDIRECT_URI || `${origin}/`;
+                const postLogoutUri = process.env.OIDC_POST_LOGOUT_REDIRECT_URI || process.env.OIDC_REDIRECT_URI || `${origin}/`;
+                const logoutRedirectUri = `${origin}/oidc/logout-redirect`;
                 const clientId = 'docpouch-admin-ui';
                 const clientAdapter = new OidcAdapter('Client');
                 const existing = await clientAdapter.find(clientId);
 
                 let registeredClientId: string | null = null;
 
-                const logoutRedirectUri = `${protocol}://${host}/oidc/logout-redirect`;
+                // The trusted URI lists replace the stored ones instead of
+                // being appended. This keeps the lists bounded and purges
+                // any URIs that older versions registered from request
+                // headers (#106).
+                const desiredUris = [redirectUri];
+                const desiredPostLogoutUris = [postLogoutUri, logoutRedirectUri];
 
                 if (existing) {
                     registeredClientId = (existing.client_id || existing._id || clientId) as string;
                     const existingUris = existing.redirect_uris || [];
                     const existingPostLogoutUris = existing.post_logout_redirect_uris || [];
-                    const updatedUris = existingUris.includes(redirectUri) ? existingUris : [...existingUris, redirectUri];
-                    const updatedPostLogoutUris = existingPostLogoutUris.includes(logoutRedirectUri) ? existingPostLogoutUris : [...existingPostLogoutUris, logoutRedirectUri];
-                    if (updatedUris !== existingUris || updatedPostLogoutUris !== existingPostLogoutUris) {
+                    const urisChanged = JSON.stringify(existingUris) !== JSON.stringify(desiredUris);
+                    const postLogoutChanged = JSON.stringify(existingPostLogoutUris) !== JSON.stringify(desiredPostLogoutUris);
+                    if (urisChanged || postLogoutChanged) {
                         await clientAdapter.upsert(registeredClientId, {
                             ...existing,
-                            redirect_uris: updatedUris,
-                            post_logout_redirect_uris: updatedPostLogoutUris,
+                            redirect_uris: desiredUris,
+                            post_logout_redirect_uris: desiredPostLogoutUris,
                         }, existing.expiresAt);
-                        this.logger.info(`Updated OIDC client redirect URIs: ${JSON.stringify(updatedUris)}`);
-                        this.logger.info(`Updated OIDC client post-logout redirect URIs: ${JSON.stringify(updatedPostLogoutUris)}`);
+                        this.logger.info(`Updated OIDC client redirect URIs: ${JSON.stringify(desiredUris)}`);
+                        this.logger.info(`Updated OIDC client post-logout redirect URIs: ${JSON.stringify(desiredPostLogoutUris)}`);
                     }
                 } else {
                     // Create client with fixed ID (skip dynamic registration for admin UI)
@@ -655,8 +804,8 @@ export default class NetworkManager {
                         const client = new this.oidcProvider.Client({
                             client_id: clientId,
                             client_name: 'DocPouch Admin UI',
-                            redirect_uris: [redirectUri],
-                            post_logout_redirect_uris: [logoutRedirectUri],
+                            redirect_uris: desiredUris,
+                            post_logout_redirect_uris: desiredPostLogoutUris,
                             grant_types: ['authorization_code', 'refresh_token'],
                             response_types: ['code'],
                             token_endpoint_auth_method: 'none',
@@ -682,7 +831,7 @@ export default class NetworkManager {
                     issuer: process.env.OIDC_ISSUER,
                     clientId: registeredClientId,
                     redirectUri,
-                    postLogoutRedirectUri: `${protocol}://${host}/oidc/logout-redirect`,
+                    postLogoutRedirectUri: logoutRedirectUri,
                     scope: 'openid profile email offline_access',
                 });
             } catch (err: any) {
@@ -692,24 +841,6 @@ export default class NetworkManager {
         });
 
 
-
-        // Error handling middleware for the app
-        this.expressApp.use((err: any, req: Request, res: Response, next: NextFunction) => {
-            this.logger.error(`Express error: ${err.message}`, err);
-            if (res.headersSent) {
-                return next(err);
-            }
-            res.status(500).json({error: 'Internal server error', message: err.message});
-        });
-
-        // Error handling middleware for the app
-        this.expressApp.use((err: any, req: Request, res: Response, next: NextFunction) => {
-            this.logger.error(`Express error: ${err.message}`, err);
-            if (res.headersSent) {
-                return next(err);
-            }
-            res.status(500).json({error: 'Internal server error', message: err.message});
-        });
 
         // Logout redirect handler - must be before OIDC provider mount
         // Ensures cookies are cleared after oidc-provider logout
@@ -726,7 +857,8 @@ export default class NetworkManager {
                 postLogoutRedirectUri: req.query.post_logout_redirect_uri,
                 isLogoutCancelled: req.query.logout === 'no',
                 headers: {
-                    cookie: req.headers.cookie,
+                    // #119: never write live session cookies to the log.
+                    cookie: req.headers.cookie ? '[redacted]' : undefined,
                     'user-agent': req.headers['user-agent'],
                     referer: req.headers.referer
                 }
@@ -869,10 +1001,36 @@ export default class NetworkManager {
         // Serve OIDC login page
         this.expressApp.get('/interaction/:uid', apiRateLimiter, async (req, res) => {
             try {
+                // The uid is interpolated into the rendered HTML, so a
+                // non-uid-shaped parameter is rejected up front.
+                if (!isValidInteractionUid(req.params.uid)) {
+                    res.status(400).send('Invalid interaction');
+                    return;
+                }
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
 
-                // Auto-accept consent for the admin UI (user already authenticated)
                 if (interaction.prompt?.name === 'consent') {
+                    // #107: only first-party clients are auto-accepted. Every
+                    // other client must be approved explicitly by the signed-in
+                    // user on the consent screen before scopes are granted.
+                    if (!this.autoConsentClientIds.has(String(interaction.params?.client_id))) {
+                        const client = interaction.params?.client_id
+                            ? await this.oidcProvider.Client.find(interaction.params.client_id)
+                            : null;
+                        const clientName = (client?.clientName || interaction.params?.client_id || 'Unknown client') as string;
+                        const missingScopes: string[] = interaction.prompt.details?.missingOIDCScope || [];
+                        const scopesHtml = missingScopes
+                            .map(scope => `<li>${escapeHtml(OIDC_SCOPE_DESCRIPTIONS[scope] || scope)}</li>`)
+                            .join('');
+                        let html = this.resolveServerHtml('oidc-consent.html');
+                        html = html.replace(/__NONCE__/g, res.locals.nonce);
+                        html = html.replace(/__UID__/g, escapeHtml(req.params.uid));
+                        html = html.replace(/__CLIENT_NAME__/g, escapeHtml(clientName));
+                        html = html.replace(/__SCOPES__/g, scopesHtml);
+                        res.type('html').send(html);
+                        return;
+                    }
+                    // Auto-accept consent for the admin UI (user already authenticated)
                     const grant = new this.oidcProvider.Grant({
                         accountId: interaction.session?.accountId,
                         clientId: interaction.params?.client_id,
@@ -894,7 +1052,7 @@ export default class NetworkManager {
                     : path.resolve(process.cwd(), 'src/srv/oidc-login.html');
                 let html = fs.readFileSync(htmlPath, 'utf8');
                 html = html.replace(/__NONCE__/g, res.locals.nonce);
-                html = html.replace(/__UID__/g, req.params.uid as string);
+                html = html.replace(/__UID__/g, escapeHtml(req.params.uid));
                 res.type('html').send(html);
             } catch (err) {
                 res.status(400).send('Invalid or expired login session. Please try again.');
@@ -925,6 +1083,11 @@ export default class NetworkManager {
             this.logger.debug('Method: ' + req.method);
             this.logger.debug('Params: ' + JSON.stringify(req.params));
             
+            if (!isValidInteractionUid(req.params.uid)) {
+                res.status(400).json({error: 'Invalid interaction'});
+                return;
+            }
+
             try {
                 const interaction = await this.oidcProvider.interactionDetails(req, res);
                 this.logger.debug('Interaction details: ' + JSON.stringify(interaction, null, 2));
@@ -941,6 +1104,18 @@ export default class NetworkManager {
                         return;
                     }
                     this.logger.debug('Login successful for user: ' + user._id);
+                    // #107: only first-party clients get consent granted
+                    // together with the login. For every other client the
+                    // login round finishes on its own; the provider then
+                    // issues a consent prompt, which the GET handler renders
+                    // as an approval screen.
+                    if (!this.autoConsentClientIds.has(String(interaction.params?.client_id))) {
+                        await this.oidcProvider.interactionFinished(req, res, {
+                            login: {accountId: user._id}
+                        }, {mergeWithLastSubmission: true});
+                        this.logger.debug('Login interaction finished (consent prompt follows)');
+                        return;
+                    }
                     // Complete login and immediately grant consent for all requested scopes
                     const grant = new this.oidcProvider.Grant({
                         accountId: user._id,
@@ -959,6 +1134,36 @@ export default class NetworkManager {
                     this.logger.debug('Login and consent interaction finished');
                     return;
                 } else if (prompt?.name === 'consent') {
+                    // #107: first-party clients keep the silent auto-accept
+                    // behavior; every other client goes through the consent
+                    // screen (see the GET handler) and only a decision
+                    // submitted from that screen grants the scopes.
+                    if (!this.autoConsentClientIds.has(String(interaction.params?.client_id))) {
+                        if (req.body?.consent === 'no') {
+                            await this.oidcProvider.interactionFinished(req, res, {
+                                error: 'access_denied',
+                                error_description: 'The end-user denied the authorization request.',
+                            }, {mergeWithLastSubmission: true});
+                            return;
+                        }
+                        if (req.body?.consent !== 'yes') {
+                            res.redirect(`/interaction/${uid}`);
+                            return;
+                        }
+                        const grant = new this.oidcProvider.Grant({
+                            accountId: interaction.session?.accountId,
+                            clientId: interaction.params?.client_id,
+                        });
+                        if (prompt.details?.missingOIDCScope) {
+                            grant.addOIDCScope(prompt.details.missingOIDCScope.join(' '));
+                        }
+                        if (prompt.details?.missingOIDCClaims) {
+                            grant.addOIDCClaims(prompt.details.missingOIDCClaims);
+                        }
+                        const grantId = await grant.save();
+                        await this.oidcProvider.interactionFinished(req, res, {consent: {grantId}}, {mergeWithLastSubmission: true});
+                        return;
+                    }
                     const grant = new this.oidcProvider.Grant({
                         accountId: interaction.session?.accountId,
                         clientId: interaction.params?.client_id,
@@ -1020,9 +1225,8 @@ export default class NetworkManager {
                 .then((users: I_UserEntry[]) => {
                     res.status(200).json(users);
                 }).catch((error) => {
-                const status = typeof error === 'number' ? error : 500;
-                const message = error instanceof Error ? error.message : String(error);
-                res.status(status).json({error: message});
+                this.logger.error(`Error listing users: ${error}`);
+                res.status(500).json({error: 'Internal server error'});
             });
         });
 
@@ -1032,6 +1236,17 @@ export default class NetworkManager {
                 this.dataManager.isAdmin(req.userid).then((isAdmin) => {
                     if (isAdmin) {
                         const autoGenerated = !(validatedObject as any).password;
+                        // #114: an auto-generated password must be delivered
+                        // out of band. Without SMTP (or an email address) and
+                        // without the explicit PASSWORD_IN_RESPONSE opt-in,
+                        // creation fails BEFORE the account is written.
+                        if (autoGenerated && !passwordInResponseAllowed()) {
+                            const deliverable = Boolean((validatedObject as any).email) && this.emailService.isConfigured();
+                            if (!deliverable) {
+                                res.status(503).json({error: "Password delivery is unavailable: SMTP is not configured or the user has no email address. Configure SMTP, provide an email address, or set PASSWORD_IN_RESPONSE=true to allow returning the password in the response."});
+                                return;
+                            }
+                        }
                         if (autoGenerated) {
                             (validatedObject as any).password = generatePassword();
                         }
@@ -1039,7 +1254,9 @@ export default class NetworkManager {
 
                         this.dataManager.createUser(validatedObject as I_UserCreation)
                             .then(async (newUser) => {
-                                this.socketServer.sendEventToAdmins(req.socketID, "newUser", {newUser: newUser});
+                                // #112: never broadcast the password hash to
+                                // connected admin clients.
+                                this.socketServer.sendEventToAdmins(req.socketID, "newUser", {newUser: stripUserPassword(newUser as any)});
                                 const {password: _, ...safeNewUser} = newUser as any;
                                 this.logger.info(`New user created: ${JSON.stringify(safeNewUser)}`);
 
@@ -1051,11 +1268,24 @@ export default class NetworkManager {
                                     const emailResult = await this.emailService.sendWelcomeEmail(userEmail, (newUser as any).name, plainPassword);
                                     if (emailResult.sent) {
                                         responseObj.message = `Password sent to ${userEmail}`;
-                                    } else {
+                                    } else if (!autoGenerated) {
+                                        // The requesting admin chose the password
+                                        // themselves, so delivery is not required.
+                                        responseObj.message = "Email delivery failed; the password was not emailed to the user.";
+                                    } else if (passwordInResponseAllowed()) {
                                         responseObj.password = plainPassword;
                                         responseObj.message = "Email delivery failed; password shown as fallback";
+                                    } else {
+                                        // Auto-generated password could not be
+                                        // delivered: roll the account back.
+                                        await this.dataManager.removeUser(newUser._id).catch(() => undefined);
+                                        this.logger.error(`Rolled back creation of user ${newUser._id}: password email could not be delivered.`);
+                                        res.status(503).json({error: "Email delivery failed, so the account was not created. Fix the SMTP configuration or set PASSWORD_IN_RESPONSE=true to allow the response fallback."});
+                                        return;
                                     }
-                                } else {
+                                } else if (autoGenerated) {
+                                    // Only reachable with the explicit opt-in
+                                    // (see the pre-check above).
                                     responseObj.password = plainPassword;
                                     responseObj.message = "No email address provided; password shown as fallback";
                                 }
@@ -1063,7 +1293,16 @@ export default class NetworkManager {
                                 res.status(200).json(responseObj);
                             })
                             .catch((error) => {
-                                res.status(500).json({error: error.message});
+                                // #117/#111: map the data layer's known
+                                // validation errors to client-facing
+                                // statuses; never echo raw error details.
+                                if (error instanceof Error && error.message.includes("already exists")) {
+                                    res.status(409).json({error: "User name already exists"});
+                                } else if (error instanceof Error && error.message.includes("at least 8 characters")) {
+                                    res.status(400).json({error: "Password must be at least 8 characters long"});
+                                } else {
+                                    res.status(500).json({error: 'Internal server error'});
+                                }
                             });
                     } else
                         res.status(401).json({error: "Not authorized to create users"});
@@ -1199,8 +1438,13 @@ export default class NetworkManager {
                         .catch((error) => {
                             if (error.message.includes("not found")) {
                                 res.status(404).json({error: "User not found"});
+                            } else if (error.message.includes("already exists")) {
+                                // #111: a duplicate username is a client
+                                // conflict, not a server error — and unlike
+                                // before, the update is no longer applied.
+                                res.status(409).json({error: error.message});
                             } else {
-                                res.status(500).json({error: error.message});
+                                res.status(500).json({error: "Failed to update user"});
                             }
                         })
                 })
@@ -1219,7 +1463,7 @@ export default class NetworkManager {
                         this.socketServer.sendEventToAdmins(req.socketID, "removedUser", {removedID: req.params.userID as string})
                         res.status(200).json({message: "User has been successfully removed"});
                     }).catch((error) => {
-                        res.status(404).json({error: error.message});
+                        res.status(404).json({error: "User not found"});
                     });
                 }
             })
@@ -1239,21 +1483,38 @@ export default class NetworkManager {
 
             try {
                 const user = await this.dataManager.getUserByID(userID);
+                const userEmail = (user as any).email;
+
+                // #114: without a way to deliver the new password, refuse
+                // BEFORE touching anything — unless the operator explicitly
+                // opted in to the response fallback.
+                if (!passwordInResponseAllowed() && (!userEmail || !this.emailService.isConfigured())) {
+                    return res.status(503).json({error: "Password delivery is unavailable: SMTP is not configured or the user has no email address. Configure SMTP, set an email address on the account, or set PASSWORD_IN_RESPONSE=true to allow returning the password in the response."});
+                }
+
+                const oldHash = (user as any).password;
                 const newPassword = generatePassword();
                 await this.dataManager.updateUser(userID, {password: newPassword});
 
-                const userEmail = (user as any).email;
                 const responseObj: any = {message: "Password has been reset"};
 
                 if (userEmail) {
                     const emailResult = await this.emailService.sendPasswordResetEmail(userEmail, (user as any).name, newPassword);
                     if (emailResult.sent) {
                         responseObj.message = `New password sent to ${userEmail}`;
-                    } else {
+                    } else if (passwordInResponseAllowed()) {
                         responseObj.password = newPassword;
                         responseObj.message = "Email delivery failed; password shown as fallback";
+                    } else {
+                        // Delivery failed and the fallback is not allowed:
+                        // restore the previous password and report.
+                        await this.dataManager.users.update(userID, {password: oldHash}).catch(() => undefined);
+                        this.logger.error(`Rolled back password reset for ${userID}: password email could not be delivered.`);
+                        return res.status(503).json({error: "Email delivery failed; the password was NOT changed. Fix the SMTP configuration or set PASSWORD_IN_RESPONSE=true to allow the response fallback."});
                     }
                 } else {
+                    // Only reachable with the explicit opt-in (see the
+                    // pre-check above).
                     responseObj.password = newPassword;
                     responseObj.message = "No email address on file; password shown as fallback";
                 }
@@ -1280,8 +1541,12 @@ export default class NetworkManager {
                 const user = await this.dataManager.getUserByEmail(email);
                 if (user) {
                     const token = await this.dataManager.createPasswordResetToken(user._id);
-                    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.headers.host}`;
-                    await this.emailService.sendForgotPasswordEmail(email, (user as any).name, `${baseUrl}/reset-password?token=${token}`);
+                    // #110: only the raw token is passed; EmailService builds
+                    // the link from its trusted, configured base URL. The
+                    // previous code passed a full URL that EmailService
+                    // prefixed again (producing unusable links) and derived
+                    // the host from the client-controlled Host header.
+                    await this.emailService.sendForgotPasswordEmail(email, (user as any).name, token);
                 }
             } catch (error: any) {
                 this.logger.error(`Error processing forgot-password request: ${error.message}`);
@@ -1323,7 +1588,7 @@ export default class NetworkManager {
                 const result = await this.dataManager.apiKeys.createApiKey(req.userid, name.trim(), expiresInDays);
                 res.status(200).json(result);
             } catch (error: any) {
-                res.status(500).json({error: error.message});
+                res.status(500).json({error: 'Internal server error'});
             }
         });
 
@@ -1332,7 +1597,7 @@ export default class NetworkManager {
                 const keys = await this.dataManager.apiKeys.listApiKeys(req.userid);
                 res.status(200).json(keys);
             } catch (error: any) {
-                res.status(500).json({error: error.message});
+                res.status(500).json({error: 'Internal server error'});
             }
         });
 
@@ -1345,7 +1610,7 @@ export default class NetworkManager {
                     res.status(404).json({error: "API key not found"});
                 }
             } catch (error: any) {
-                res.status(500).json({error: error.message});
+                res.status(500).json({error: 'Internal server error'});
             }
         });
 
@@ -1373,7 +1638,7 @@ export default class NetworkManager {
                     res.status(200).json(allKeys);
                 }
             } catch (error: any) {
-                res.status(500).json({error: error.message});
+                res.status(500).json({error: 'Internal server error'});
             }
         });
 
@@ -1393,7 +1658,7 @@ export default class NetworkManager {
                 await this.dataManager.apiKeys.deleteApiKey(req.params.keyId, key.userId);
                 res.status(200).json({message: "API key revoked"});
             } catch (error: any) {
-                res.status(500).json({error: error.message});
+                res.status(500).json({error: 'Internal server error'});
             }
         });
 
@@ -1404,15 +1669,20 @@ export default class NetworkManager {
                     res.status(200).json(documents);
                 })
                 .catch((error) => {
-                    res.status(500).json({error: error.message});
+                    res.status(500).json({error: 'Internal server error'});
                 });
         });
 
         this.expressApp.post("/docs/fetch", this.authenticate, apiRateLimiter, (req, res) => {
-            let queryObject = req.body;
-            this.validator.getValidatedObject("documentFetch", queryObject);
+            // #119: the validation result is used instead of being
+            // discarded — invalid queries are rejected with 400.
+            const validatedQuery = this.validator.getValidatedObject("documentFetch", req.body);
+            if (validatedQuery === false) {
+                res.status(400).json({error: "Invalid document query"});
+                return;
+            }
 
-            this.dataManager.fetchDocuments(req.body, req.userid)
+            this.dataManager.fetchDocuments(validatedQuery, req.userid)
                 .then((documents) => {
                     res.status(200).json(documents);
                 })
@@ -1422,7 +1692,7 @@ export default class NetworkManager {
                     } else if (error instanceof Error && error.message === "Not authorized to access this document") {
                         res.status(403).json({error: error.message});
                     } else {
-                        res.status(500).json({error: error.message || error});
+                        res.status(500).json({error: 'Internal server error'});
                     }
                 });
         });
@@ -1491,7 +1761,7 @@ export default class NetworkManager {
                             });
                         } else {
                             this.logger.error(`Document creation failed: ${message}`, error);
-                            res.status(500).json({error: error.message || "Document creation failed"});
+                            res.status(500).json({error: "Document creation failed"});
                         }
                     });
             } else {
@@ -1530,36 +1800,61 @@ export default class NetworkManager {
                         }
                     })
                     .catch((error) => {
-                        const status = typeof error === 'number' ? error : 500;
-                        const message = error instanceof Error ? error.message : String(error);
-                        res.status(status).json({error: message});
+                        // #117: map the data layer's known status rejections
+                        // to static messages; never echo raw error details.
+                        if (error === 403) {
+                            res.status(403).json({error: "Not authorized to update this document"});
+                        } else if (error === 404) {
+                            res.status(404).json({error: "Document not found"});
+                        } else if (error === 400) {
+                            res.status(400).json({error: "Invalid document update"});
+                        } else {
+                            this.logger.error(`Error updating document: ${error}`);
+                            res.status(500).json({error: "Failed to update document"});
+                        }
                     });
             } else {
                 res.status(404).json({error: "Invalid document data"});
             }
         });
 
-        this.expressApp.delete("/docs/remove/:documentID", this.authenticate, writeRateLimiter, (req, res) => {
-            if (req.params.documentID !== undefined) {
-                this.socketServer.sendEventToDocumentAccessors(req.socketID, req.params.documentID as string, "removedDocument", {removedID: req.params.documentID as string}).then(() => {
-                    if (req.params.documentID !== undefined) {
-                        this.dataManager.removeDocument(req.params.documentID as string, req.userid)
-                            .then((numRemoved) => {
-                                if (numRemoved > 0) {
-                                    res.status(200).json({message: "Document removed successfully"});
+        this.expressApp.delete("/docs/remove/:documentID", this.authenticate, writeRateLimiter, async (req, res) => {
+            if (req.params.documentID === undefined) {
+                return res.status(400).json({error: "Document ID is required"});
+            }
+            const documentID = req.params.documentID as string;
+            try {
+                // #119: the removal event previously broadcast BEFORE the
+                // permission check, so accessors were notified even when the
+                // request later failed with 403/404. The share flags needed
+                // to route the event are captured up front, and the event is
+                // only sent after the removal succeeded.
+                const docResult = await this.dataManager.documents.query({_id: documentID});
+                if (docResult.length !== 1) {
+                    return res.status(404).json({error: "Document not found"});
+                }
+                const document = docResult[0] as I_DocumentEntry;
 
-                                    this.logger.info(`Document removed: ${req.params.documentID}`);
-                                } else {
-                                    res.status(404).json({error: "Document not found"});
-                                }
-                            })
-                            .catch((error) => {
-                                const status = typeof error === 'number' ? error : 500;
-                                const message = error instanceof Error ? error.message : String(error);
-                                res.status(status).json({error: message});
-                            });
-                    }
-                })
+                const numRemoved = await this.dataManager.removeDocument(documentID, req.userid);
+                if (numRemoved < 1) {
+                    return res.status(404).json({error: "Document not found"});
+                }
+
+                this.logger.info(`Document removed: ${documentID}`);
+                res.status(200).json({message: "Document removed successfully"});
+                this.socketServer.sendEventToDocumentAccessors(req.socketID, documentID, "removedDocument", {removedID: documentID}, document)
+                    .catch((error) => this.logger.error(`Error broadcasting removedDocument: ${error}`));
+            } catch (error) {
+                // #117: map the data layer's known status
+                // rejections to static messages.
+                if (error === 404) {
+                    res.status(404).json({error: "Document not found"});
+                } else if (error === 403 || error === 401) {
+                    res.status(error).json({error: "Not authorized to remove this document"});
+                } else {
+                    this.logger.error(`Error removing document: ${error}`);
+                    res.status(500).json({error: "Failed to remove document"});
+                }
             }
         });
 
@@ -1570,7 +1865,7 @@ export default class NetworkManager {
                     res.status(200).json(structures);
                 })
                 .catch((error) => {
-                    res.status(500).json({error: error.message || error});
+                    res.status(500).json({error: 'Internal server error'});
                 });
         });
 
@@ -1586,7 +1881,7 @@ export default class NetworkManager {
                         if (error instanceof Error && error.message === "Only admins can create structures") {
                             res.status(401).json({error: error.message});
                         } else {
-                            res.status(500).json({error: error.message || error});
+                            res.status(500).json({error: 'Internal server error'});
                         }
                     });
             } else {
@@ -1609,9 +1904,18 @@ export default class NetworkManager {
                         }
                     })
                     .catch((error) => {
-                        const status = typeof error === 'number' ? error : 500;
-                        const message = error instanceof Error ? error.message : "Unauthorized access";
-                        res.status(status).json({error: message});
+                        // #117: map known status rejections to static
+                        // messages; never echo raw error details.
+                        if (error === 401) {
+                            res.status(401).json({error: "Not authorized to update this structure"});
+                        } else if (error === 404) {
+                            res.status(404).json({error: "Structure not found"});
+                        } else if (error === 400) {
+                            res.status(400).json({error: "Invalid structure data"});
+                        } else {
+                            this.logger.error(`Error updating structure: ${error}`);
+                            res.status(500).json({error: "Failed to update structure"});
+                        }
                     });
             } else {
                 res.status(400).json({error: "Invalid structure data"});
@@ -1632,9 +1936,16 @@ export default class NetworkManager {
                         }
                     })
                     .catch((error) => {
-                        const status = typeof error === 'number' ? error : 500;
-                        const message = error instanceof Error ? error.message : String(error);
-                        res.status(status).json({error: message});
+                        // #117: map known status rejections to static
+                        // messages; never echo raw error details.
+                        if (error === 401) {
+                            res.status(401).json({error: "Not authorized to remove this structure"});
+                        } else if (error === 404) {
+                            res.status(404).json({error: "Structure not found"});
+                        } else {
+                            this.logger.error(`Error removing structure: ${error}`);
+                            res.status(500).json({error: "Failed to remove structure"});
+                        }
                     });
             }
         });
@@ -1644,7 +1955,7 @@ export default class NetworkManager {
             this.dataManager.getProtectedStructures().then((entries) => {
                 res.status(200).json(entries);
             }).catch((error) => {
-                res.status(500).json({error: error.message || error});
+                res.status(500).json({error: 'Internal server error'});
             });
         });
 
@@ -1656,7 +1967,7 @@ export default class NetworkManager {
                     if (error instanceof Error && error.message === "Only super-admins can manage protected structures") {
                         res.status(401).json({error: error.message});
                     } else {
-                        res.status(500).json({error: error.message || error});
+                        res.status(500).json({error: 'Internal server error'});
                     }
                 });
             } else {
@@ -1672,7 +1983,7 @@ export default class NetworkManager {
                     if (error instanceof Error && error.message === "Only super-admins can manage protected structures") {
                         res.status(401).json({error: error.message});
                     } else {
-                        res.status(500).json({error: error.message || error});
+                        res.status(500).json({error: 'Internal server error'});
                     }
                 });
             } else {
@@ -1685,7 +1996,7 @@ export default class NetworkManager {
             this.dataManager.getAnonymousAllowedStructures().then((entries) => {
                 res.status(200).json(entries);
             }).catch((error) => {
-                res.status(500).json({error: error.message || error});
+                res.status(500).json({error: 'Internal server error'});
             });
         });
 
@@ -1697,7 +2008,7 @@ export default class NetworkManager {
                     if (error instanceof Error && error.message === "Only admins can manage anonymous structure allowlist") {
                         res.status(401).json({error: error.message});
                     } else {
-                        res.status(500).json({error: error.message || error});
+                        res.status(500).json({error: 'Internal server error'});
                     }
                 });
             } else {
@@ -1713,7 +2024,7 @@ export default class NetworkManager {
                     if (error instanceof Error && error.message === "Only admins can manage anonymous structure allowlist") {
                         res.status(401).json({error: error.message});
                     } else {
-                        res.status(500).json({error: error.message || error});
+                        res.status(500).json({error: 'Internal server error'});
                     }
                 });
             } else {
@@ -1721,7 +2032,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.get("/version/check", apiRateLimiter, (req, res) => {
+        this.expressApp.get("/version/check", this.authenticate, apiRateLimiter, (req, res) => {
             const updateResult = getCachedUpdateResult();
             if (updateResult) {
                 res.status(200).json(updateResult);
@@ -1747,16 +2058,27 @@ export default class NetworkManager {
                     return res.status(400).json({error: (error as Error).message});
                 }
 
+                // #112: password hashes are stripped from exports unless the
+                // request explicitly opts in (includeHashes=true), e.g. for
+                // backups whose restore must preserve credentials.
+                const includeHashes = req.query.includeHashes === 'true';
+
                 try {
                     if (format === "json") {
                         if (scope === "all") {
                             const exportData = await this.dataManager.exportAllData();
+                            if (!includeHashes) {
+                                stripUserPasswordsFromExport(exportData);
+                            }
                             res.setHeader("Content-Type", "application/json");
                             res.setHeader("Content-Disposition", 'attachment; filename="docpouch-database.json"');
                             return res.status(200).send(JSON.stringify(exportData, null, 2));
                         }
 
-                        const scopedData = await this.dataManager.exportCollection(scope);
+                        let scopedData = await this.dataManager.exportCollection(scope);
+                        if (scope === "users" && !includeHashes) {
+                            scopedData = stripUserPasswords(scopedData);
+                        }
                         res.setHeader("Content-Type", "application/json");
                         res.setHeader("Content-Disposition", `attachment; filename="docpouch-${scope}.json"`);
                         return res.status(200).send(JSON.stringify(scopedData, null, 2));
@@ -1766,7 +2088,11 @@ export default class NetworkManager {
                         return res.status(400).json({error: "ZIP export supports only scope=all. Use format=json for scoped export."});
                     }
 
-                    const zipFilename = `docpouch-database-${Date.now()}.zip`;
+                    // #119: the temporary export is written to the OS temp
+                    // directory (not the process CWD, which holds the app's
+                    // data) and is cleaned up on every path, including the
+                    // archive error path.
+                    const zipFilename = path.join(os.tmpdir(), `docpouch-database-${process.pid}-${Date.now()}.zip`);
                     const output = fs.createWriteStream(zipFilename);
                     const archive = new ZipArchive({
                         zlib: {level: 9}
@@ -1788,11 +2114,18 @@ export default class NetworkManager {
 
                     archive.on('error', (err) => {
                         this.logger.error("Error creating zip archive:", err);
-                        res.status(500).json({error: "Error creating zip archive"});
+                        output.destroy();
+                        fs.unlink(zipFilename, () => undefined);
+                        if (!res.headersSent) {
+                            res.status(500).json({error: "Error creating zip archive"});
+                        }
                     });
 
                     archive.pipe(output);
                     const exportData = await this.dataManager.exportAllData();
+                    if (!includeHashes) {
+                        stripUserPasswordsFromExport(exportData);
+                    }
                     archive.append(JSON.stringify(exportData.users, null, 2), {name: 'docpouch-users.json'});
                     archive.append(JSON.stringify(exportData.documents, null, 2), {name: 'docpouch-documents.json'});
                     archive.append(JSON.stringify(exportData.structures, null, 2), {name: 'docpouch-structures.json'});
@@ -1888,7 +2221,15 @@ export default class NetworkManager {
                         return res.status(400).json({error: "ZIP import supports only scope=all. Use JSON files for scoped import."});
                     }
 
-                    const zip = new AdmZip(getSafeUploadPath(uploadedFile.path));
+                    // #119: verify the ZIP magic header (PK) before handing
+                    // the bytes to the zip parser — the extension alone is
+                    // client-controlled.
+                    const zipBytes = fs.readFileSync(getSafeUploadPath(uploadedFile.path));
+                    if (zipBytes.length < 4 || zipBytes[0] !== 0x50 || zipBytes[1] !== 0x4b) {
+                        safeDeleteFile(uploadedFile.path);
+                        return res.status(400).json({error: "Uploaded file is not a valid ZIP archive"});
+                    }
+                    const zip = new AdmZip(zipBytes);
                     const zipEntries = zip.getEntries();
 
                     const collectionsData: any = {};
@@ -2012,6 +2353,21 @@ export default class NetworkManager {
             res.sendFile(path.join(vuePath, 'index.html'));
         });
 
+        // Error handling middleware for the app (#117). Express error
+        // middleware only sees errors from layers registered EARLIER, so
+        // this must come after all routes and the SPA catch-all. Two
+        // previous copies of this handler were registered before the routes
+        // and therefore never fired.
+        this.expressApp.use((err: any, req: Request, res: Response, next: NextFunction) => {
+            this.logger.error(`Express error: ${err?.message ?? err}`, err);
+            if (res.headersSent) {
+                return next(err);
+            }
+            // #117: never echo internal error details to the client; the
+            // full error is logged server-side.
+            res.status(500).json({error: 'Internal server error'});
+        });
+
 
     }
 
@@ -2031,7 +2387,14 @@ export default class NetworkManager {
             }
             req.userid = result.userid;
             if (result.socketID) {
-                req.socketID = result.socketID;
+                // #119: the claimed socket id must belong to the
+                // authenticated user, otherwise any client could suppress
+                // another client's event delivery by claiming its id.
+                if (this.socketServer.ownsSocket(result.socketID, result.userid)) {
+                    req.socketID = result.socketID;
+                } else {
+                    this.logger.warn(`Dropping X-Socket-ID not owned by user ${result.userid}`);
+                }
             }
             next();
         } catch (error) {
@@ -2055,10 +2418,12 @@ export default class NetworkManager {
             this.socketServer.sendEventToAllClients(sourceID, "changedStructure", {changedStructure: structure});
         }
         for (const user of result.users.created) {
-            this.socketServer.sendEventToAdmins(sourceID, "newUser", {newUser: user});
+            // #112: never broadcast password hashes to connected admin
+            // clients.
+            this.socketServer.sendEventToAdmins(sourceID, "newUser", {newUser: stripUserPassword(user)});
         }
         for (const user of result.users.updated) {
-            this.socketServer.sendEventToAdmins(sourceID, "changedUser", {changedUser: user});
+            this.socketServer.sendEventToAdmins(sourceID, "changedUser", {changedUser: stripUserPassword(user)});
         }
         for (const document of result.documents.created) {
             this.socketServer.sendEventToDocumentAccessors(sourceID, document._id, "newDocument", {newDocument: document})

@@ -8,18 +8,29 @@ export default class IoSocketServer {
     private ioSocket: Server;
     private wsClientList: I_Client[]
     private networkManager: NetworkManager;
-    private JWTOptions: {secret: string, algorithm: string};
+    private JWTOptions: {secret: string, algorithm: string, issuer: string};
     private heartbeatInterval: NodeJS.Timeout;
 
-    constructor(networkManager: NetworkManager, JWTOptions: {secret: string, algorithm: string}) {
+    constructor(networkManager: NetworkManager, JWTOptions: {secret: string, algorithm: string, issuer: string}) {
         this.wsClientList = [];
         this.JWTOptions = JWTOptions;
         this.networkManager = networkManager;
+        // #116: the WebSocket CORS policy follows the operator-configured
+        // REST policy (ALLOWED_ORIGINS / ALLOWED_HEADERS) instead of a
+        // hardcoded wildcard.
+        const configuredCors = (networkManager.corsOptions ?? {}) as {origin?: unknown, allowedHeaders?: unknown};
+        const corsOrigin = (Array.isArray(configuredCors.origin) || typeof configuredCors.origin === 'string')
+            ? configuredCors.origin
+            : '*';
+        const corsAllowedHeaders = Array.isArray(configuredCors.allowedHeaders)
+            ? configuredCors.allowedHeaders
+            : ['Content-Type', 'Authorization', 'X-Socket-ID'];
         this.ioSocket = new Server(this.networkManager.webServer, {
             cors: {
-                origin: "*",
+                origin: corsOrigin as string | string[],
                 methods: ["GET", "POST"],
-                credentials: true
+                credentials: true,
+                allowedHeaders: corsAllowedHeaders as string[]
             },
             allowEIO3: true
         });
@@ -134,8 +145,16 @@ export default class IoSocketServer {
         }
     }
 
-    sendEventToAdmins(sourceID: string | undefined, event: I_EventString, data?: I_WsMessage) {
+    async sendEventToAdmins(sourceID: string | undefined, event: I_EventString, data?: I_WsMessage) {
         for (const client of this.wsClientList) {
+            if (!client.userid) {
+                continue;
+            }
+            // #116: privileges are re-evaluated against the database on
+            // every dispatch, so a demoted admin stops receiving admin
+            // events immediately instead of keeping them until the socket
+            // reconnects.
+            client.isAdmin = await this.networkManager.dataManager.isAdmin(client.userid);
             if (client.isAdmin) {
                 this.sendEventToClient(sourceID, client, event, data);
             }
@@ -150,19 +169,28 @@ export default class IoSocketServer {
     }
 
 
-    async sendEventToDocumentAccessors(sourceID: string | undefined, documentID: string, event: I_EventString, data?: I_WsMessage) {
+    async sendEventToDocumentAccessors(sourceID: string | undefined, documentID: string, event: I_EventString, data?: I_WsMessage, preloadedDocument?: I_DocumentEntry) {
         this.networkManager.logger.debug(`Sending event '${event}' for document ${documentID} to users with access`);
 
         try {
-            // Get the document to check sharing settings
-            const docQuery = await this.networkManager.dataManager.documents.query({_id: documentID});
+            // Callers that already hold the document record (e.g. the
+            // removal flow, where the document is deleted before the
+            // event is routed — see #119) pass it directly instead of
+            // letting this method re-query it.
+            let document: I_DocumentEntry;
+            if (preloadedDocument) {
+                document = preloadedDocument;
+            } else {
+                // Get the document to check sharing settings
+                const docQuery = await this.networkManager.dataManager.documents.query({_id: documentID});
 
-            if (docQuery.length === 0) {
-                this.networkManager.logger.warn(`Document ${documentID} not found when trying to send event`);
-                return;
+                if (docQuery.length === 0) {
+                    this.networkManager.logger.warn(`Document ${documentID} not found when trying to send event`);
+                    return;
+                }
+
+                document = docQuery[0] as I_DocumentEntry;
             }
-
-            const document = docQuery[0] as I_DocumentEntry;
             const ownerID = document.owner;
 
             // Always send to the document owner's connected clients, excluding the source if specified
@@ -222,14 +250,17 @@ export default class IoSocketServer {
                 }
             }
 
-            // Always send to admins, excluding the source if specified
-            const adminClients = this.wsClientList.filter(client =>
-                client.isAdmin &&
-                (!sourceID || client.socket.id !== sourceID)
-            );
-
-            for (const client of adminClients) {
-                this.sendEventToClient(sourceID, client, event, data);
+            // Always send to admins, excluding the source if specified.
+            // #116: privileges are re-evaluated against the database per
+            // dispatch (see sendEventToAdmins).
+            for (const client of this.wsClientList) {
+                if (!client.userid) {
+                    continue;
+                }
+                client.isAdmin = await this.networkManager.dataManager.isAdmin(client.userid);
+                if (client.isAdmin && (!sourceID || client.socket.id !== sourceID)) {
+                    this.sendEventToClient(sourceID, client, event, data);
+                }
             }
 
         } catch (error) {
@@ -245,6 +276,19 @@ export default class IoSocketServer {
                 this.networkManager.logger.error("Error sending event to client: ", client.socket.id, err);
             }
         }
+    }
+
+    /**
+     * Whether the given socket id is currently connected and belongs to
+     * the given user. Used to validate the client-supplied X-Socket-ID
+     * header, so one user cannot claim (and thereby suppress events for)
+     * another user's socket (#119).
+     */
+    ownsSocket(socketID: string, userid: string): boolean {
+        return this.wsClientList.some(client =>
+            client.socket.id === socketID &&
+            client.userid === userid
+        );
     }
 
     private getClientBySocketID(socketID: string): I_Client | undefined {
@@ -271,7 +315,12 @@ export default class IoSocketServer {
         try {
             this.networkManager.logger.debug(`Verifying JWT token for socket ${socket.id}`);
 
-            jwt.verify(token, this.JWTOptions.secret, (err: any, payload: any) => {
+            // #119: accepted algorithm and issuer are pinned to what the
+            // server signs with.
+            jwt.verify(token, this.JWTOptions.secret, {
+                algorithms: [this.JWTOptions.algorithm],
+                issuer: this.JWTOptions.issuer,
+            } as any, (err: any, payload: any) => {
                 if (!err && payload && payload.id) {
                     this.networkManager.logger.debug(`JWT verified successfully for user ${payload.id}, socket ${socket.id}`);
                     this.networkManager.dataManager.getUserByID(payload.id).then(user => {

@@ -13,15 +13,23 @@ export function authKeyGenerator(req: Request): string {
     return `${ipKeyGenerator(clientIp)}:${submittedName.slice(0, USERNAME_KEY_MAX_LENGTH)}`;
 }
 
-const skipInTest = () => process.env.NODE_ENV === 'test';
+// #119: rate limiting can be disabled explicitly (test environments).
+// Production deployments no longer lose throttling silently just because
+// NODE_ENV happens to be set to 'test' — that was a misconfiguration
+// hazard; the skip now requires the explicit opt-in.
+const rateLimitsDisabled = () => process.env.RATE_LIMIT_DISABLED === 'true';
 
 /**
  * Parse a duration string (e.g. "15m", "1h", "30s") into milliseconds.
  * Falls back to the provided default (in ms) for unrecognized formats.
+ * Valid values the parser understands (e.g. "1d") are honored even when
+ * they numerically equal the fallback (#119: previously "1d" was
+ * indistinguishable from an invalid string and silently became the
+ * per-limiter default).
  */
 function parseDurationToMs(duration: string, fallbackMs: number): number {
-    const seconds = parseDurationToSeconds(duration);
-    return seconds === 86400 ? fallbackMs : seconds * 1000;
+    const seconds = parseDurationToSeconds(duration, -1);
+    return seconds === -1 ? fallbackMs : seconds * 1000;
 }
 
 /**
@@ -52,7 +60,7 @@ export const apiRateLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: 'Too many requests from this IP, please try again later.',
-    skip: skipInTest,
+    skip: rateLimitsDisabled,
 });
 
 export const writeRateLimiter = rateLimit({
@@ -61,7 +69,7 @@ export const writeRateLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: 'Too many write requests, please try again later.',
-    skip: skipInTest,
+    skip: rateLimitsDisabled,
 });
 
 export const authRateLimiter = rateLimit({
@@ -71,7 +79,7 @@ export const authRateLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: 'Too many authentication attempts, please try again later.',
-    skip: skipInTest,
+    skip: rateLimitsDisabled,
 });
 
 export const authIpRateLimiter = rateLimit({
@@ -80,7 +88,7 @@ export const authIpRateLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: 'Too many authentication attempts, please try again later.',
-    skip: skipInTest,
+    skip: rateLimitsDisabled,
 });
 
 export const forgotPasswordRateLimiter = rateLimit({
@@ -89,7 +97,7 @@ export const forgotPasswordRateLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: {error: "Too many password reset requests. Please try again later."},
-    skip: skipInTest,
+    skip: rateLimitsDisabled,
 });
 
 export const resetPasswordRateLimiter = rateLimit({
@@ -98,5 +106,5 @@ export const resetPasswordRateLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: {error: "Too many password reset attempts. Please try again later."},
-    skip: skipInTest,
+    skip: rateLimitsDisabled,
 });

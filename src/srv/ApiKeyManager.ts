@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt"
 import Nedb from "@seald-io/nedb";
+import crypto from "crypto";
 import {type I_ApiKey, type I_ApiKeyListItem, type I_ApiKeyCreated} from "../types.js";
 
 declare const NedbConstructor: new (options?: any) => any;
@@ -24,14 +25,17 @@ export default class ApiKeyManager {
             throw new Error("Maximum of 10 API keys per user");
         }
 
-        const randomBytes = Array.from({length: 32}, () => Math.floor(Math.random() * 256));
-        const keyBody = randomBytes.map(b => b.toString(16).padStart(2, "0")).join("");
+        // #109: API keys are the only bearer credential for the API, so the
+        // key material must come from a CSPRNG. Math.random() is a
+        // predictable PRNG whose state can be recovered from observed
+        // output, which would allow predicting other users' keys.
+        const keyBody = crypto.randomBytes(32).toString("hex");
         const fullKey = `docpouch_key_${keyBody}`;
         const keyPrefix = keyBody.substring(0, 8);
         const keyHash = await bcrypt.hash(fullKey, this.saltRounds);
 
         const apiKey: I_ApiKey = {
-            _id: `apikey_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            _id: `apikey_${Date.now()}_${crypto.randomUUID()}`,
             userId,
             name,
             keyPrefix,
@@ -64,11 +68,22 @@ export default class ApiKeyManager {
     }
 
     async verifyApiKey(fullKey: string): Promise<{ userId: string; keyId: string } | null> {
+        // #115: a syntax pre-check rejects malformed keys before any
+        // database work or hashing.
         if (!fullKey.startsWith("docpouch_key_")) {
             return null;
         }
+        const keyBody = fullKey.substring("docpouch_key_".length);
+        if (!/^[0-9a-f]{64}$/.test(keyBody)) {
+            return null;
+        }
 
-        const keys = await this.query({}) as I_ApiKey[];
+        // #115: candidates are narrowed by the stored key prefix (the
+        // first 8 hex characters) before any bcrypt compare. Bcrypt is
+        // deliberately expensive; comparing against every stored key for
+        // every failed bearer token allowed an unauthenticated CPU DoS.
+        const keyPrefix = keyBody.substring(0, 8);
+        const keys = await this.query({keyPrefix}) as I_ApiKey[];
         for (const key of keys) {
             if (key.expiresAt && key.expiresAt < Date.now()) {
                 continue;

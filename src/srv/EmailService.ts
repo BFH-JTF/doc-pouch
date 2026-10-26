@@ -16,6 +16,15 @@ export interface EmailDeliveryResult {
     message: string;
 }
 
+/**
+ * #114: whether generated passwords may be returned in API/MCP responses
+ * when email delivery is unavailable. Off by default — the fallback is an
+ * explicit operator opt-in (PASSWORD_IN_RESPONSE=true).
+ */
+export function passwordInResponseAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+    return env.PASSWORD_IN_RESPONSE === 'true';
+}
+
 export default class EmailService {
     private transporter: Transporter | null = null;
     private readonly fromAddress: string;
@@ -23,7 +32,7 @@ export default class EmailService {
     private readonly logger: winston.Logger;
     private readonly baseUrl: string;
 
-    constructor(smtpConfig: SmtpConfig | null, logger: winston.Logger, baseUrl: string) {
+    constructor(smtpConfig: SmtpConfig | null, logger: winston.Logger, baseUrl: string, options: {suppressWarning?: boolean} = {}) {
         this.logger = logger;
         this.baseUrl = baseUrl;
         this.fromAddress = smtpConfig?.from || "DocPouch <noreply@localhost>";
@@ -33,6 +42,11 @@ export default class EmailService {
                 host: smtpConfig.host,
                 port: smtpConfig.port || 587,
                 secure: smtpConfig.secure || false,
+                // #119: when set, delivery fails instead of falling back to a
+                // plaintext connection if STARTTLS is unavailable. Passwords
+                // are emailed by this service, so operators handling real
+                // credentials should enable it.
+                requireTLS: process.env.SMTP_REQUIRE_TLS === 'true',
                 auth: smtpConfig.user ? {
                     user: smtpConfig.user,
                     pass: smtpConfig.pass,
@@ -42,12 +56,24 @@ export default class EmailService {
             this.logger.info(`EmailService configured: SMTP ${smtpConfig.host}:${smtpConfig.port}, from=${this.fromAddress}`);
         } else {
             this.configured = false;
-            this.logger.warn("EmailService: SMTP not configured. Email delivery is disabled. Passwords will be shown in API responses as fallback.");
+            if (!options.suppressWarning) {
+                this.logger.warn("EmailService: SMTP not configured. Email delivery is disabled. Generated passwords are NOT returned in API responses unless PASSWORD_IN_RESPONSE=true is set.");
+            }
         }
     }
 
     isConfigured(): boolean {
         return this.configured;
+    }
+
+    /**
+     * Builds the reset-password link from the trusted, configured base URL
+     * (#110). The reset token must be the raw token value; callers must
+     * never pass a complete URL here (older call sites did, producing
+     * doubly-concatenated, unusable links).
+     */
+    buildResetUrl(resetToken: string): string {
+        return `${this.baseUrl}/reset-password?token=${resetToken}`;
     }
 
     async sendWelcomeEmail(to: string, username: string, password: string): Promise<EmailDeliveryResult> {
@@ -104,7 +130,7 @@ export default class EmailService {
             return {sent: false, message: "SMTP not configured"};
         }
 
-        const resetUrl = `${this.baseUrl}/reset-password?token=${resetToken}`;
+        const resetUrl = this.buildResetUrl(resetToken);
         const subject = "Reset Your DocPouch Password";
         const text = [
             `Hello ${username},`,

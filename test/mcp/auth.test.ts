@@ -10,7 +10,9 @@ import {
 } from '../setup/testSetup.js';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = 'ThisIsMyVeryOwnAndCreativeSecret';
+// Deterministic JWT secret pinned in jestSetup.cts; the server reads the
+// same environment variable.
+const JWT_SECRET = process.env.JWT_SECRET as string;
 
 describe.skip('MCP Authentication', () => {
     let server: Server;

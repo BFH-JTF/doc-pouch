@@ -255,6 +255,14 @@ https://localhost:3030/oidc/auth?
 
 **DocPouch serves a login page** - no need to build one!
 
+> **Consent screen**: clients other than the first-party applications listed in
+> `OIDC_AUTO_CONSENT_CLIENTS` (by default only `docpouch-admin-ui`) must be
+> approved by the signed-in user. After the login form, DocPouch serves a
+> consent screen listing the requested scopes; approving it continues the flow,
+> while denying aborts the authorization with `access_denied` and no code is
+> issued. Note that dynamically registered clients are not granted
+> `offline_access` unless the administrator extends their allowed scopes.
+
 ### Step 3: Handle the Callback
 
 After login, user is redirected back with an authorization code:
@@ -368,11 +376,12 @@ whether `name` and `email` are included in the `/oidc/me` user info endpoint res
 
 | Variable                        | Description                                                                                           | Default                                          |
 |---------------------------------|-------------------------------------------------------------------------------------------------------|--------------------------------------------------|
-| `OIDC_REGISTRATION_TOKEN`       | Token for client registration (initial access token).                                                 | (required)                                       |
+| `OIDC_REGISTRATION_TOKEN`       | Bearer token for dynamic client registration. When unset (or blank), dynamic registration is disabled. | (none — registration disabled)                  |
 | `OIDC_ISSUER`                   | Base URL of the OIDC provider.                                                                        | `http://localhost:3030`                          |
 | `OIDC_REDIRECT_URI`             | Default redirect URI for the built-in admin UI client.                                                | `${OIDC_ISSUER}/`                                |
 | `OIDC_POST_LOGOUT_REDIRECT_URI` | Default post-logout redirect URI for the built-in admin UI client. Falls back to `OIDC_REDIRECT_URI`. | `${OIDC_ISSUER}/`                                |
-| `OIDC_COOKIE_KEY`               | Secret for OIDC session cookies. **Change in production!**                                            | `docpouch-cookie-secret-change-in-production`    |
+| `OIDC_AUTO_CONSENT_CLIENTS`     | Comma-separated client IDs granted silent consent (first-party apps only). All other clients show a consent screen. | `docpouch-admin-ui`                |
+| `OIDC_COOKIE_KEY`               | Secret for OIDC session cookies. **Required in production**; unset in development a random per-process key is used. | *(random per-process)*                           |
 | `OIDC_COOKIE_SECURE`            | Set to `true` when running directly with HTTPS; leave unset behind a reverse proxy.                   | `false` (auto-`true` when `NODE_ENV=production`) |
 
 Copy `.env.example` to `.env` and configure these values. When `NODE_ENV=production`, `OIDC_COOKIE_SECURE` is

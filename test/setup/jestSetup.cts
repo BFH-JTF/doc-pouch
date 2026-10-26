@@ -1,5 +1,28 @@
 process.env.NODE_ENV = 'test';
 
+// The server no longer falls back to a publicly known JWT signing secret
+// (see webTokenStuff.resolveJwtSecret): an unconfigured environment gets a
+// random per-process secret. Tests forge and verify tokens, so a
+// deterministic secret must be configured before any module reads it.
+if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = 'docpouch-test-jwt-secret';
+}
+
+// Generated passwords are only returned in API/MCP responses when
+// PASSWORD_IN_RESPONSE=true (#114). The existing suites assert the
+// fallback behavior, so the opt-in stays enabled for the test environment;
+// passwordResponseGating.test.ts toggles it off to verify the default.
+if (!process.env.PASSWORD_IN_RESPONSE) {
+    process.env.PASSWORD_IN_RESPONSE = 'true';
+}
+
+// #119: rate limiting is disabled via this explicit opt-in (it no longer
+// keys off NODE_ENV). The login-heavy suites rely on it being set;
+// rateLimit.test.ts clears it to exercise the limiters themselves.
+if (!process.env.RATE_LIMIT_DISABLED) {
+    process.env.RATE_LIMIT_DISABLED = 'true';
+}
+
 // Increase timeout for all tests
 jest.setTimeout(30000);
 

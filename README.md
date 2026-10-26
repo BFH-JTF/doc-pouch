@@ -286,19 +286,22 @@ or in a `.env` file when running locally.
 
 | Variable          | Description                                                                                               | Default                            |
 |-------------------|-----------------------------------------------------------------------------------------------------------|------------------------------------|
-| `JWT_SECRET`      | Secret key used to sign JWT tokens. **Change in production!**                                             | `ThisIsMyVeryOwnAndCreativeSecret` |
+| `JWT_SECRET`      | Secret key used to sign JWT tokens. **Required in production** (`NODE_ENV=production` refuses to start without it). Unset in development: a random per-process secret is used. | *(random per-process)*             |
 | `SESSION_TIMEOUT` | Session timeout for JWT tokens and OIDC sessions. Accepts duration strings like `24h`, `8h`, `30m`, `7d`. | `24h`                              |
+| `ADMIN_INITIAL_PASSWORD` | Password for the `admin` account created on the first start (empty database). When unset, a strong random password is generated and printed once to the console. | *(random, printed once)*           |
 
 #### Email Configuration (SMTP)
 
 | Variable      | Description                                                                                              | Default                        |
 |---------------|----------------------------------------------------------------------------------------------------------|--------------------------------|
-| `SMTP_HOST`   | SMTP server host. If unset, email delivery is disabled and generated passwords are returned in API responses as a fallback. | *(disabled)* |
+| `SMTP_HOST`   | SMTP server host. If unset, email delivery is disabled; generated passwords are then **refused** unless `PASSWORD_IN_RESPONSE=true`. | *(disabled)* |
 | `SMTP_PORT`   | SMTP server port.                                                                                        | `587`                          |
 | `SMTP_SECURE` | Set to `true` for implicit TLS (typically port `465`); `false` uses STARTTLS on a plaintext connection.  | `false`                        |
 | `SMTP_USER`   | SMTP username. When empty, no authentication is attempted.                                               | *(empty)*                      |
 | `SMTP_PASS`   | SMTP password.                                                                                           | *(empty)*                      |
 | `SMTP_FROM`   | Displayed sender, e.g. `"DocPouch <noreply@example.com>"`.                                               | `DocPouch <noreply@localhost>` |
+| `PASSWORD_IN_RESPONSE` | Set to `true` to allow returning generated passwords in API/MCP responses when email delivery is unavailable (legacy fallback; off by default). | `false`        |
+| `SMTP_REQUIRE_TLS` | Set to `true` to make email delivery fail instead of falling back to a plaintext connection when the SMTP server does not offer STARTTLS. Recommended when passwords are emailed. | `false` |
 
 > **Note**: `SMTP_FROM` must be a real, deliverable address on a domain that actually exists in DNS and whose
 > SPF/DKIM records authorize the configured SMTP server to send for it. Mail sent from a placeholder or
@@ -318,10 +321,11 @@ or in a `.env` file when running locally.
 | Variable                        | Description                                                                                                         | Default                                       |
 |---------------------------------|---------------------------------------------------------------------------------------------------------------------|-----------------------------------------------|
 | `OIDC_ISSUER`                   | Base URL of the OIDC provider.                                                                                      | `http://localhost:3030`                       |
-| `OIDC_REGISTRATION_TOKEN`       | Token required for dynamic OIDC client registration (initial access token).                                         | (none — must be set for OIDC use)             |
+| `OIDC_REGISTRATION_TOKEN`       | Bearer token required for dynamic client registration (`POST /oidc/reg`). When unset (or blank), dynamic registration is **disabled**. | (none — registration disabled)                 |
 | `OIDC_REDIRECT_URI`             | Redirect URI for the built-in admin UI client. Leave unset to use the issuer root.                                  | `${OIDC_ISSUER}/`                             |
 | `OIDC_POST_LOGOUT_REDIRECT_URI` | Post-logout redirect URI for the built-in admin UI client. Falls back to `OIDC_REDIRECT_URI`.                       | `${OIDC_ISSUER}/`                             |
-| `OIDC_COOKIE_KEY`               | Secret key used to encrypt/sign OIDC session cookies. **Change in production!**                                     | `docpouch-cookie-secret-change-in-production` |
+| `OIDC_AUTO_CONSENT_CLIENTS`     | Comma-separated client IDs whose consent is granted silently (first-party apps only). All other clients are shown a consent screen. | `docpouch-admin-ui`                           |
+| `OIDC_COOKIE_KEY`               | Secret key used to sign OIDC session cookies. **Required in production** (`NODE_ENV=production` refuses to start without it). Unset in development: a random per-process key is used. | *(random per-process)*                        |
 | `OIDC_COOKIE_SECURE`            | Set to `true` when running the server directly with HTTPS. Leave unset when behind a TLS-terminating reverse proxy. | `false`                                       |
 
 #### MCP Configuration
@@ -365,6 +369,7 @@ limiters at once. When unset, the per-limiter defaults from the table above are 
 |---------------------|--------------------------------------------------------------------------------------------------|-----------------|
 | `RATE_LIMIT_MAX`    | Maximum number of requests per window per key (IP, or IP + username for `auth`). Positive integer. | *(per limiter)* |
 | `RATE_LIMIT_WINDOW` | Window duration. Accepts duration strings: `30s`, `15m`, `1h`, `2d`.                              | `15m`           |
+| `RATE_LIMIT_DISABLED` | Set to `true` to disable ALL rate limiters (test environments only). Rate limiting does not key off `NODE_ENV`, so a production deployment keeps its throttling regardless of `NODE_ENV`. | `false`        |
 
 > **Note**: Setting a single global override trades per-endpoint granularity for simplicity. For example, setting
 > `RATE_LIMIT_MAX=50` raises the auth limit from 5 to 50 but lowers the API limit from 100 to 50. If you need
@@ -453,14 +458,21 @@ docker run -d \
 
 To persist your data and logs, ensure you mount volumes for `/app/db` and `/app/log` as shown in the examples above.
 
+> **Note (upgrade to images built after v1.27)**: the container now runs as the unprivileged
+> `node` user (uid/gid 1000) instead of root. Existing installations whose mounted `./db` files
+> were created by the previous root-running container must fix the ownership once before upgrading:
+> `chown -R 1000:1000 ./db` (and `./log` if it contains root-owned files).
+
 ### Initial Credentials
 
 On the first start, DocPouch creates a default administrator account:
 
 - **Username**: `admin`
-- **Password**: `adminSecret`
+- **Password**: a strong random value, printed **once** to the console at first startup
+  (or the value of `ADMIN_INITIAL_PASSWORD` if configured)
 
-> **Security Note**: Please change the administrator password immediately after the first login.
+> **Security Note**: Store the printed password immediately, then change it after the first login.
+> It is not written to any log file and is not shown again.
 
 ## API
 
@@ -468,10 +480,13 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 
 ### User Management
 - `POST /users/login` - Authenticate a user and receive a JWT token
-- `GET /users/list` - List user information (all users for admins, own info for regular users)
+- `GET /users/list` - List user information (all users for admins, own info for regular users; password hashes are never returned)
 - `GET /users/whoami` - Get information about the current authenticated user
 - `POST /users/create` - Create a new user (admin only)
 - `PATCH /users/update/{userID}` - Update user information
+- `POST /users/forgot-password` - Request a password-reset email for an account
+- `POST /users/reset-password` - Set a new password with a single-use reset token (from the emailed
+  `${BASE_URL}/reset-password?token=...` link, which the admin UI handles automatically)
 - `DELETE /users/remove/{userID}` - Remove a user and all their documents (admin only)
 
 ### Document Management
@@ -506,6 +521,9 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
     - Query parameters:
         - `scope`: Export scope - `all` (default), `users`, `documents`, or `structures`
         - `format`: Export format - `zip` (default) or `json`
+        - `includeHashes`: Include bcrypt password hashes in the exported user records - `false` (default) or `true`.
+          Hashes are stripped unless this is set; pass `true` for backups whose restore must preserve credentials
+          (the admin UI's export menu does this automatically).
     - Example: `GET /database/export?scope=users&format=json`
 - `POST /database/import` - Import database (admin only)
     - Form data:
@@ -574,13 +592,24 @@ In addition, the server exposes a few DocPouch-specific endpoints:
 
 DocPouch automatically registers a fixed OIDC client (`client_id: docpouch-admin-ui`) for the bundled admin UI.
 It uses PKCE (`token_endpoint_auth_method: none`) so the UI can log in without storing a client secret. The
-redirect and post-logout URIs default to the issuer root, but can be overridden with `OIDC_REDIRECT_URI` and
-`OIDC_POST_LOGOUT_REDIRECT_URI`. `GET /api/oidc-client-config` is what the UI uses to discover this client.
+redirect and post-logout URIs are derived from trusted server configuration — the issuer root by default,
+overridable with `OIDC_REDIRECT_URI` and `OIDC_POST_LOGOUT_REDIRECT_URI`. Request headers (such as `Host` or
+`X-Forwarded-Proto`) never influence the registered URIs. `GET /api/oidc-client-config` is what the UI uses
+to discover this client.
+
+### Consent
+
+Clients listed in `OIDC_AUTO_CONSENT_CLIENTS` (by default only `docpouch-admin-ui`) are granted consent
+silently during login. Every other client — including all clients registered through dynamic registration —
+must be approved by the signed-in user on the consent screen that DocPouch serves during the authorization
+flow. Denying on that screen aborts the request with `access_denied`.
 
 ### Registering your own client
 
 External tools (or you, when integrating DocPouch into your own application) register their own client through
-dynamic client registration. You need an `OIDC_REGISTRATION_TOKEN` from the DocPouch administrator.
+dynamic client registration. You need an `OIDC_REGISTRATION_TOKEN` from the DocPouch administrator. If no
+token is configured, dynamic client registration is disabled. Note that clients registered this way always go
+through the user-facing consent screen described above.
 
 ```ts
 import DbPouchClient from 'docpouch-client';

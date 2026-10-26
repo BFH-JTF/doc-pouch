@@ -19,6 +19,7 @@ import docPouchLogo from '@/srv/assets/docPouch.png';
 import AboutDialog from "./components/AboutDialog.vue";
 import UpdateAvailableDialog from "./components/UpdateAvailableDialog.vue";
 import ApiKeyManagementDialog from "./components/ApiKeyManagementDialog.vue";
+import ResetPasswordDialog from "./components/ResetPasswordDialog.vue";
 import type {
   I_EventString,
   I_DocumentEntry,
@@ -57,6 +58,24 @@ const structureArray = ref(<I_DataStructure[]>[]);
 const typeArray = ref(<I_LegacyDocumentType[]>[]);
 const anonymousAllowlist = ref<Array<{ type: number, subType: number }>>([]);
 let shownComponent = ref(DisplayComponent.documentViewer);
+
+// Reset-password flow (#110): the emailed reset link points the user at
+// /reset-password?token=... — the SPA serves itself for that path, so the
+// token is picked up here and the reset dialog is shown instead of login.
+const resetPasswordToken = ref<string | null>(null);
+const isResetPasswordPage = window.location.pathname === '/reset-password';
+if (isResetPasswordPage) {
+  const tokenFromUrl = new URLSearchParams(window.location.search).get('token');
+  if (tokenFromUrl) {
+    resetPasswordToken.value = tokenFromUrl;
+  }
+}
+
+function closeResetPasswordDialog() {
+  resetPasswordToken.value = null;
+  // Leave the /reset-password path so a browser reload shows the normal UI.
+  window.history.replaceState({}, '', '/');
+}
 const apiClient = new DbPouchClient(window.location.origin, 0, handleNetworkEvent);
 const isLoggedIn = computed(() => authToken.value !== null);
 const showLoginDialog = ref(true)
@@ -473,7 +492,11 @@ function handleLoginSuccess(loginInformation: I_LoginResponse | null) {
 
 async function checkForUpdates() {
   try {
-    const response = await fetch('/version/check');
+    // #117: the version endpoint is authenticated like every other API
+    // route, so the exact server version is not disclosed anonymously.
+    const response = await fetch('/version/check', {
+      headers: authToken.value ? {Authorization: `Bearer ${authToken.value}`} : {}
+    });
     if (response.ok) {
       const data = await response.json();
       if (data.hasUpdate) {
@@ -678,7 +701,11 @@ async function handleExportDatabase(scope: ExportScope = 'all', format: ExportFo
   try {
     const params = new URLSearchParams({
       scope,
-      format
+      format,
+      // The UI export is the admin's backup action, so password hashes are
+      // included to keep the backup restorable (the REST API strips them
+      // unless explicitly requested).
+      includeHashes: 'true'
     });
     const exportUrl = `/database/export?${params.toString()}`;
     
@@ -1026,11 +1053,17 @@ async function migrateDatabase() {
           </div>
         </div>
       </v-footer>
-      <LoginDialog v-if="!authToken" v-model:show="showLoginDialog"
+      <LoginDialog v-if="!authToken && !resetPasswordToken" v-model:show="showLoginDialog"
                    :api-client="apiClient" :show-oidc="showOidcLogin"
                    @login-success="handleLoginSuccess"
                    @oidc-login="startOidcLogin"
                    @update:show="handleDialogUpdate"/>
+      <ResetPasswordDialog
+          v-if="resetPasswordToken"
+          :show="!!resetPasswordToken"
+          :token="resetPasswordToken"
+          @close="closeResetPasswordDialog"
+      />
       <AboutDialog :show="showAboutDialog" @close="showAboutDialog = false"/>
       <ImportDatabaseDialog :api-client="apiClient" :show="showImportDialog" @close="showImportDialog = false"
                             @imported="handleImportCompleted" @logout="handleLogout"/>

@@ -392,7 +392,7 @@ integration. The MCP server runs at `/mcp` on the DocPouch host and does not req
 → Check that `OIDC_REGISTRATION_TOKEN` is correct and that DocPouch's `ALLOWED_ORIGINS` includes your RP origin.
 
 **"Invalid user or password" (JWT)**
-→ The default admin user created by DocPouch is `admin` / `adminSecret`. Change it immediately in production.
+→ The default admin user created by DocPouch is `admin` with a random password printed once at first startup (or the value of `ADMIN_INITIAL_PASSWORD`). Change it immediately in production.
 
 **"Failed to load data"**
 → Check the browser's Network tab. If requests go to `localhost` instead of `localhost:3030`, verify the URL and port in

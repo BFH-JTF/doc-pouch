@@ -7,37 +7,11 @@ import {
 } from '../schemas.js';
 import {mcpAuthContext} from '../context.js';
 import {getErrorMessage} from '../utils.js';
+import {stripUserPasswords, stripUserPasswordsFromExport} from '../../userSanitizer.js';
 
 function getUserId(): string | null {
     const store = mcpAuthContext.getStore();
     return store?.userid ?? null;
-}
-
-function stripPasswords(data: any): any {
-    if (Array.isArray(data)) {
-        return data.map(item => {
-            if (item && typeof item === 'object') {
-                const {password: _, ...rest} = item;
-                return rest;
-            }
-            return item;
-        });
-    }
-    if (data && typeof data === 'object') {
-        const {password: _, ...rest} = data;
-        return rest;
-    }
-    return data;
-}
-
-function stripPasswordsFromExport(data: any): any {
-    if (data.users) {
-        data.users = data.users.map((u: any) => {
-            const {password: _, ...rest} = u;
-            return rest;
-        });
-    }
-    return data;
 }
 
 function parseDatabaseScope(scope: string): DatabaseCollection | 'all' {
@@ -82,13 +56,13 @@ export function registerDatabaseTools(
 
             if (scope === 'all') {
                 const exportData = await dataManager.exportAllData();
-                stripPasswordsFromExport(exportData);
+                stripUserPasswordsFromExport(exportData);
                 return {content: [{type: 'text', text: JSON.stringify(exportData)}]};
             }
 
             const collectionData = await dataManager.exportCollection(scope as DatabaseCollection);
             if (scope === 'users') {
-                const sanitized = stripPasswords(collectionData);
+                const sanitized = stripUserPasswords(collectionData);
                 return {content: [{type: 'text', text: JSON.stringify(sanitized)}]};
             }
             return {content: [{type: 'text', text: JSON.stringify(collectionData)}]};

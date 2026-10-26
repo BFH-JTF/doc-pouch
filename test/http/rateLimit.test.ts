@@ -77,12 +77,14 @@ describe('trust proxy resolution behavior in express', () => {
 describe('authRateLimiter username+IP keying', () => {
     let app: Express;
     const previousNodeEnv = process.env.NODE_ENV;
+    const previousRateLimitDisabled = process.env.RATE_LIMIT_DISABLED;
 
     const post = (clientIp: string, body: Record<string, unknown>) =>
         request(app).post('/login').set('X-Forwarded-For', clientIp).send(body);
 
     beforeAll(() => {
         process.env.NODE_ENV = 'development';
+        delete process.env.RATE_LIMIT_DISABLED;
         const limiterApp = express();
         limiterApp.set('trust proxy', 'loopback');
         limiterApp.use(express.json());
@@ -94,6 +96,11 @@ describe('authRateLimiter username+IP keying', () => {
 
     afterAll(() => {
         process.env.NODE_ENV = previousNodeEnv;
+        if (previousRateLimitDisabled === undefined) {
+            delete process.env.RATE_LIMIT_DISABLED;
+        } else {
+            process.env.RATE_LIMIT_DISABLED = previousRateLimitDisabled;
+        }
     });
 
     test('isolates users behind the same NAT address', async () => {
@@ -144,12 +151,14 @@ describe('authRateLimiter username+IP keying', () => {
 describe('authIpRateLimiter IP-wide cap', () => {
     let app: Express;
     const previousNodeEnv = process.env.NODE_ENV;
+    const previousRateLimitDisabled = process.env.RATE_LIMIT_DISABLED;
 
     const post = (clientIp: string, body: Record<string, unknown>) =>
         request(app).post('/login').set('X-Forwarded-For', clientIp).send(body);
 
     beforeAll(() => {
         process.env.NODE_ENV = 'development';
+        delete process.env.RATE_LIMIT_DISABLED;
         const limiterApp = express();
         limiterApp.set('trust proxy', 'loopback');
         limiterApp.use(stripUntrustedForwardedHeaders('loopback'));
@@ -162,6 +171,11 @@ describe('authIpRateLimiter IP-wide cap', () => {
 
     afterAll(() => {
         process.env.NODE_ENV = previousNodeEnv;
+        if (previousRateLimitDisabled === undefined) {
+            delete process.env.RATE_LIMIT_DISABLED;
+        } else {
+            process.env.RATE_LIMIT_DISABLED = previousRateLimitDisabled;
+        }
     });
 
     test('rotating usernames cannot bypass the IP-wide cap', async () => {
