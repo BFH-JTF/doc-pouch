@@ -1,3 +1,10 @@
+## [1.27.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.27.1...v1.27.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* **security:** address the CodeQL alerts introduced by the security remediation stack ([e38bddd](https://github.com/BFH-JTF/doc-pouch/commit/e38bdddb9302bbc9e2334d112cd97fbf32c05d39)), closes [#122](https://github.com/BFH-JTF/doc-pouch/issues/122) [#124](https://github.com/BFH-JTF/doc-pouch/issues/124) [#124](https://github.com/BFH-JTF/doc-pouch/issues/124)
+
 ## [1.27.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.27.0...v1.27.1) (2026-10-26)
 
 
