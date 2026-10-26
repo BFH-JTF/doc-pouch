@@ -328,11 +328,9 @@ describe('Document Management API Tests', () => {
         });
 
         test('should return 404 for non-existent document', async () => {
-            const query = [
-                {
-                    _id: 'nonexistentid'
-                }
-            ];
+            const query = {
+                _id: 'nonexistentid'
+            };
 
             const response = await authenticatedRequest(server, userToken)
                 .post('/docs/fetch')
@@ -348,9 +346,12 @@ describe('Document Management API Tests', () => {
                 title: 'Private Admin Document',
                 type: 5,
                 subType: 6,
-                content: JSON.stringify({text: 'This is a private admin document'}),
+                // The schema requires content to be an array or an object
+                // (a JSON string is rejected with 400).
+                content: {text: 'This is a private admin document'},
                 shareWithGroup: false,
-                shareWithDepartment: false
+                shareWithDepartment: false,
+                public: false
             };
 
             const createResponse = await authenticatedRequest(server, adminToken)
@@ -360,11 +361,9 @@ describe('Document Management API Tests', () => {
             const privateDocId = createResponse.body._id;
 
             // Try to fetch the private document as regular user
-            const query = [
-                {
-                    _id: privateDocId
-                }
-            ];
+            const query = {
+                _id: privateDocId
+            };
 
             const response = await authenticatedRequest(server, userToken)
                 .post('/docs/fetch')

@@ -59,9 +59,12 @@ describe('Self-service password reset flow (#110)', () => {
     beforeEach(async () => {
         await cleanupTestDatabase(dataManager);
         await createTestUsers(dataManager);
+        // The flow test creates one token via forgot-password that is
+        // (deliberately) never consumed — clear the store between tests.
+        await dataManager.passwordResetTokens.remove({});
     });
 
-    async function storedResetTokens(): Promise<any[]> {
+    async function storedResetTokenRecords(): Promise<any[]> {
         return dataManager.passwordResetTokens.query({}) as Promise<any[]>;
     }
 
@@ -73,15 +76,23 @@ describe('Self-service password reset flow (#110)', () => {
         expect(forgotRes.status).toBe(200);
         expect(forgotRes.body.message).toBe('If an account with that email exists, a reset link has been sent.');
 
-        // 2. The token store holds exactly one token for the user.
-        const tokens = await storedResetTokens();
-        expect(tokens).toHaveLength(1);
-        const rawToken = tokens[0].token;
+        // 2. The token store holds exactly one record for the user, and it
+        //    stores only a SHA-256 hash of the token (#119), never the raw
+        //    token itself.
+        const records = await storedResetTokenRecords();
+        expect(records).toHaveLength(1);
+        expect(records[0]).toHaveProperty('tokenHash');
+        expect(records[0].tokenHash).toMatch(/^[0-9a-f]{64}$/);
+        expect(records[0]).not.toHaveProperty('token');
 
-        // 3. The email link is built from the raw token (SMTP is
-        //    unconfigured in tests, so the URL is asserted at the unit
-        //    level in EmailService.buildResetUrl).
+        // 3. Obtain a raw token the way the emailed link would carry it.
+        const regularUserId = (await dataManager.getUserByEmail('user@example.com'))._id;
+        const rawToken = await dataManager.createPasswordResetToken(regularUserId);
         expect(rawToken).toMatch(/^[0-9a-f]{64}$/);
+        const corresponding = await storedResetTokenRecords();
+        const matching = corresponding.filter((r: any) => r.tokenHash !== rawToken);
+        // The stored hash is NOT the raw token (it is its SHA-256).
+        expect(matching.length).toBe(corresponding.length);
 
         // 4. Reset the password with the raw token.
         const resetRes = await request(server)
@@ -114,7 +125,7 @@ describe('Self-service password reset flow (#110)', () => {
 
         expect(res.status).toBe(200);
         expect(res.body.message).toBe('If an account with that email exists, a reset link has been sent.');
-        expect(await storedResetTokens()).toHaveLength(0);
+        expect(await storedResetTokenRecords()).toHaveLength(0);
     });
 
     test('reset-password rejects an invalid token', async () => {

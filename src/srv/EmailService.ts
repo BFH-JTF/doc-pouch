@@ -42,6 +42,11 @@ export default class EmailService {
                 host: smtpConfig.host,
                 port: smtpConfig.port || 587,
                 secure: smtpConfig.secure || false,
+                // #119: when set, delivery fails instead of falling back to a
+                // plaintext connection if STARTTLS is unavailable. Passwords
+                // are emailed by this service, so operators handling real
+                // credentials should enable it.
+                requireTLS: process.env.SMTP_REQUIRE_TLS === 'true',
                 auth: smtpConfig.user ? {
                     user: smtpConfig.user,
                     pass: smtpConfig.pass,

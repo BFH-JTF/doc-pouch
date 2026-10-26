@@ -16,6 +16,13 @@ if (!process.env.PASSWORD_IN_RESPONSE) {
     process.env.PASSWORD_IN_RESPONSE = 'true';
 }
 
+// #119: rate limiting is disabled via this explicit opt-in (it no longer
+// keys off NODE_ENV). The login-heavy suites rely on it being set;
+// rateLimit.test.ts clears it to exercise the limiters themselves.
+if (!process.env.RATE_LIMIT_DISABLED) {
+    process.env.RATE_LIMIT_DISABLED = 'true';
+}
+
 // Increase timeout for all tests
 jest.setTimeout(30000);
 

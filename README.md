@@ -301,6 +301,7 @@ or in a `.env` file when running locally.
 | `SMTP_PASS`   | SMTP password.                                                                                           | *(empty)*                      |
 | `SMTP_FROM`   | Displayed sender, e.g. `"DocPouch <noreply@example.com>"`.                                               | `DocPouch <noreply@localhost>` |
 | `PASSWORD_IN_RESPONSE` | Set to `true` to allow returning generated passwords in API/MCP responses when email delivery is unavailable (legacy fallback; off by default). | `false`        |
+| `SMTP_REQUIRE_TLS` | Set to `true` to make email delivery fail instead of falling back to a plaintext connection when the SMTP server does not offer STARTTLS. Recommended when passwords are emailed. | `false` |
 
 > **Note**: `SMTP_FROM` must be a real, deliverable address on a domain that actually exists in DNS and whose
 > SPF/DKIM records authorize the configured SMTP server to send for it. Mail sent from a placeholder or
@@ -368,6 +369,7 @@ limiters at once. When unset, the per-limiter defaults from the table above are 
 |---------------------|--------------------------------------------------------------------------------------------------|-----------------|
 | `RATE_LIMIT_MAX`    | Maximum number of requests per window per key (IP, or IP + username for `auth`). Positive integer. | *(per limiter)* |
 | `RATE_LIMIT_WINDOW` | Window duration. Accepts duration strings: `30s`, `15m`, `1h`, `2d`.                              | `15m`           |
+| `RATE_LIMIT_DISABLED` | Set to `true` to disable ALL rate limiters (test environments only). Rate limiting does not key off `NODE_ENV`, so a production deployment keeps its throttling regardless of `NODE_ENV`. | `false`        |
 
 > **Note**: Setting a single global override trades per-endpoint granularity for simplicity. For example, setting
 > `RATE_LIMIT_MAX=50` raises the auth limit from 5 to 50 but lowers the API limit from 100 to 50. If you need
@@ -455,6 +457,11 @@ docker run -d \
 ### Persisting Data
 
 To persist your data and logs, ensure you mount volumes for `/app/db` and `/app/log` as shown in the examples above.
+
+> **Note (upgrade to images built after v1.27)**: the container now runs as the unprivileged
+> `node` user (uid/gid 1000) instead of root. Existing installations whose mounted `./db` files
+> were created by the previous root-running container must fix the ownership once before upgrading:
+> `chown -R 1000:1000 ./db` (and `./log` if it contains root-owned files).
 
 ### Initial Credentials
 

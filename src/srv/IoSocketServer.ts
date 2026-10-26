@@ -8,10 +8,10 @@ export default class IoSocketServer {
     private ioSocket: Server;
     private wsClientList: I_Client[]
     private networkManager: NetworkManager;
-    private JWTOptions: {secret: string, algorithm: string};
+    private JWTOptions: {secret: string, algorithm: string, issuer: string};
     private heartbeatInterval: NodeJS.Timeout;
 
-    constructor(networkManager: NetworkManager, JWTOptions: {secret: string, algorithm: string}) {
+    constructor(networkManager: NetworkManager, JWTOptions: {secret: string, algorithm: string, issuer: string}) {
         this.wsClientList = [];
         this.JWTOptions = JWTOptions;
         this.networkManager = networkManager;
@@ -169,19 +169,28 @@ export default class IoSocketServer {
     }
 
 
-    async sendEventToDocumentAccessors(sourceID: string | undefined, documentID: string, event: I_EventString, data?: I_WsMessage) {
+    async sendEventToDocumentAccessors(sourceID: string | undefined, documentID: string, event: I_EventString, data?: I_WsMessage, preloadedDocument?: I_DocumentEntry) {
         this.networkManager.logger.debug(`Sending event '${event}' for document ${documentID} to users with access`);
 
         try {
-            // Get the document to check sharing settings
-            const docQuery = await this.networkManager.dataManager.documents.query({_id: documentID});
+            // Callers that already hold the document record (e.g. the
+            // removal flow, where the document is deleted before the
+            // event is routed — see #119) pass it directly instead of
+            // letting this method re-query it.
+            let document: I_DocumentEntry;
+            if (preloadedDocument) {
+                document = preloadedDocument;
+            } else {
+                // Get the document to check sharing settings
+                const docQuery = await this.networkManager.dataManager.documents.query({_id: documentID});
 
-            if (docQuery.length === 0) {
-                this.networkManager.logger.warn(`Document ${documentID} not found when trying to send event`);
-                return;
+                if (docQuery.length === 0) {
+                    this.networkManager.logger.warn(`Document ${documentID} not found when trying to send event`);
+                    return;
+                }
+
+                document = docQuery[0] as I_DocumentEntry;
             }
-
-            const document = docQuery[0] as I_DocumentEntry;
             const ownerID = document.owner;
 
             // Always send to the document owner's connected clients, excluding the source if specified
@@ -269,6 +278,19 @@ export default class IoSocketServer {
         }
     }
 
+    /**
+     * Whether the given socket id is currently connected and belongs to
+     * the given user. Used to validate the client-supplied X-Socket-ID
+     * header, so one user cannot claim (and thereby suppress events for)
+     * another user's socket (#119).
+     */
+    ownsSocket(socketID: string, userid: string): boolean {
+        return this.wsClientList.some(client =>
+            client.socket.id === socketID &&
+            client.userid === userid
+        );
+    }
+
     private getClientBySocketID(socketID: string): I_Client | undefined {
         return this.wsClientList.find(client => client.socket.id === socketID);
     }
@@ -293,7 +315,12 @@ export default class IoSocketServer {
         try {
             this.networkManager.logger.debug(`Verifying JWT token for socket ${socket.id}`);
 
-            jwt.verify(token, this.JWTOptions.secret, (err: any, payload: any) => {
+            // #119: accepted algorithm and issuer are pinned to what the
+            // server signs with.
+            jwt.verify(token, this.JWTOptions.secret, {
+                algorithms: [this.JWTOptions.algorithm],
+                issuer: this.JWTOptions.issuer,
+            } as any, (err: any, payload: any) => {
                 if (!err && payload && payload.id) {
                     this.networkManager.logger.debug(`JWT verified successfully for user ${payload.id}, socket ${socket.id}`);
                     this.networkManager.dataManager.getUserByID(payload.id).then(user => {

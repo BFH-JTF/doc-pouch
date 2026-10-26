@@ -11,7 +11,7 @@ import {
 import path from 'path';
 import cors from 'cors';
 import crypto from 'crypto';
-import type {I_UserCreation, I_UserEntry, I_UserUpdate, I_AssignableRole} from "docpouch-client";
+import type {I_UserCreation, I_UserEntry, I_UserUpdate, I_AssignableRole, I_DocumentEntry} from "docpouch-client";
 import {effectiveRole, isAssignableRole} from "./roles.js";
 import NeDbWrapper, {type DatabaseCollection, type ImportMode, type IImportResult} from "./NeDbWrapper.js";
 import winston from "winston";
@@ -155,9 +155,13 @@ const OIDC_SCOPE_DESCRIPTIONS: Record<string, string> = {
 export function cspMiddleware(req: Request, res: Response, next: NextFunction) {
     const nonce = crypto.randomBytes(16).toString('base64');
     res.locals.nonce = nonce;
+    // #119: 'strict-dynamic' was removed. It makes supporting browsers
+    // ignore host-source allowlists like 'self', which would block the
+    // SPA's <script src> tags (they do not carry the nonce). The nonce
+    // still gates the inline scripts of the interaction pages.
     const csp = [
         "default-src 'none'",
-        `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+        `script-src 'self' 'nonce-${nonce}'`,
         `style-src 'self' 'nonce-${nonce}'`,
         "img-src 'self' https:",
         "connect-src 'self'",
@@ -225,6 +229,14 @@ export default class NetworkManager {
         let jwks: any;
         if (fs.existsSync(jwksFile)) {
             jwks = JSON.parse(fs.readFileSync(jwksFile, 'utf8'));
+            // #119: the JWKS file contains the OIDC signing private key.
+            // Restrict it to the owning user, also fixing files written by
+            // older versions with the platform default (0644).
+            try {
+                fs.chmodSync(jwksFile, 0o600);
+            } catch {
+                // Windows ignores POSIX modes.
+            }
             this.logger.info('Loaded existing JWKS from disk');
         } else {
             // Generate static JWKS for token signing (development/simple setup)
@@ -258,7 +270,13 @@ export default class NetworkManager {
             if (!fs.existsSync(path.dirname(jwksFile))) {
                 fs.mkdirSync(path.dirname(jwksFile), {recursive: true});
             }
+            // #119: written with 0600 — the file holds the private key.
             fs.writeFileSync(jwksFile, JSON.stringify(jwks, null, 2), 'utf8');
+            try {
+                fs.chmodSync(jwksFile, 0o600);
+            } catch {
+                // Windows ignores POSIX modes.
+            }
             this.logger.info('Persisted new JWKS to disk');
         }
 
@@ -317,7 +335,8 @@ export default class NetworkManager {
                         const xsrfMatch = form.match(/name="xsrf" value="([^"]+)"/);
                         ctx.logger?.debug({
                             event: 'logoutSource.render',
-                            xsrf: xsrfMatch ? xsrfMatch[1] : 'NOT_FOUND',
+                            // #119: never log the XSRF secret itself.
+                            xsrf: xsrfMatch ? '[present]' : 'NOT_FOUND',
                             sessionUid: ctx.oidc?.session?.uid,
                             sessionAccountId: ctx.oidc?.session?.accountId,
                             sessionDestroyed: ctx.oidc?.session?.destroyed,
@@ -356,7 +375,9 @@ export default class NetworkManager {
                         html = html.replace(/__NONCE__/g, ctx.res.locals?.nonce || '');
                         html = html.replace('__ACTION_URL__', actionMatch ? actionMatch[1] : '');
                         html = html.replace('__XSRF__', xsrfMatch ? xsrfMatch[1] : '');
-                        html = html.replace('__POST_LOGOUT_REDIRECT_URI__', cancelUrl);
+                        // #119: the return URL is HTML-escaped before being
+                        // interpolated into the template.
+                        html = html.replace('__POST_LOGOUT_REDIRECT_URI__', escapeHtml(cancelUrl));
                         ctx.body = html;
                     },
                     postLogoutSuccessSource: async function renderLogoutSuccessPage(ctx: any) {
@@ -637,7 +658,8 @@ export default class NetworkManager {
         });
         this.socketServer = new IoSocketServer(this, {
             secret: JWTOptions.secret,
-            algorithm: JWTOptions.settings.algorithm
+            algorithm: JWTOptions.settings.algorithm,
+            issuer: JWTOptions.settings.issuer
         })
         this.initializeExpress();
     }
@@ -710,6 +732,11 @@ export default class NetworkManager {
         };
 
         this.expressApp.use(cors(this.corsOptions));
+        // #119: the CSP middleware is mounted BEFORE the static handlers so
+        // the SPA's index.html is served with a Content-Security-Policy too.
+        // (It previously ran after express.static, so static/SPA responses
+        // shipped without any CSP header.)
+        this.expressApp.use(cspMiddleware);
         this.expressApp.use(express.static(vuePath, {
             setHeaders: (res, filePath) => {
                 if (filePath.endsWith('index.html')) {
@@ -717,12 +744,14 @@ export default class NetworkManager {
                 }
             }
         }));
-        // Serve OIDC login page and static assets
-        const oidcStaticPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv'))
-            ? path.resolve(process.cwd(), 'dist/srv')
-            : path.resolve(process.cwd(), 'src/srv');
+        // Serve OIDC assets (login/logout/consent pages reference
+        // /oidc/static/docPouch.png). #119: the mount is restricted to the
+        // assets directory — it previously exposed the whole dist/srv
+        // directory, including compiled backend code.
+        const oidcStaticPath = fs.existsSync(path.resolve(process.cwd(), 'dist/srv/assets'))
+            ? path.resolve(process.cwd(), 'dist/srv/assets')
+            : path.resolve(process.cwd(), 'src/srv/assets');
         this.expressApp.use('/oidc/static', express.static(oidcStaticPath));
-        this.expressApp.use(cspMiddleware);
         this.expressApp.disable('etag'); // Disable ETag header to prevent caching of responses
 
         // OIDC client config endpoint (must be before the OIDC provider mount)
@@ -828,7 +857,8 @@ export default class NetworkManager {
                 postLogoutRedirectUri: req.query.post_logout_redirect_uri,
                 isLogoutCancelled: req.query.logout === 'no',
                 headers: {
-                    cookie: req.headers.cookie,
+                    // #119: never write live session cookies to the log.
+                    cookie: req.headers.cookie ? '[redacted]' : undefined,
                     'user-agent': req.headers['user-agent'],
                     referer: req.headers.referer
                 }
@@ -1644,10 +1674,15 @@ export default class NetworkManager {
         });
 
         this.expressApp.post("/docs/fetch", this.authenticate, apiRateLimiter, (req, res) => {
-            let queryObject = req.body;
-            this.validator.getValidatedObject("documentFetch", queryObject);
+            // #119: the validation result is used instead of being
+            // discarded — invalid queries are rejected with 400.
+            const validatedQuery = this.validator.getValidatedObject("documentFetch", req.body);
+            if (validatedQuery === false) {
+                res.status(400).json({error: "Invalid document query"});
+                return;
+            }
 
-            this.dataManager.fetchDocuments(req.body, req.userid)
+            this.dataManager.fetchDocuments(validatedQuery, req.userid)
                 .then((documents) => {
                     res.status(200).json(documents);
                 })
@@ -1783,34 +1818,43 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.delete("/docs/remove/:documentID", this.authenticate, writeRateLimiter, (req, res) => {
-            if (req.params.documentID !== undefined) {
-                this.socketServer.sendEventToDocumentAccessors(req.socketID, req.params.documentID as string, "removedDocument", {removedID: req.params.documentID as string}).then(() => {
-                    if (req.params.documentID !== undefined) {
-                        this.dataManager.removeDocument(req.params.documentID as string, req.userid)
-                            .then((numRemoved) => {
-                                if (numRemoved > 0) {
-                                    res.status(200).json({message: "Document removed successfully"});
+        this.expressApp.delete("/docs/remove/:documentID", this.authenticate, writeRateLimiter, async (req, res) => {
+            if (req.params.documentID === undefined) {
+                return res.status(400).json({error: "Document ID is required"});
+            }
+            const documentID = req.params.documentID as string;
+            try {
+                // #119: the removal event previously broadcast BEFORE the
+                // permission check, so accessors were notified even when the
+                // request later failed with 403/404. The share flags needed
+                // to route the event are captured up front, and the event is
+                // only sent after the removal succeeded.
+                const docResult = await this.dataManager.documents.query({_id: documentID});
+                if (docResult.length !== 1) {
+                    return res.status(404).json({error: "Document not found"});
+                }
+                const document = docResult[0] as I_DocumentEntry;
 
-                                    this.logger.info(`Document removed: ${req.params.documentID}`);
-                                } else {
-                                    res.status(404).json({error: "Document not found"});
-                                }
-                            })
-                            .catch((error) => {
-                                // #117: map the data layer's known status
-                                // rejections to static messages.
-                                if (error === 404) {
-                                    res.status(404).json({error: "Document not found"});
-                                } else if (error === 403 || error === 401) {
-                                    res.status(error).json({error: "Not authorized to remove this document"});
-                                } else {
-                                    this.logger.error(`Error removing document: ${error}`);
-                                    res.status(500).json({error: "Failed to remove document"});
-                                }
-                            });
-                    }
-                })
+                const numRemoved = await this.dataManager.removeDocument(documentID, req.userid);
+                if (numRemoved < 1) {
+                    return res.status(404).json({error: "Document not found"});
+                }
+
+                this.logger.info(`Document removed: ${documentID}`);
+                res.status(200).json({message: "Document removed successfully"});
+                this.socketServer.sendEventToDocumentAccessors(req.socketID, documentID, "removedDocument", {removedID: documentID}, document)
+                    .catch((error) => this.logger.error(`Error broadcasting removedDocument: ${error}`));
+            } catch (error) {
+                // #117: map the data layer's known status
+                // rejections to static messages.
+                if (error === 404) {
+                    res.status(404).json({error: "Document not found"});
+                } else if (error === 403 || error === 401) {
+                    res.status(error).json({error: "Not authorized to remove this document"});
+                } else {
+                    this.logger.error(`Error removing document: ${error}`);
+                    res.status(500).json({error: "Failed to remove document"});
+                }
             }
         });
 
@@ -2044,7 +2088,11 @@ export default class NetworkManager {
                         return res.status(400).json({error: "ZIP export supports only scope=all. Use format=json for scoped export."});
                     }
 
-                    const zipFilename = `docpouch-database-${Date.now()}.zip`;
+                    // #119: the temporary export is written to the OS temp
+                    // directory (not the process CWD, which holds the app's
+                    // data) and is cleaned up on every path, including the
+                    // archive error path.
+                    const zipFilename = path.join(os.tmpdir(), `docpouch-database-${process.pid}-${Date.now()}.zip`);
                     const output = fs.createWriteStream(zipFilename);
                     const archive = new ZipArchive({
                         zlib: {level: 9}
@@ -2066,7 +2114,11 @@ export default class NetworkManager {
 
                     archive.on('error', (err) => {
                         this.logger.error("Error creating zip archive:", err);
-                        res.status(500).json({error: "Error creating zip archive"});
+                        output.destroy();
+                        fs.unlink(zipFilename, () => undefined);
+                        if (!res.headersSent) {
+                            res.status(500).json({error: "Error creating zip archive"});
+                        }
                     });
 
                     archive.pipe(output);
@@ -2169,7 +2221,15 @@ export default class NetworkManager {
                         return res.status(400).json({error: "ZIP import supports only scope=all. Use JSON files for scoped import."});
                     }
 
-                    const zip = new AdmZip(getSafeUploadPath(uploadedFile.path));
+                    // #119: verify the ZIP magic header (PK) before handing
+                    // the bytes to the zip parser — the extension alone is
+                    // client-controlled.
+                    const zipBytes = fs.readFileSync(getSafeUploadPath(uploadedFile.path));
+                    if (zipBytes.length < 4 || zipBytes[0] !== 0x50 || zipBytes[1] !== 0x4b) {
+                        safeDeleteFile(uploadedFile.path);
+                        return res.status(400).json({error: "Uploaded file is not a valid ZIP archive"});
+                    }
+                    const zip = new AdmZip(zipBytes);
                     const zipEntries = zip.getEntries();
 
                     const collectionsData: any = {};
@@ -2327,7 +2387,14 @@ export default class NetworkManager {
             }
             req.userid = result.userid;
             if (result.socketID) {
-                req.socketID = result.socketID;
+                // #119: the claimed socket id must belong to the
+                // authenticated user, otherwise any client could suppress
+                // another client's event delivery by claiming its id.
+                if (this.socketServer.ownsSocket(result.socketID, result.userid)) {
+                    req.socketID = result.socketID;
+                } else {
+                    this.logger.warn(`Dropping X-Socket-ID not owned by user ${result.userid}`);
+                }
             }
             next();
         } catch (error) {

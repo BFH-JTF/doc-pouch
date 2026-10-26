@@ -355,7 +355,7 @@ export function registerUserTools(
     });
 
     server.registerTool('forgot_password', {
-        description: 'Request a password reset email for a user by their email address. This is a public endpoint — no authentication required. Always returns a generic success message to prevent email enumeration.',
+        description: 'Request a password reset email for a user by their email address (calling MCP tools requires authentication). Always returns a generic success message to prevent email enumeration.',
         inputSchema: ForgotPasswordSchema,
     }, async (args) => {
         try {
@@ -381,7 +381,7 @@ export function registerUserTools(
     });
 
     server.registerTool('reset_password', {
-        description: 'Reset a user password using a token received via email from forgot_password. This is a public endpoint — no authentication required.',
+        description: 'Reset a user password using a single-use token received via email from forgot_password. Tokens expire after one hour.',
         inputSchema: ResetPasswordSchema,
     }, async (args) => {
         try {

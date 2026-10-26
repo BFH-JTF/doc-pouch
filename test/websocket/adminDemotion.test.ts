@@ -79,7 +79,7 @@ describe('WebSocket admin privilege re-evaluation (#116)', () => {
             group: 'Admins',
             isAdmin: true,
         });
-        secondAdminToken = jwt.sign({id: secondAdmin._id}, process.env.JWT_SECRET as string, {expiresIn: '1h'});
+        secondAdminToken = jwt.sign({id: secondAdmin._id}, process.env.JWT_SECRET as string, {algorithm: 'HS512', expiresIn: '1h', issuer: 'DocPouch'});
 
         adminSocket = await connectSocket(adminToken);
         secondAdminSocket = await connectSocket(secondAdminToken);

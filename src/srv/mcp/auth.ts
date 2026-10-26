@@ -24,7 +24,13 @@ export async function authenticateRequest(
     }
 
     try {
-        const payload = jwt.verify(token, JWTOptions.secret) as any;
+        // #119: the accepted algorithm and issuer are pinned to what the
+        // server actually signs with, instead of trusting whatever the
+        // token header claims.
+        const payload = jwt.verify(token, JWTOptions.secret, {
+            algorithms: [JWTOptions.settings.algorithm],
+            issuer: JWTOptions.settings.issuer,
+        } as jwt.VerifyOptions) as any;
         const user = await dataManager.getUserByID(payload.id);
         if (!user) {
             return null;

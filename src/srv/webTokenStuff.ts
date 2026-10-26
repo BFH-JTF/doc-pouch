@@ -43,11 +43,12 @@ export const JWTOptions = {
 /**
  * Parse a duration string (e.g. "24h", "8h", "30m", "7d") into seconds.
  * Supports: s (seconds), m (minutes), h (hours), d (days).
- * Returns 86400 (24h) for unrecognized formats.
+ * Returns the caller-provided fallback (24h by default) for unrecognized
+ * formats.
  */
-export function parseDurationToSeconds(duration: string): number {
+export function parseDurationToSeconds(duration: string, fallbackSeconds: number = 86400): number {
     const match = duration.trim().match(/^(\d+(?:\.\d+)?)\s*(s|m|h|d)$/);
-    if (!match) return 86400;
+    if (!match) return fallbackSeconds;
     const value = parseFloat(match[1]);
     const unit = match[2];
     switch (unit) {
@@ -60,6 +61,6 @@ export function parseDurationToSeconds(duration: string): number {
         case 'd':
             return Math.round(value * 86400);
         default:
-            return 86400;
+            return fallbackSeconds;
     }
 }

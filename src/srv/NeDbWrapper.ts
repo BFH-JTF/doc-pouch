@@ -647,8 +647,11 @@ export default class NeDbWrapper {
     async createPasswordResetToken(userId: string): Promise<string> {
         const token = crypto.randomBytes(32).toString('hex');
         const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+        // #119: only a SHA-256 hash of the token is stored, so a leaked
+        // database file does not reveal usable reset tokens.
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
         await new Promise((resolve, reject) => {
-            this.passwordResetTokens.datastore.insert({token, userId, expiresAt}, (err: Error | null) => {
+            this.passwordResetTokens.datastore.insert({tokenHash, userId, expiresAt}, (err: Error | null) => {
                 if (err) reject(err);
                 else resolve(undefined);
             });
@@ -657,29 +660,33 @@ export default class NeDbWrapper {
     }
 
     async consumePasswordResetToken(token: string): Promise<string | null> {
-        return new Promise((resolve, reject) => {
-            this.passwordResetTokens.datastore.find({token: token}, (err: Error | null, docs: any[]) => {
-                if (err) {
-                    reject(err);
-                    return;
-                }
-                if (docs.length === 0) {
-                    resolve(null);
-                    return;
-                }
-                const record = docs[0];
-                if (record.expiresAt < Date.now()) {
-                    this.passwordResetTokens.datastore.remove({token: token}, {multi: false}, () => {
-                        resolve(null);
-                    });
-                    return;
-                }
-                const userId = record.userId;
-                this.passwordResetTokens.datastore.remove({token: token}, {multi: false}, () => {
-                    resolve(userId);
-                });
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        const record = await new Promise<any>((resolve) => {
+            this.passwordResetTokens.datastore.findOne({tokenHash}, (err: Error | null, doc: any) => {
+                resolve(err || !doc ? null : doc);
             });
         });
+        if (!record) {
+            return null;
+        }
+        if (record.expiresAt < Date.now()) {
+            await new Promise<void>((resolve) => {
+                this.passwordResetTokens.datastore.remove({tokenHash}, {multi: false}, () => resolve());
+            });
+            return null;
+        }
+        // #119: the remove is the single-use gate — of two racing
+        // requests only the one that actually removed the record
+        // proceeds.
+        const numRemoved = await new Promise<number>((resolve) => {
+            this.passwordResetTokens.datastore.remove({tokenHash}, {multi: false}, (err: Error | null, n: number) => {
+                resolve(err ? 0 : n);
+            });
+        });
+        if (numRemoved < 1) {
+            return null;
+        }
+        return record.userId;
     }
 
     createUser(newUser: I_UserCreation): Promise<I_UserEntry> {

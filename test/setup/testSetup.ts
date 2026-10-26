@@ -7,6 +7,7 @@ import winston from 'winston';
 import {Writable} from 'stream';
 import type {I_CorsOption} from '../../src/types.js';
 import type {I_UserCreation, I_UserEntry, I_WsMessage} from 'docpouch-client';
+import {JWTOptions} from '../../src/srv/webTokenStuff.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -127,8 +128,10 @@ export async function createTestUsers(dataManager: NeDbWrapper) {
     const createdAdminUser = await dataManager.createUser(adminUser);
     const createdRegularUser = await dataManager.createUser(regularUser);
 
-    const adminToken = jwt.sign({id: createdAdminUser._id, isAdmin: true}, JWT_SECRET, {expiresIn: '1h'});
-    const userToken = jwt.sign({id: createdRegularUser._id, isAdmin: false}, JWT_SECRET, {expiresIn: '1h'});
+    // Tokens are signed exactly the way the server signs them (algorithm
+    // and issuer are pinned by the verify options — see #119).
+    const adminToken = jwt.sign({id: createdAdminUser._id, isAdmin: true}, JWT_SECRET, {...JWTOptions.settings});
+    const userToken = jwt.sign({id: createdRegularUser._id, isAdmin: false}, JWT_SECRET, {...JWTOptions.settings});
 
     return {
         adminUser: createdAdminUser,
@@ -139,7 +142,7 @@ export async function createTestUsers(dataManager: NeDbWrapper) {
 }
 
 export function generateToken(user: I_UserEntry) {
-    return jwt.sign({id: user._id, isAdmin: false}, JWT_SECRET, {expiresIn: '1h'})
+    return jwt.sign({id: user._id, isAdmin: false}, JWT_SECRET, {...JWTOptions.settings})
 }
 
 /**

@@ -25,6 +25,14 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 RUN mkdir -p "/app/dist/db"
 
+# #119: run as the unprivileged 'node' user instead of root.
+# NOTE for existing installations upgrading to this image: any files
+# previously created by the root container (e.g. the mounted ./db volume)
+# must be chowned to uid/gid 1000 before the new container starts:
+#   chown -R 1000:1000 ./db
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 3030
 
 CMD ["node", "dist/srv/main.js"]
