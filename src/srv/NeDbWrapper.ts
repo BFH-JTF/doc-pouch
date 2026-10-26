@@ -647,9 +647,12 @@ export default class NeDbWrapper {
     async createPasswordResetToken(userId: string): Promise<string> {
         const token = crypto.randomBytes(32).toString('hex');
         const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
-        // #119: only a SHA-256 hash of the token is stored, so a leaked
-        // database file does not reveal usable reset tokens.
-        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        // #119: only a hash of the token is stored, so a leaked database
+        // file does not reveal usable reset tokens. bcrypt (slow, salted)
+        // is used because the token is presented as a credential by
+        // clients, and the presentation endpoints are rate-limited, so
+        // the ~100ms hash cost is negligible.
+        const tokenHash = await bcrypt.hash(token, this.saltRounds);
         await new Promise((resolve, reject) => {
             this.passwordResetTokens.datastore.insert({tokenHash, userId, expiresAt}, (err: Error | null) => {
                 if (err) reject(err);
@@ -660,18 +663,28 @@ export default class NeDbWrapper {
     }
 
     async consumePasswordResetToken(token: string): Promise<string | null> {
-        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-        const record = await new Promise<any>((resolve) => {
-            this.passwordResetTokens.datastore.findOne({tokenHash}, (err: Error | null, doc: any) => {
-                resolve(err || !doc ? null : doc);
+        // Salted hashes cannot be matched with an equality query, so the
+        // (small) store of outstanding tokens is scanned with a bcrypt
+        // compare each. The presentation endpoint is rate-limited, which
+        // bounds the cost of this loop.
+        const records = await new Promise<any[]>((resolve) => {
+            this.passwordResetTokens.datastore.find({}, (err: Error | null, docs: any[]) => {
+                resolve(err || !docs ? [] : docs);
             });
         });
-        if (!record) {
+        let matched: any = null;
+        for (const record of records) {
+            if (await bcrypt.compare(token, record.tokenHash)) {
+                matched = record;
+                break;
+            }
+        }
+        if (!matched) {
             return null;
         }
-        if (record.expiresAt < Date.now()) {
+        if (matched.expiresAt < Date.now()) {
             await new Promise<void>((resolve) => {
-                this.passwordResetTokens.datastore.remove({tokenHash}, {multi: false}, () => resolve());
+                this.passwordResetTokens.datastore.remove({_id: matched._id}, {multi: false}, () => resolve());
             });
             return null;
         }
@@ -679,14 +692,14 @@ export default class NeDbWrapper {
         // requests only the one that actually removed the record
         // proceeds.
         const numRemoved = await new Promise<number>((resolve) => {
-            this.passwordResetTokens.datastore.remove({tokenHash}, {multi: false}, (err: Error | null, n: number) => {
+            this.passwordResetTokens.datastore.remove({_id: matched._id}, {multi: false}, (err: Error | null, n: number) => {
                 resolve(err ? 0 : n);
             });
         });
         if (numRemoved < 1) {
             return null;
         }
-        return record.userId;
+        return matched.userId;
     }
 
     createUser(newUser: I_UserCreation): Promise<I_UserEntry> {

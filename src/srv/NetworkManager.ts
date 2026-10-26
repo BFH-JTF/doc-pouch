@@ -1818,7 +1818,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.delete("/docs/remove/:documentID", this.authenticate, writeRateLimiter, async (req, res) => {
+        this.expressApp.delete("/docs/remove/:documentID", writeRateLimiter, this.authenticate, async (req, res) => {
             if (req.params.documentID === undefined) {
                 return res.status(400).json({error: "Document ID is required"});
             }
@@ -2032,7 +2032,7 @@ export default class NetworkManager {
             }
         });
 
-        this.expressApp.get("/version/check", this.authenticate, apiRateLimiter, (req, res) => {
+        this.expressApp.get("/version/check", apiRateLimiter, this.authenticate, (req, res) => {
             const updateResult = getCachedUpdateResult();
             if (updateResult) {
                 res.status(200).json(updateResult);
@@ -2161,6 +2161,17 @@ export default class NetworkManager {
                     const scope = parseDatabaseScope(req.body.scope);
                     const mode = parseImportMode(req.body.mode);
                     const originalName = uploadedFile.originalname.toLowerCase();
+
+                    // #119: inline guard in the shape CodeQL recognizes
+                    // (regex.test() followed by an early return): multer's
+                    // server-generated paths are uploads/<hex-uuid>; the
+                    // user-controlled originalname is never used for file
+                    // system operations. getSafeUploadPath re-checks this
+                    // as defense in depth.
+                    if (!/^uploads[/\\][0-9a-fA-F-]+$/.test(uploadedFile.path)) {
+                        safeDeleteFile(uploadedFile.path);
+                        return res.status(400).json({error: "Invalid upload path"});
+                    }
 
                     if (originalName.endsWith('.json')) {
                         const rawContent = fs.readFileSync(getSafeUploadPath(uploadedFile.path), "utf8");
@@ -2393,7 +2404,9 @@ export default class NetworkManager {
                 if (this.socketServer.ownsSocket(result.socketID, result.userid)) {
                     req.socketID = result.socketID;
                 } else {
-                    this.logger.warn(`Dropping X-Socket-ID not owned by user ${result.userid}`);
+                    // The user id is deliberately not logged: it can be
+                    // derived from API-key verification results.
+                    this.logger.warn('Dropping X-Socket-ID header not owned by the authenticated user');
                 }
             }
             next();

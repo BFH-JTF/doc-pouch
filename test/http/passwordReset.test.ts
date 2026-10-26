@@ -77,12 +77,12 @@ describe('Self-service password reset flow (#110)', () => {
         expect(forgotRes.body.message).toBe('If an account with that email exists, a reset link has been sent.');
 
         // 2. The token store holds exactly one record for the user, and it
-        //    stores only a SHA-256 hash of the token (#119), never the raw
+        //    stores only a bcrypt hash of the token (#119), never the raw
         //    token itself.
         const records = await storedResetTokenRecords();
         expect(records).toHaveLength(1);
         expect(records[0]).toHaveProperty('tokenHash');
-        expect(records[0].tokenHash).toMatch(/^[0-9a-f]{64}$/);
+        expect(records[0].tokenHash).toMatch(/^\$2[aby]\$/);
         expect(records[0]).not.toHaveProperty('token');
 
         // 3. Obtain a raw token the way the emailed link would carry it.
@@ -90,9 +90,10 @@ describe('Self-service password reset flow (#110)', () => {
         const rawToken = await dataManager.createPasswordResetToken(regularUserId);
         expect(rawToken).toMatch(/^[0-9a-f]{64}$/);
         const corresponding = await storedResetTokenRecords();
-        const matching = corresponding.filter((r: any) => r.tokenHash !== rawToken);
-        // The stored hash is NOT the raw token (it is its SHA-256).
-        expect(matching.length).toBe(corresponding.length);
+        // The stored value is NOT the raw token (it is its bcrypt hash).
+        for (const record of corresponding) {
+            expect(record.tokenHash).not.toBe(rawToken);
+        }
 
         // 4. Reset the password with the raw token.
         const resetRes = await request(server)
