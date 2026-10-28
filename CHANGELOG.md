@@ -1,3 +1,10 @@
+## [1.27.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.27.2...v1.27.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* **docker:** pre-create node-owned /app/db and /app/log so named volumes seed writable ([#127](https://github.com/BFH-JTF/doc-pouch/issues/127)) ([4550f17](https://github.com/BFH-JTF/doc-pouch/commit/4550f1731af664bc24b9f341f218984e601508a8))
+
 ## [1.27.2](https://github.com/BFH-JTF/doc-pouch/compare/v1.27.1...v1.27.2) (2026-10-26)
 
 
