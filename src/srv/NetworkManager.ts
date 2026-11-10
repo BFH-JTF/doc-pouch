@@ -697,6 +697,41 @@ export default class NetworkManager {
         return fs.readFileSync(path.resolve(process.cwd(), 'src/srv', filename), 'utf8');
     }
 
+    /**
+     * #135: build (or extend) the Grant that satisfies the current consent
+     * prompt. oidc-provider attaches the grant that already covers this
+     * client/account (e.g. remembered from a previous authorization, or the
+     * in-flight grant of the current flow) to the interaction payload, and
+     * `interactionDetails()` exposes it as `grantId`. Extending THAT grant —
+     * exactly what oidc-provider's own interaction submit handler does — is
+     * mandatory for correctness: creating a fresh grant containing only
+     * `prompt.details.missingOIDCScope` discards every scope/claim granted in
+     * earlier rounds. On a scope upgrade the reduced grant then fails the
+     * resumed authorization policy, which re-prompts consent for the scopes
+     * it no longer covers, producing an infinite consent loop whose saved
+     * grants alternately contain disjoint scope subsets while each new
+     * decision silently drops what a previous round had granted.
+     */
+    private async resolveConsentGrant(interaction: any, accountIdOverride?: string): Promise<any> {
+        let grant: any;
+        if (interaction.grantId) {
+            grant = await this.oidcProvider.Grant.find(interaction.grantId);
+        }
+        if (!grant) {
+            grant = new this.oidcProvider.Grant({
+                accountId: accountIdOverride ?? interaction.session?.accountId,
+                clientId: interaction.params?.client_id,
+            });
+        }
+        if (interaction.prompt?.details?.missingOIDCScope) {
+            grant.addOIDCScope(interaction.prompt.details.missingOIDCScope.join(' '));
+        }
+        if (interaction.prompt?.details?.missingOIDCClaims) {
+            grant.addOIDCClaims(interaction.prompt.details.missingOIDCClaims);
+        }
+        return grant;
+    }
+
     private initializeExpress(): void {
         const vuePath = path.resolve(process.cwd(), 'dist/srv/vue');
         this.logger.info(`Serving static files from: ${vuePath}`);
@@ -1031,16 +1066,9 @@ export default class NetworkManager {
                         return;
                     }
                     // Auto-accept consent for the admin UI (user already authenticated)
-                    const grant = new this.oidcProvider.Grant({
-                        accountId: interaction.session?.accountId,
-                        clientId: interaction.params?.client_id,
-                    });
-                    if (interaction.prompt.details?.missingOIDCScope) {
-                        grant.addOIDCScope(interaction.prompt.details.missingOIDCScope.join(' '));
-                    }
-                    if (interaction.prompt.details?.missingOIDCClaims) {
-                        grant.addOIDCClaims(interaction.prompt.details.missingOIDCClaims);
-                    }
+                    // #135: extend the interaction's existing grant (if any) instead
+                    // of creating a fresh one; see resolveConsentGrant.
+                    const grant = await this.resolveConsentGrant(interaction);
                     const grantId = await grant.save();
                     await this.oidcProvider.interactionFinished(req, res, {consent: {grantId}}, {mergeWithLastSubmission: true});
                     return;
@@ -1116,11 +1144,13 @@ export default class NetworkManager {
                         this.logger.debug('Login interaction finished (consent prompt follows)');
                         return;
                     }
-                    // Complete login and immediately grant consent for all requested scopes
-                    const grant = new this.oidcProvider.Grant({
-                        accountId: user._id,
-                        clientId: interaction.params?.client_id,
-                    });
+                    // Complete login and immediately grant consent for all
+                    // requested scopes. #135: start from the grant the
+                    // interaction already carries (a remembered grant from a
+                    // previous authorization) so previously granted scopes
+                    // are never dropped; addOIDCScope merges, so this also
+                    // covers the full current request.
+                    const grant = await this.resolveConsentGrant(interaction, user._id);
                     // Use the full scope from the original authorization request
                     const requestedScope = interaction.params?.scope || 'openid profile email offline_access';
                     this.logger.debug('Granting scopes: ' + requestedScope);
@@ -1150,30 +1180,16 @@ export default class NetworkManager {
                             res.redirect(`/interaction/${uid}`);
                             return;
                         }
-                        const grant = new this.oidcProvider.Grant({
-                            accountId: interaction.session?.accountId,
-                            clientId: interaction.params?.client_id,
-                        });
-                        if (prompt.details?.missingOIDCScope) {
-                            grant.addOIDCScope(prompt.details.missingOIDCScope.join(' '));
-                        }
-                        if (prompt.details?.missingOIDCClaims) {
-                            grant.addOIDCClaims(prompt.details.missingOIDCClaims);
-                        }
+                        // #135: extend the interaction's existing grant (if any)
+                        // instead of creating a fresh one; see resolveConsentGrant.
+                        const grant = await this.resolveConsentGrant(interaction);
                         const grantId = await grant.save();
                         await this.oidcProvider.interactionFinished(req, res, {consent: {grantId}}, {mergeWithLastSubmission: true});
                         return;
                     }
-                    const grant = new this.oidcProvider.Grant({
-                        accountId: interaction.session?.accountId,
-                        clientId: interaction.params?.client_id,
-                    });
-                    if (prompt.details?.missingOIDCScope) {
-                        grant.addOIDCScope(prompt.details.missingOIDCScope.join(' '));
-                    }
-                    if (prompt.details?.missingOIDCClaims) {
-                        grant.addOIDCClaims(prompt.details.missingOIDCClaims);
-                    }
+                    // #135: the auto-consent branch shares the same grant
+                    // handling; see resolveConsentGrant.
+                    const grant = await this.resolveConsentGrant(interaction);
                     const grantId = await grant.save();
                     await this.oidcProvider.interactionFinished(req, res, {consent: {grantId}}, {mergeWithLastSubmission: true});
                 } else if (prompt?.name === 'logout') {
@@ -1192,8 +1208,10 @@ export default class NetworkManager {
                     }
                 }
             } catch (err) {
+                // #135: this handler serves the login AND the consent prompt;
+                // a login-specific message misleads on consent failures.
                 this.logger.error('Interaction handling error: ' + err);
-                res.redirect(`/interaction/${req.params.uid}?error=Login+failed.+Please+try+again.`);
+                res.redirect(`/interaction/${req.params.uid}?error=Authorization+request+could+not+be+completed.+Please+try+again.`);
             }
         });
         // Proxy well-known OIDC discovery to the OIDC provider (mounted at /oidc)
