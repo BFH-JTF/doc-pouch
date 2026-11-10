@@ -1,3 +1,10 @@
+## [1.27.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.27.3...v1.27.4) (2026-11-10)
+
+
+### Bug Fixes
+
+* **oidc:** extend the interaction's existing grant on consent so scope upgrades complete instead of looping ([1559b92](https://github.com/BFH-JTF/doc-pouch/commit/1559b929e815b2db7ab1bf573f70490781bdd806))
+
 ## [1.27.3](https://github.com/BFH-JTF/doc-pouch/compare/v1.27.2...v1.27.3) (2026-10-28)
 
 
