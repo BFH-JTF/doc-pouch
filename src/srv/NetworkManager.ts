@@ -132,6 +132,62 @@ export function resolveOidcCookieKey(env: NodeJS.ProcessEnv = process.env): stri
 }
 
 /**
+ * Resolves the Secure flag for OIDC session/interaction cookies (#139).
+ *
+ * - `OIDC_COOKIE_SECURE=true` forces Secure cookies (e.g. direct HTTPS).
+ * - `OIDC_COOKIE_SECURE=false` is an explicit opt-out (e.g. a TLS-terminating
+ *   reverse proxy whose X-Forwarded-Proto cannot be trusted because the proxy
+ *   is outside the trusted proxy chain, so the connection is not seen as
+ *   HTTPS and setting a Secure cookie would fail).
+ * - When unset, production defaults to Secure; development does not.
+ */
+export function resolveOidcCookieSecure(env: NodeJS.ProcessEnv = process.env): boolean {
+    const configured = env.OIDC_COOKIE_SECURE?.trim().toLowerCase();
+    if (configured === 'true') {
+        return true;
+    }
+    if (configured === 'false') {
+        return false;
+    }
+    return env.NODE_ENV === 'production';
+}
+
+/**
+ * #139: warns at startup when the OIDC Secure cookie flag is forced while the
+ * default trust proxy resolution strips X-Forwarded-Proto from non-loopback
+ * peers. TLS-terminating reverse proxies on a Docker bridge / another host
+ * then present themselves to the OIDC provider as plain HTTP, and every login
+ * fails with "Cannot send secure cookie over unencrypted connection" instead
+ * of a message that names the actual remedy (configure TRUST_PROXY).
+ */
+export function warnIfSecureCookieProxyConflict(logger: winston.Logger, env: NodeJS.ProcessEnv = process.env): void {
+    if (!resolveOidcCookieSecure(env)) {
+        return;
+    }
+    let trustSetting: ReturnType<typeof resolveTrustProxy>;
+    try {
+        trustSetting = resolveTrustProxy(env);
+    } catch {
+        // An invalid TRUST_PROXY value fails startup with its own clear error.
+        return;
+    }
+    // With 'loopback' (the default) and 'false', forwarded headers are
+    // stripped for every peer except (or even including) loopback, so the OIDC
+    // provider cannot see an X-Forwarded-Proto hint from a remote proxy.
+    if (trustSetting !== 'loopback' && trustSetting !== false) {
+        return;
+    }
+    logger.error(
+        `OIDC login behind a TLS-terminating reverse proxy on a non-loopback address will fail with `
+        + `"Cannot send secure cookie over unencrypted connection": Secure cookies are forced while `
+        + `TRUST_PROXY="${String(trustSetting)}" (loopback-only or disabled) strips X-Forwarded-Proto from non-loopback `
+        + `peers, so the provider sees plain HTTP and refuses to set a Secure cookie. `
+        + `Fix: set TRUST_PROXY to match that proxy (e.g. "uniquelocal" for private/Docker networks, its IP/CIDR, or a hop count like "1"), `
+        + `or set OIDC_COOKIE_SECURE=false to send OIDC cookies without the Secure flag.`
+    );
+}
+
+/**
  * oidc-provider interaction uids are base64url tokens ([A-Za-z0-9_-]).
  * A request parameter that does not match this shape can never be a real
  * interaction uid, so it is rejected before it is ever interpolated into
@@ -198,8 +254,13 @@ export default class NetworkManager {
         this.corsOptions = corsOptions;
         this.port = port;
         this.expressApp = express();
-        this.expressApp.set('trust proxy', resolveTrustProxy());
-        this.expressApp.use(stripUntrustedForwardedHeaders());
+        // #139: resolve TRUST_PROXY once, keep the Express setting and the
+        // forwarded-header stripping (and the #139 startup conflict check)
+        // in sync with the same effective value.
+        const trustSetting = resolveTrustProxy();
+        this.expressApp.set('trust proxy', trustSetting);
+        this.expressApp.use(stripUntrustedForwardedHeaders(trustSetting));
+        warnIfSecureCookieProxyConflict(logger);
         this.dataManager = dataManager;
         this.logger = logger;
         this.anonymousDocumentsEnabled = runtimeOptions.anonymousDocumentsEnabled ?? false;
@@ -301,12 +362,12 @@ export default class NetworkManager {
             cookies: {
                 keys: oidcCookieKeys,
                 long: {
-                    secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+                    secure: resolveOidcCookieSecure(),
                     httpOnly: true,
                     sameSite: 'lax'
                 },
                 short: {
-                    secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+                    secure: resolveOidcCookieSecure(),
                     httpOnly: true,
                     sameSite: 'lax'
                 },
@@ -385,7 +446,7 @@ export default class NetworkManager {
                         const cookieOptions = {
                             path: '/',
                             httpOnly: true,
-                            secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+                            secure: resolveOidcCookieSecure(),
                             sameSite: 'lax' as const,
                             maxAge: 0
                         };
@@ -615,6 +676,18 @@ export default class NetworkManager {
             renderError: (ctx, out, error) => {
                 const err = error as any;
                 console.error('OIDC renderError:', err.message, err.error_description, err.error_detail, err.stack);
+                // #139: the cookie error names the wrong layer. Point operators
+                // at the TRUST_PROXY / OIDC_COOKIE_SECURE remedy instead.
+                if (err?.message === 'Cannot send secure cookie over unencrypted connection') {
+                    ctx.status = err?.status || 500;
+                    ctx.body = {
+                        error: err.message,
+                        error_description: 'Cannot send secure cookie over unencrypted connection: the OIDC provider did not see this request as HTTPS. '
+                            + 'If TLS terminates on a reverse proxy that is not on loopback, set TRUST_PROXY (e.g. "uniquelocal", a CIDR like "172.16.0.0/12", or a hop count like "1") '
+                            + 'so the forwarded PROTO header is trusted, or set OIDC_COOKIE_SECURE=false.'
+                    };
+                    return;
+                }
                 ctx.status = err?.status || 500;
                 ctx.body = {
                     error: err?.message || 'Unknown error',
@@ -918,7 +991,7 @@ export default class NetworkManager {
 
             const cookieOptions = {
                 httpOnly: true,
-                secure: process.env.OIDC_COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+                secure: resolveOidcCookieSecure(),
                 sameSite: 'lax' as const,
                 path: '/'
             };

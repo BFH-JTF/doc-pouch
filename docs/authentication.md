@@ -382,11 +382,15 @@ whether `name` and `email` are included in the `/oidc/me` user info endpoint res
 | `OIDC_POST_LOGOUT_REDIRECT_URI` | Default post-logout redirect URI for the built-in admin UI client. Falls back to `OIDC_REDIRECT_URI`. | `${OIDC_ISSUER}/`                                |
 | `OIDC_AUTO_CONSENT_CLIENTS`     | Comma-separated client IDs granted silent consent (first-party apps only). All other clients show a consent screen. | `docpouch-admin-ui`                |
 | `OIDC_COOKIE_KEY`               | Secret for OIDC session cookies. **Required in production**; unset in development a random per-process key is used. | *(random per-process)*                           |
-| `OIDC_COOKIE_SECURE`            | Set to `true` when running directly with HTTPS; leave unset behind a reverse proxy.                   | `false` (auto-`true` when `NODE_ENV=production`) |
+| `OIDC_COOKIE_SECURE`            | Secure flag for OIDC cookies. `true` when running directly with HTTPS; `false` explicitly opts out (e.g. reverse proxy outside the trusted proxy chain); unset follows `NODE_ENV=production`. | `false` (auto-`true` when `NODE_ENV=production`) |
 
-Copy `.env.example` to `.env` and configure these values. When `NODE_ENV=production`, `OIDC_COOKIE_SECURE` is
-implicitly enabled regardless of its value, and the OIDC provider also sets `proxy: true` to behave correctly
-behind a reverse proxy.
+Copy `.env.example` to `.env` and configure these values. When `NODE_ENV=production` and `OIDC_COOKIE_SECURE` is
+unset, OIDC cookies are Secure automatically; setting `OIDC_COOKIE_SECURE=false` disables them even in production.
+The OIDC provider also sets `proxy: true` to behave correctly behind a reverse proxy. If TLS terminates on a proxy
+that is **not** in the `TRUST_PROXY` trust chain (e.g. a separate Compose container), its `X-Forwarded-Proto` is
+stripped, the provider sees plain HTTP, and login fails with `Cannot send secure cookie over unencrypted
+connection` — set `TRUST_PROXY` (e.g. `uniquelocal` or a hop count) or `OIDC_COOKIE_SECURE=false`; a startup
+warning names this conflict (see TROUBLESHOOTING.md).
 
 ---
 
