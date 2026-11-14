@@ -133,6 +133,52 @@ debug-level messages show up in the log.
    `logger.level` or `setLogLevel` in `src/srv/`. The only level
    setter is the `process.env.LOG_LEVEL` fallback at `main.ts:53`.
 
+### Issue 5: OIDC login fails with "Cannot send secure cookie over unencrypted connection"
+
+**Symptoms:** Opening `https://<host>/oidc/auth` behind a TLS-terminating
+reverse proxy (e.g. Caddy / nginx as a separate container) returns:
+
+```json
+{"error":"Cannot send secure cookie over unencrypted connection","error_description":"..."}
+```
+
+No login through the OIDC provider works; the discovery document also
+advertises `http://` endpoint URLs (only the issuer is `https`).
+
+**Cause:** `NODE_ENV=production` (or `OIDC_COOKIE_SECURE=true`) forces
+Secure cookies, while the default `TRUST_PROXY` resolution
+(`loopback`) strips `X-Forwarded-Proto` from every non-loopback peer.
+A proxy on the Docker bridge network is never on loopback, so the OIDC
+provider sees plain HTTP and refuses to set a Secure cookie
+(`src/srv/NetworkManager.ts`, `renderError`).
+
+**Debugging steps:**
+
+1. **Check the startup log.** With this misconfiguration DocPouch logs
+   an actionable error naming `TRUST_PROXY` at boot.
+2. **Check how the proxy connects.** If the direct peer is not a
+   loopback address (e.g. `172.17.0.x` on a Docker bridge), the
+   `X-Forwarded-Proto: https` header it sends is being stripped.
+3. **Verify the discovery document** (`GET
+   /.well-known/openid-configuration`): `http://` endpoint URLs behind
+   an `https://` issuer are the same symptom.
+
+**Solutions:**
+
+1. **Trust the proxy** so `X-Forwarded-Proto: https` is honored:
+   ```bash
+   TRUST_PROXY=uniquelocal   # proxies on private / Docker networks
+   TRUST_PROXY=172.16.0.0/12 # or the proxy's exact IP / CIDR
+   TRUST_PROXY=1             # or trust a fixed number of hops
+   ```
+2. **Or opt out explicitly** (sends OIDC cookies without the Secure
+   flag — only sensible when the proxy enforces HTTPS):
+   ```bash
+   OIDC_COOKIE_SECURE=false
+   ```
+
+Then restart DocPouch.
+
 ---
 
 ## How to reproduce the flow manually
