@@ -537,6 +537,17 @@ export default class NetworkManager {
                 revocation: {enabled: true},
                 backchannelLogout: {enabled: true},
                 pushedAuthorizationRequests: {enabled: true},
+                // #140: RFC 7662 token introspection so resource servers (e.g.
+                // Toolchain Family backends) can verify active / client_id /
+                // scope of a token they received, preventing a token issued to
+                // one client from being replayed against another tool. The
+                // strict allowedPolicy restricts every client — public and
+                // confidential — to introspecting tokens that were issued to
+                // itself; anything else answers {active: false}.
+                introspection: {
+                    enabled: true,
+                    allowedPolicy: async (ctx, client, token) => token.clientId === client.clientId,
+                },
                 registration: {
                     // #107: registration is only enabled when a registration
                     // token is configured; see dynamicRegistrationEnabled.
@@ -1384,6 +1395,11 @@ export default class NetworkManager {
                         isAdmin: user.isAdmin || false,
                         role: effectiveRole(user),
                         email: user.email,
+                        // #140: credential metadata (type, and for OIDC access
+                        // tokens the issuing client_id + scopes) so resource
+                        // servers can reject tokens issued to another client.
+                        // Additive field; existing consumers are unaffected.
+                        auth: req.authMeta,
                     });
                 } else {
                     res.status(404).json({error: 'User not found'});
@@ -2415,6 +2431,7 @@ export default class NetworkManager {
                 return;
             }
             req.userid = result.userid;
+            req.authMeta = result.auth;
             if (result.socketID) {
                 // #119: the claimed socket id must belong to the
                 // authenticated user, otherwise any client could suppress

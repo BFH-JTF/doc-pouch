@@ -321,6 +321,41 @@ const refreshResponse = await fetch('http://localhost:3030/oidc/token', {
 });
 ```
 
+#### Refresh token rotation and reuse detection
+
+Refresh tokens issued by DocPouch's OIDC provider are **rotated on every use**: every successful
+`refresh_token` grant returns a new refresh token and the presented one is burned. Public clients (all DocPouch
+clients are public, `token_endpoint_auth_method: none`) always rotate (#141). Clients must replace their stored
+refresh token with the new one from each response.
+
+Replaying a rotated-out refresh token triggers **reuse detection**: the whole grant chain — including the
+replacement tokens — is revoked and the replay is rejected with `invalid_grant`. If a refresh token leaks, the
+chain is therefore compromised shortly after (or through the legitimate client's next refresh), and neither the
+stolen nor the genuine token remain usable. The total lifetime of a rotation chain is capped at one year.
+
+#### Token introspection (RFC 7662)
+<!-- #140 -->
+
+Resource servers that receive DocPouch access tokens (e.g. a backend exchanging a token for its own session)
+should verify **which client the token was issued for** before trusting it — otherwise a token issued to one
+tool can be replayed against another (token substitution):
+
+```bash
+POST /oidc/introspection
+Content-Type: application/x-www-form-urlencoded
+
+token=<access token>&client_id=<YOUR_CLIENT_ID>&token_type_hint=access_token
+```
+
+The response contains `active`, `client_id`, `sub`, `scope`, `exp`, `iss`. DocPouch applies a strict policy:
+a client — public or confidential — can only introspect tokens that were issued to **itself**. A foreign token
+answers `{active: false}` instead of an error, so no information about other clients' tokens is leaked.
+Verify `active === true` and `client_id === <YOUR_CLIENT_ID>`, otherwise reject the token.
+
+As an alternative for callers of `GET /users/whoami`, the response includes an `auth` object
+(`{ type, clientId, scope }`) describing the credential — `auth.clientId` is the OIDC client the token was
+issued to, JWT and API-key credentials report their respective `type`.
+
 ### OIDC Discovery
 
 ```bash

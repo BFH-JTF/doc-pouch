@@ -59,6 +59,27 @@ paths:
         404:
           description: "User not found"
 
+  /users/whoami:
+    get:
+      summary: Get information about the current authenticated user
+      description: "Returns the current user as identified by the Authorization header. Besides the user data the response contains an auth object describing the credential that authenticated the request — its type (jwt, oidc or apiKey) and, for OIDC access tokens, the issuing client_id and granted scopes. Resource servers that accept OIDC tokens SHOULD verify auth.type === 'oidc' and auth.clientId === <their own client id> to defend against token substitution."
+      tags:
+        - administration
+      security:
+        - userAuth: [ ]
+        - adminAuth: [ ]
+      responses:
+        200:
+          description: "Information about the current user and the credential used"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhoamiResponse"
+        401:
+          description: "Missing or invalid token"
+        404:
+          description: "User not found"
+
   /users/list:
     get:
       summary: List user information
@@ -891,6 +912,45 @@ paths:
         400:
           description: "Invalid token or parameters"
 
+  /oidc/introspection:
+    post:
+      summary: OIDC Token Introspection endpoint
+      description: "RFC 7662 token introspection. Resource servers verify whether a bearer token is active and — most importantly — for which client_id it was issued, so a token issued to one client cannot be replayed against another tool. Every registered client (public or confidential) may only introspect tokens that were issued to itself; any other token answers {active: false}."
+      tags:
+        - openid connect
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: "The token to be introspected"
+                token_type_hint:
+                  type: string
+                  enum: [access_token, refresh_token]
+                  description: "Type hint for the token (optional but recommended)"
+                client_id:
+                  type: string
+                  description: "Client identifier of the requesting resource server (public clients authenticate with client_id only)"
+                client_secret:
+                  type: string
+                  description: "Client secret (only for confidential clients)"
+              required:
+                - token
+                - client_id
+      responses:
+        200:
+          description: "Introspection response. active is false (with HTTP 200) when the token is unknown, expired, or was issued to another client."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcTokenIntrospection"
+        400:
+          description: "Invalid request (e.g. missing client authentication)"
+
   /oidc/par:
     post:
       summary: OIDC Pushed Authentication Request (PAR) endpoint
@@ -1445,6 +1505,57 @@ components:
         - department
         - group
 
+    WhoamiAuth:
+      type: object
+      description: "Describes the credential that authenticated the whoami request (#140)"
+      properties:
+        type:
+          type: string
+          enum: [jwt, oidc, apiKey]
+          description: "The credential type: DocPouch JWT, OIDC access token, or API key"
+        clientId:
+          type: string
+          description: "Only for OIDC access tokens: the client_id the token was issued to. Resource servers verify this against their own client id."
+        scope:
+          type: string
+          description: "Only for OIDC access tokens: the granted scopes"
+      required:
+        - type
+
+    WhoamiResponse:
+      type: object
+      description: "Current user plus credential metadata"
+      properties:
+        _id:
+          type: string
+          description: "The unique identifier of the user"
+          example: "p3O5LB4T6C4PgkvW"
+        name:
+          type: string
+          description: "The user's display name"
+          example: "admin"
+        isAdmin:
+          type: boolean
+          description: "Whether the user has super-admin privileges"
+          example: true
+        role:
+          type: string
+          enum: [member, manager, admin]
+          description: "Effective role of the user"
+          example: "admin"
+        email:
+          type: string
+          description: "User email address"
+          example: "admin@example.com"
+        auth:
+          $ref: "#/components/schemas/WhoamiAuth"
+      required:
+        - _id
+        - name
+        - isAdmin
+        - role
+        - auth
+
     UserCreation:
       type: object
       description: "Data element needed to trigger user creation"
@@ -1878,6 +1989,39 @@ components:
         scope:
           type: string
           description: "Granted scopes"
+
+    OidcTokenIntrospection:
+      type: object
+      description: "RFC 7662 introspection response. active is false for unknown/expired tokens and for tokens issued to a different client."
+      properties:
+        active:
+          type: boolean
+          description: "Whether the token is active for the requesting client"
+          example: true
+        client_id:
+          type: string
+          description: "The client the token was issued to (when active)"
+          example: "docpouch-admin-ui"
+        sub:
+          type: string
+          description: "Subject (user ID) the token was issued for (when active)"
+          example: "p3O5LB4T6C4PgkvW"
+        scope:
+          type: string
+          description: "Granted scopes (when active)"
+          example: "openid profile email offline_access"
+        exp:
+          type: integer
+          description: "Expiration timestamp (when active)"
+        iat:
+          type: integer
+          description: "Issued-at timestamp (when active)"
+        iss:
+          type: string
+          description: "The OIDC issuer (when active)"
+        token_type:
+          type: string
+          description: "Token type, e.g. Bearer (when active)"
 
     OidcUserInfo:
       type: object

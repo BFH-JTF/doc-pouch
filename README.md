@@ -481,7 +481,10 @@ DocPouch provides a RESTful API with an [OpenAPI documentation](https://bfh-jtf.
 ### User Management
 - `POST /users/login` - Authenticate a user and receive a JWT token
 - `GET /users/list` - List user information (all users for admins, own info for regular users; password hashes are never returned)
-- `GET /users/whoami` - Get information about the current authenticated user
+- `GET /users/whoami` - Get information about the current authenticated user, including an `auth` object describing
+  the credential (`type`: `jwt` | `oidc` | `apiKey`; for OIDC tokens also `clientId` and `scope`). Resource servers
+  that accept OIDC tokens SHOULD verify `auth.type === 'oidc'` and `auth.clientId === <their own client id>`
+  to reject tokens issued to another client (#140)
 - `POST /users/create` - Create a new user (admin only)
 - `PATCH /users/update/{userID}` - Update user information
 - `POST /users/forgot-password` - Request a password-reset email for an account
@@ -574,9 +577,25 @@ The OIDC provider is mounted at `/oidc` and follows the standard OpenID Connect 
 | `GET /oidc/jwks`        | JSON Web Key Set used to verify ID tokens                        |
 | `GET /oidc/end_session` | RP-initiated logout                                              |
 | `POST /oidc/revocation` | Token revocation                                                 |
+| `POST /oidc/introspection` | RFC 7662 token introspection — a client may only introspect tokens issued to itself (#140) |
 | `POST /oidc/par`        | Pushed Authorization Requests                                    |
 | `POST /oidc/reg`        | Dynamic client registration (requires `OIDC_REGISTRATION_TOKEN`) |
 | `GET /oidc/reg/{id}`    | Read/update/delete a registered client                           |
+
+Resource servers that receive DocPouch access tokens can verify them via token introspection (RFC 7662):
+
+```
+POST /oidc/introspection
+Content-Type: application/x-www-form-urlencoded
+
+token=<access token>&client_id=<your client id>&token_type_hint=access_token
+```
+
+The response contains `active`, `client_id`, `sub`, `scope`, `exp`, etc. A token issued to *another* client
+answers `{active: false}` — `client_id` on an active token is always the caller's own client id, so backends can
+enforce that a session/token was obtained through *their* client instead of replaying one from another tool (#140).
+`GET /users/whoami` exposes equivalent information (`auth.type`, `auth.clientId`, `auth.scope`) for callers of
+that endpoint.
 
 In addition, the server exposes a few DocPouch-specific endpoints:
 
