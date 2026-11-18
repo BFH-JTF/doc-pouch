@@ -1,3 +1,15 @@
+# [1.28.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.27.4...v1.28.0) (2026-11-18)
+
+
+### Bug Fixes
+
+* **security:** actionable TRUST_PROXY guidance for OIDC secure cookies behind non-loopback proxies ([#139](https://github.com/BFH-JTF/doc-pouch/issues/139)) ([3a59c8a](https://github.com/BFH-JTF/doc-pouch/commit/3a59c8ac9229f4f280977d736afad7324ae16a5d))
+
+
+### Features
+
+* **oidc:** token introspection and whoami credential metadata ([#140](https://github.com/BFH-JTF/doc-pouch/issues/140), [#141](https://github.com/BFH-JTF/doc-pouch/issues/141)) ([87b3678](https://github.com/BFH-JTF/doc-pouch/commit/87b3678351a55aa58510aa6cda08c0bc4a599658))
+
 ## [1.27.4](https://github.com/BFH-JTF/doc-pouch/compare/v1.27.3...v1.27.4) (2026-11-10)
 
 
