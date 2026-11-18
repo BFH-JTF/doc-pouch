@@ -321,6 +321,41 @@ const refreshResponse = await fetch('http://localhost:3030/oidc/token', {
 });
 ```
 
+#### Refresh token rotation and reuse detection
+
+Refresh tokens issued by DocPouch's OIDC provider are **rotated on every use**: every successful
+`refresh_token` grant returns a new refresh token and the presented one is burned. Public clients (all DocPouch
+clients are public, `token_endpoint_auth_method: none`) always rotate (#141). Clients must replace their stored
+refresh token with the new one from each response.
+
+Replaying a rotated-out refresh token triggers **reuse detection**: the whole grant chain — including the
+replacement tokens — is revoked and the replay is rejected with `invalid_grant`. If a refresh token leaks, the
+chain is therefore compromised shortly after (or through the legitimate client's next refresh), and neither the
+stolen nor the genuine token remain usable. The total lifetime of a rotation chain is capped at one year.
+
+#### Token introspection (RFC 7662)
+<!-- #140 -->
+
+Resource servers that receive DocPouch access tokens (e.g. a backend exchanging a token for its own session)
+should verify **which client the token was issued for** before trusting it — otherwise a token issued to one
+tool can be replayed against another (token substitution):
+
+```bash
+POST /oidc/introspection
+Content-Type: application/x-www-form-urlencoded
+
+token=<access token>&client_id=<YOUR_CLIENT_ID>&token_type_hint=access_token
+```
+
+The response contains `active`, `client_id`, `sub`, `scope`, `exp`, `iss`. DocPouch applies a strict policy:
+a client — public or confidential — can only introspect tokens that were issued to **itself**. A foreign token
+answers `{active: false}` instead of an error, so no information about other clients' tokens is leaked.
+Verify `active === true` and `client_id === <YOUR_CLIENT_ID>`, otherwise reject the token.
+
+As an alternative for callers of `GET /users/whoami`, the response includes an `auth` object
+(`{ type, clientId, scope }`) describing the credential — `auth.clientId` is the OIDC client the token was
+issued to, JWT and API-key credentials report their respective `type`.
+
 ### OIDC Discovery
 
 ```bash
@@ -382,11 +417,15 @@ whether `name` and `email` are included in the `/oidc/me` user info endpoint res
 | `OIDC_POST_LOGOUT_REDIRECT_URI` | Default post-logout redirect URI for the built-in admin UI client. Falls back to `OIDC_REDIRECT_URI`. | `${OIDC_ISSUER}/`                                |
 | `OIDC_AUTO_CONSENT_CLIENTS`     | Comma-separated client IDs granted silent consent (first-party apps only). All other clients show a consent screen. | `docpouch-admin-ui`                |
 | `OIDC_COOKIE_KEY`               | Secret for OIDC session cookies. **Required in production**; unset in development a random per-process key is used. | *(random per-process)*                           |
-| `OIDC_COOKIE_SECURE`            | Set to `true` when running directly with HTTPS; leave unset behind a reverse proxy.                   | `false` (auto-`true` when `NODE_ENV=production`) |
+| `OIDC_COOKIE_SECURE`            | Secure flag for OIDC cookies. `true` when running directly with HTTPS; `false` explicitly opts out (e.g. reverse proxy outside the trusted proxy chain); unset follows `NODE_ENV=production`. | `false` (auto-`true` when `NODE_ENV=production`) |
 
-Copy `.env.example` to `.env` and configure these values. When `NODE_ENV=production`, `OIDC_COOKIE_SECURE` is
-implicitly enabled regardless of its value, and the OIDC provider also sets `proxy: true` to behave correctly
-behind a reverse proxy.
+Copy `.env.example` to `.env` and configure these values. When `NODE_ENV=production` and `OIDC_COOKIE_SECURE` is
+unset, OIDC cookies are Secure automatically; setting `OIDC_COOKIE_SECURE=false` disables them even in production.
+The OIDC provider also sets `proxy: true` to behave correctly behind a reverse proxy. If TLS terminates on a proxy
+that is **not** in the `TRUST_PROXY` trust chain (e.g. a separate Compose container), its `X-Forwarded-Proto` is
+stripped, the provider sees plain HTTP, and login fails with `Cannot send secure cookie over unencrypted
+connection` — set `TRUST_PROXY` (e.g. `uniquelocal` or a hop count) or `OIDC_COOKIE_SECURE=false`; a startup
+warning names this conflict (see TROUBLESHOOTING.md).
 
 ---
 

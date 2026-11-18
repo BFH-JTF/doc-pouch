@@ -3,9 +3,25 @@ import jwt from 'jsonwebtoken';
 import {JWTOptions} from '../webTokenStuff.js';
 import NeDbWrapper from '../NeDbWrapper.js';
 
+/**
+ * #140: metadata about the credential that authenticated a request, so
+ * resource servers can tell which client an OIDC access token was issued for
+ * (token substitution defense).
+ */
+export type AuthTokenType = 'jwt' | 'oidc' | 'apiKey';
+
+export interface AuthMetadata {
+    type: AuthTokenType;
+    /** Only for OIDC access tokens: the client the token was issued to. */
+    clientId?: string;
+    /** Only for OIDC access tokens: the scopes granted to the token. */
+    scope?: string;
+}
+
 export interface AuthResult {
     userid: string;
     socketID?: string;
+    auth?: AuthMetadata;
 }
 
 export async function authenticateRequest(
@@ -38,6 +54,7 @@ export async function authenticateRequest(
         return {
             userid: payload.id,
             socketID: req.headers['x-socket-id'] as string | undefined,
+            auth: {type: 'jwt'},
         };
     } catch {
         // JWT verification failed, try OIDC token
@@ -49,6 +66,7 @@ export async function authenticateRequest(
             return {
                 userid: accessToken.accountId,
                 socketID: req.headers['x-socket-id'] as string | undefined,
+                auth: {type: 'oidc', clientId: accessToken.clientId, scope: accessToken.scope},
             };
         }
     } catch {
@@ -61,6 +79,7 @@ export async function authenticateRequest(
         return {
             userid: apiKeyResult.userId,
             socketID: req.headers['x-socket-id'] as string | undefined,
+            auth: {type: 'apiKey'},
         };
     }
 

@@ -102,6 +102,9 @@ async function performLoginFlow(
             scope: SCOPE,
             state,
             nonce,
+            // prompt=consent is required for offline_access: oidc-provider
+            // strips the scope from the request otherwise (OIDC spec).
+            prompt: 'consent',
             code_challenge: pkce.codeChallenge,
             code_challenge_method: pkce.codeChallengeMethod,
         })
@@ -457,6 +460,66 @@ describe('OIDC Interactive Flow', () => {
             expect(res.status).toBe(302);
             const location = new URL(res.headers.location as string, OIDC_REDIRECT_URI);
             expect(location.searchParams.get('logout')).toBe('no');
+        });
+    });
+
+    describe('Refresh token rotation and reuse detection (#141)', () => {
+        // Server-side lock-in for #141: oidc-provider rotates refresh tokens
+        // on every use for public clients (every DocPouch client is public)
+        // and revokes the whole grant chain when a consumed refresh token is
+        // replayed. The client library still persists the refresh token in
+        // localStorage, so these tests pin the server's mitigation for the
+        // stolen-token scenario.
+
+        async function refresh(server: Server, refreshToken: string) {
+            return request(server)
+                .post('/oidc/token')
+                .type('form')
+                .send({
+                    grant_type: 'refresh_token',
+                    refresh_token: refreshToken,
+                    client_id: OIDC_CLIENT_ID,
+                });
+        }
+
+        test('using a refresh token rotates it: the grant returns a fresh refresh token', async () => {
+            const agent = request.agent(server);
+            const {refreshToken} = await performLoginFlow(agent, {
+                username: 'user',
+                password: 'userpassword',
+            });
+            expect(refreshToken).toBeTruthy();
+
+            const res = await refresh(server, refreshToken as string);
+            expect(res.status).toBe(200);
+            expect(res.body).toHaveProperty('access_token');
+            expect(res.body).toHaveProperty('refresh_token');
+            expect(res.body.refresh_token).not.toBe(refreshToken);
+        });
+
+        test('replaying a rotated refresh token fails and revokes the whole chain', async () => {
+            const agent = request.agent(server);
+            const {refreshToken: rt1} = await performLoginFlow(agent, {
+                username: 'user',
+                password: 'userpassword',
+            });
+
+            const rotationRes = await refresh(server, rt1 as string);
+            expect(rotationRes.status).toBe(200);
+            const rt2 = rotationRes.body.refresh_token as string;
+            expect(rt2).toBeTruthy();
+
+            // Replay of the consumed RT1: oidc-provider detects the reuse,
+            // revokes the grant chain and rejects the request.
+            const replayRes = await refresh(server, rt1 as string);
+            expect(replayRes.status).toBe(400);
+            expect(replayRes.body.error).toBe('invalid_grant');
+
+            // The chain is destroyed: the refresh token issued by the
+            // rotation is unusable as well.
+            const chainRes = await refresh(server, rt2);
+            expect(chainRes.status).toBe(400);
+            expect(chainRes.body.error).toBe('invalid_grant');
         });
     });
 });
