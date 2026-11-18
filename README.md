@@ -393,6 +393,14 @@ limiters at once. When unset, the per-limiter defaults from the table above are 
 > `TRUST_PROXY` accordingly — for example `uniquelocal` or the proxy's static IP. Otherwise all clients appear to
 > come from the proxy address and share the `api` / `write` buckets.
 >
+> **OIDC behind a non-loopback proxy**: with the default `TRUST_PROXY` resolution, `X-Forwarded-Proto` is stripped
+> from every peer that is not on loopback. A TLS-terminating reverse proxy on the Docker bridge network (or any other
+> host/container) therefore presents itself to the OIDC provider as plain HTTP, and with `NODE_ENV=production`
+> (or `OIDC_COOKIE_SECURE=true`) every login fails with `Cannot send secure cookie over unencrypted connection`.
+> Set `TRUST_PROXY` to match the proxy (e.g. `uniquelocal`, a CIDR like `172.16.0.0/12`, or a hop count like `1`),
+> or set `OIDC_COOKIE_SECURE=false` as an explicit opt-out. DocPouch logs this misconfiguration at startup; see
+> TROUBLESHOOTING.md for details.
+>
 > Forwarded headers sent by clients whose direct connection does not come from a trusted proxy hop are removed
 > before request handling. They can therefore neither influence the client-IP resolution (rate limiting) nor the
 > forwarded-header detection of the OIDC provider mounted under the same HTTP server.
