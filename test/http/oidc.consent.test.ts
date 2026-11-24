@@ -304,6 +304,37 @@ describe('OIDC consent screen for non-first-party clients', () => {
         expect(callbackUrl.searchParams.get('code')).toBeNull();
     });
 
+    test('#151: the consent decision is mirrored into a hidden input inside the submit handler', async () => {
+        const agent = request.agent(server);
+
+        const loginPath = await startAuthorization(agent, thirdPartyClientId, CLIENT_REDIRECT_URI);
+        const afterLogin = await submitLogin(agent, loginPath);
+        const resumeStep = await followRedirectOnce(agent, afterLogin);
+        const consentPath = resumeStep.location as string;
+
+        const consentPage = await agent.get(consentPath).redirects(0);
+        expect(consentPage.status).toBe(200);
+
+        // Regression #151: on current Chromium the form entry list is
+        // constructed AFTER submit handlers run and excludes controls that
+        // are disabled by then. The consent form has no other fields — its
+        // only payload is the clicked submitter button — so disabling the
+        // buttons inside the submit handler used to strip the entire POST
+        // body (consent=yes/no lost) and bounce the user back to the
+        // consent screen in an infinite loop. The handler must therefore
+        // mirror the clicked decision into a hidden input it creates
+        // itself (always serialized by late-snapshotting engines, never
+        // added to the snapshot of engines that serialize before handlers
+        // run), so the decision reaches POST /interaction/:uid regardless
+        // of submitter serialization. The double-submit protection
+        // (disabling the buttons) must be kept.
+        expect(consentPage.text).toContain('consentMirror.name = \'consent\';');
+        expect(consentPage.text).toContain('consentMirror.type = \'hidden\';');
+        expect(consentPage.text).toContain('consentMirror.value = clicked ? clicked.value : \'\';');
+        expect(consentPage.text).toContain('allowButton.disabled = true;');
+        expect(consentPage.text).toContain('denyButton.disabled = true;');
+    });
+
     test('a submission without a decision does not grant consent', async () => {
         const agent = request.agent(server);
 

@@ -161,9 +161,27 @@
 </div>
 
 <script nonce="__NONCE__">
-    document.getElementById('consentForm').addEventListener('submit', () => {
+    // #151: modern Chromium constructs the form's entry list AFTER the submit
+    // event handlers have run and excludes controls that are disabled by
+    // then. This form has no other fields — its only payload is the clicked
+    // submitter button — so disabling the buttons inside this handler made
+    // the POST arrive with an empty body: the decision was lost and the
+    // server bounced the user back to the consent screen in an infinite
+    // loop. Mirror the clicked decision into a hidden input created inside
+    // the handler: engines that build the entry list late serialize it (it
+    // is never disabled), while engines that snapshot before the handler
+    // runs never see it and keep the real submitter — exactly one `consent`
+    // value either way. Disabling the visible buttons still prevents
+    // double-submits.
+    document.getElementById('consentForm').addEventListener('submit', (event) => {
         const allowButton = document.getElementById('allowButton');
         const denyButton = document.getElementById('denyButton');
+        const clicked = event.submitter || (document.activeElement instanceof HTMLButtonElement ? document.activeElement : null);
+        const consentMirror = document.createElement('input');
+        consentMirror.type = 'hidden';
+        consentMirror.name = 'consent';
+        consentMirror.value = clicked ? clicked.value : '';
+        document.getElementById('consentForm').appendChild(consentMirror);
         allowButton.disabled = true;
         denyButton.disabled = true;
         allowButton.textContent = 'Redirecting...';
