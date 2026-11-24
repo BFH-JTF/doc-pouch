@@ -1,3 +1,12 @@
+## [1.28.1](https://github.com/BFH-JTF/doc-pouch/compare/v1.28.0...v1.28.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **oidc:** include the [#151](https://github.com/BFH-JTF/doc-pouch/issues/151) logout-page mirror assertions in the flow test ([1b333d7](https://github.com/BFH-JTF/doc-pouch/commit/1b333d73d3962f4468472d523c36bbf1a2e2f913))
+* **oidc:** map profile and email scopes to name/email userinfo claims ([21daa00](https://github.com/BFH-JTF/doc-pouch/commit/21daa005e389c1cb39d0a2a1a1a8fd9089ccea18)), closes [#150](https://github.com/BFH-JTF/doc-pouch/issues/150)
+* **oidc:** mirror consent/logout decisions into hidden inputs on submit ([eb81a66](https://github.com/BFH-JTF/doc-pouch/commit/eb81a663bcc89915f9f017a308c84c35aa968cde)), closes [#151](https://github.com/BFH-JTF/doc-pouch/issues/151)
+
 # [1.28.0](https://github.com/BFH-JTF/doc-pouch/compare/v1.27.4...v1.28.0) (2026-11-18)
 
 
