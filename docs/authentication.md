@@ -296,7 +296,7 @@ const tokens = await tokenResponse.json();
 
 ```javascript
 // Get user info
-const userInfo = await fetch('http://localhost:3030/oidc/me', {
+const userInfo = await fetch('http://localhost:3030/oidc/userinfo', {
     headers: { 'Authorization': `Bearer ${tokens.access_token}` }
 });
 
@@ -403,7 +403,7 @@ curl http://localhost:3030/oidc/jwks
 | `offline_access` | Issue refresh tokens                              |
 
 The `sub` claim is always included in user info responses regardless of scope. The `profile` and `email` scopes control
-whether `name` and `email` are included in the `/oidc/me` user info endpoint response.
+whether `name` and `email` are included in the `/oidc/userinfo` user info endpoint response.
 
 ---
 

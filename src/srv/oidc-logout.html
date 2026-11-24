@@ -131,9 +131,23 @@
 </div>
 
 <script nonce="__NONCE__">
-    document.getElementById('logoutForm').addEventListener('submit', () => {
-        const buttons = document.querySelectorAll('button');
-        buttons.forEach(btn => btn.disabled = true);
+    // #151: same Chromium serialization change as the consent page — the
+    // form entry list is built after submit handlers run and excludes
+    // disabled controls. Disabling the buttons in this handler dropped the
+    // clicked `logout` value from the confirm POST, so "Yes, sign out"
+    // arrived without `logout=yes` and the provider never destroyed the
+    // session (it only reset the initiating client's authorization).
+    // Mirror the clicked decision into a hidden input created inside the
+    // handler before disabling the buttons; see oidc-consent.html for the
+    // full rationale.
+    document.getElementById('logoutForm').addEventListener('submit', (event) => {
+        const clicked = event.submitter || (document.activeElement instanceof HTMLButtonElement ? document.activeElement : null);
+        const logoutMirror = document.createElement('input');
+        logoutMirror.type = 'hidden';
+        logoutMirror.name = 'logout';
+        logoutMirror.value = clicked ? clicked.value : '';
+        document.getElementById('logoutForm').appendChild(logoutMirror);
+        document.querySelectorAll('button').forEach(btn => btn.disabled = true);
     });
 </script>
 </body>
