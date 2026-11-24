@@ -417,6 +417,17 @@ describe('OIDC Interactive Flow', () => {
             // (the same action URL the prompt returned), which is the
             // action used by the "Yes, sign out" button.
             expect(promptRes.text).toContain(`action="${prompt.actionUrl}"`);
+
+            // #151: the logout decision must be mirrored into a hidden input
+            // inside the submit handler (same Chromium serialization change
+            // as the consent page): the form's only other payload field is
+            // the clicked submitter button, and disabling it inside the
+            // handler used to drop `logout` from the confirm POST entirely,
+            // after which the provider never destroyed the OP session.
+            expect(promptRes.text).toContain("logoutMirror.name = 'logout';");
+            expect(promptRes.text).toContain("logoutMirror.type = 'hidden';");
+            expect(promptRes.text).toContain("logoutMirror.value = clicked ? clicked.value : '';");
+            expect(promptRes.text).toContain("btn.disabled = true");
         });
 
         test('cancelling the logout preserves the OIDC session', async () => {
