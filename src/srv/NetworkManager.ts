@@ -656,6 +656,15 @@ export default class NetworkManager {
                     return `/interaction/${interaction.uid}`;
                 }
             },
+            // #150: oidc-provider does not map granted scopes to standard
+            // claims on its own; without this mapping account.claims() below
+            // is never asked for `name`/`email` and userinfo carried only
+            // `sub` even when `profile`/`email` were granted. The account
+            // already supplies both claims for the matching scopes.
+            // email_verified is deliberately not mapped: DocPouch has no
+            // email-verification concept, so the claim would be advertised
+            // via discovery but never issued.
+            claims: {profile: ['name'], email: ['email']},
             findAccount: async (ctx, sub, token) => {
                 const user = await (this as any).dataManager.getUserByID(sub);
                 if (!user) return undefined;
