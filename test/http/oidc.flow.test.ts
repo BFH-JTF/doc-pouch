@@ -248,6 +248,13 @@ describe('OIDC Interactive Flow', () => {
 
             expect(userinfoRes.status).toBe(200);
             expect(userinfoRes.body).toHaveProperty('sub');
+            // #150: the granted `profile`/`email` scopes must translate into
+            // actual claims. oidc-provider does not map scopes to claims on
+            // its own; the provider configuration maps `profile` -> `name`
+            // and `email` -> `email`, which findAccount() then supplies from
+            // the user record.
+            expect(userinfoRes.body.name).toBe('user');
+            expect(userinfoRes.body.email).toBe('user@example.com');
         });
 
         test('invalid credentials redirect back to the login page with an error', async () => {
