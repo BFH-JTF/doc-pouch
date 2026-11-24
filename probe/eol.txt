@@ -1,3 +1,0 @@
-lf-only
-json-escaped-cr:lit-bsslash-n:
-end
